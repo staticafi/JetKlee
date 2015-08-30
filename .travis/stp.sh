@@ -5,7 +5,7 @@ set -e
 
 STP_LOG="$(pwd)/stp-build.log"
 
-if [ "x${STP_VERSION}" != "x" ]; then
+if [ "${STP_VERSION}" != "r940" ]; then
     # Build minisat
     git clone https://github.com/stp/minisat
     cd minisat
