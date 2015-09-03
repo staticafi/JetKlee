@@ -395,6 +395,8 @@ private:
   void initTimers();
   void processTimers(ExecutionState *current,
                      double maxInstTime);
+
+  std::string getLineInfo(const ExecutionState &state, bool trueBranch);
                 
 public:
   Executor(const InterpreterOptions &opts, InterpreterHandler *ie);

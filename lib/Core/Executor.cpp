@@ -704,6 +704,26 @@ void Executor::branch(ExecutionState &state,
       addConstraint(*result[i], conditions[i]);
 }
 
+std::string Executor::getLineInfo(const ExecutionState &state, bool trueBranch)
+{
+	const llvm::BranchInst *branch =
+		dyn_cast<llvm::BranchInst>(state.prevPC->inst);
+	const llvm::Instruction *succ =
+		branch->getSuccessor(trueBranch ? 0 : 1)->getFirstNonPHI();
+
+	const InstructionInfo &ii = kmodule->infos->getInfo(succ);
+	const std::string &file = ii.file;
+	unsigned int fsize = file.size();
+	unsigned int line = ii.line;
+	std::stringstream ss;
+
+	ss.write(reinterpret_cast<char*>(&fsize), sizeof(unsigned int));
+	ss << file;
+	ss.write(reinterpret_cast<char*>(&line), sizeof(unsigned int));
+
+	return ss.str();
+}
+
 Executor::StatePair 
 Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   Solver::Validity res;
@@ -840,7 +860,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   if (res==Solver::True) {
     if (!isInternal) {
       if (pathWriter) {
-        current.pathOS << "1";
+        current.pathOS << "1" << getLineInfo(current, true);
       }
     }
 
@@ -848,7 +868,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   } else if (res==Solver::False) {
     if (!isInternal) {
       if (pathWriter) {
-        current.pathOS << "0";
+        current.pathOS << "0" << getLineInfo(current, false);
       }
     }
 
@@ -908,8 +928,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     if (!isInternal) {
       if (pathWriter) {
         falseState->pathOS = pathWriter->open(current.pathOS);
-        trueState->pathOS << "1";
-        falseState->pathOS << "0";
+        trueState->pathOS << "1" << getLineInfo(current, true);
+        falseState->pathOS << "0" << getLineInfo(current, false);
       }      
       if (symPathWriter) {
         falseState->symPathOS = symPathWriter->open(current.symPathOS);

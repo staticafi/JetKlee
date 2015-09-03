@@ -18,6 +18,17 @@ namespace klee {
   typedef unsigned TreeStreamID;
   class TreeOStream;
 
+  struct PathLocation {
+    char way;
+    std::string file;
+    unsigned int line;
+
+    PathLocation(char way, std::string file, unsigned int line) :
+	    way(way), file(file), line(line) { }
+
+    PathLocation(std::ifstream &is);
+  };
+
   class TreeStreamWriter {
     static const unsigned bufferSize = 4*4096;
 
@@ -47,7 +58,7 @@ namespace klee {
 
     // hack, to be replace by proper stream capabilities
     void readStream(TreeStreamID id,
-                    std::vector<unsigned char> &out);
+                    std::vector<PathLocation> &out);
   };
 
   class TreeOStream {
