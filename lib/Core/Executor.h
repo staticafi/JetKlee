@@ -441,6 +441,8 @@ private:
   void printDebugInstructions(ExecutionState &state);
   void doDumpStates();
 
+  std::string getPathInfo(const ExecutionState &state, bool trueBranch);
+
 public:
   Executor(llvm::LLVMContext &ctx, const InterpreterOptions &opts,
       InterpreterHandler *ie);
