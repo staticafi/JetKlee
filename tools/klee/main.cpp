@@ -398,6 +398,32 @@ KleeHandler::openTestFile(const std::string &suffix, unsigned id) {
   return openOutputFile(getTestFilename(suffix, id));
 }
 
+llvm::raw_ostream &operator<<(llvm::raw_ostream &o, const PathLocation &I)
+{
+  o << I.branch << " " << I.file.size() << " " << I.file << " " << I.line;
+  return o;
+}
+
+std::istream &operator>>(std::istream &i, PathLocation &I)
+{
+  unsigned branch, count;
+
+  // >> to char is different -- use a temporary unsigned
+  i >> branch;
+  I.branch = branch;
+  i >> count;
+  i.get();
+
+  char *buf = new char[count];
+  i.read(buf, count);
+  I.file = std::string(buf, count);
+  delete[] buf;
+
+  i.get();
+  i >> I.line;
+
+  return i;
+}
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
 void KleeHandler::processTestCase(const ExecutionState &state,
@@ -450,15 +476,17 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     }
 
     if (m_pathWriter) {
-      std::vector<unsigned char> concreteBranches;
+      std::vector<PathLocation> concreteBranches;
       m_pathWriter->readStream(m_interpreter->getPathStreamID(state),
                                concreteBranches);
       auto f = openTestFile("path", id);
       if (f) {
-        for (const auto &branch : concreteBranches) {
-          *f << branch << '\n';
+        for (auto I = concreteBranches.begin(), E = concreteBranches.end();
+             I != E; ++I) {
+          *f << *I << "\n";
         }
-      }
+      } else
+        klee_warning("unable to write .path file, losing it");
     }
 
     if (errorMessage || WriteKQueries) {
@@ -488,15 +516,16 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     }
 
     if (m_symPathWriter) {
-      std::vector<unsigned char> symbolicBranches;
+      std::vector<PathLocation> symbolicBranches;
       m_symPathWriter->readStream(m_interpreter->getSymbolicPathStreamID(state),
                                   symbolicBranches);
       auto f = openTestFile("sym.path", id);
       if (f) {
-        for (const auto &branch : symbolicBranches) {
-          *f << branch << '\n';
+        for (auto I = symbolicBranches.begin(), E = symbolicBranches.end(); I!=E; ++I) {
+          *f << *I << "\n";
         }
-      }
+      } else
+        klee_warning("unable to write sym.path file, losing it");
     }
 
     if (WriteCov) {
@@ -538,9 +567,11 @@ void KleeHandler::loadPathFile(std::string name,
     assert(0 && "unable to open path file");
 
   while (f.good()) {
-    unsigned value;
-    f >> value;
-    buffer.push_back(!!value);
+    PathLocation loc;
+    f >> loc;
+    if (!f.good())
+            break;
+    buffer.push_back(!!loc.branch);
     f.get();
   }
 }
