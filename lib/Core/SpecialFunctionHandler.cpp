@@ -23,6 +23,7 @@
 #include "MemoryManager.h"
 
 #include "klee/CommandLine.h"
+#include "klee/klee.h"
 
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 3)
 #include "llvm/IR/Module.h"
@@ -42,6 +43,10 @@ namespace {
             cl::init(false),
             cl::desc("Prefer creation of POSIX inputs (command-line arguments, files, etc.) with human readable bytes. "
                      "Note: option is expensive when creating lots of tests (default=false)"));
+
+  cl::opt<bool>
+  HaltAfterAssert("halt-after-assert",
+              cl::desc("Halt execution after reaching assert"));
 }
 
 
@@ -305,6 +310,8 @@ void SpecialFunctionHandler::handleAssert(ExecutionState &state,
   executor.terminateStateOnError(state,
 				 "ASSERTION FAIL: " + readStringAtAddress(state, arguments[0]),
 				 "assert.err");
+  if (HaltAfterAssert)
+    halt_execution();
 }
 
 void SpecialFunctionHandler::handleAssertFail(ExecutionState &state,
@@ -314,6 +321,8 @@ void SpecialFunctionHandler::handleAssertFail(ExecutionState &state,
   executor.terminateStateOnError(state,
 				 "ASSERTION FAIL: " + readStringAtAddress(state, arguments[0]),
 				 "assert.err");
+  if (HaltAfterAssert)
+    halt_execution();
 }
 
 void SpecialFunctionHandler::handleReportError(ExecutionState &state,

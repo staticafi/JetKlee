@@ -154,6 +154,9 @@ extern "C" {
 
   /* Merge current states together if possible */
   void klee_merge();
+
+  /* Halt the executor */
+  void halt_execution();
 #ifdef __cplusplus
 }
 #endif
