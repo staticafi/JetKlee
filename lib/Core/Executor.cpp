@@ -3438,9 +3438,15 @@ void Executor::runFunctionAsMain(Function *f,
   delete processTree;
   processTree = 0;
 
+  unsigned pointerBitWidth = 64;
+#if LLVM_VERSION_CODE > LLVM_VERSION(3, 1)
+  DataLayout *targetData = kmodule->targetData;
+  pointerBitWidth = targetData->getPointerSizeInBits();
+#endif
+
   // hack to clear memory objects
   delete memory;
-  memory = new MemoryManager();
+  memory = new MemoryManager(pointerBitWidth);
   
   globalObjects.clear();
   globalAddresses.clear();

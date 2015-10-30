@@ -24,9 +24,10 @@ namespace klee {
   private:
     typedef std::set<MemoryObject*> objects_ty;
     objects_ty objects;
+    unsigned int pointerBitWidth;
 
   public:
-    MemoryManager() {}
+    MemoryManager(unsigned int bw = 64): pointerBitWidth(bw) {}
     ~MemoryManager();
 
     MemoryObject *allocate(uint64_t size, bool isLocal, bool isGlobal,

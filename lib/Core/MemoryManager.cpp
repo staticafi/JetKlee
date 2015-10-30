@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <sys/mman.h>
+
 #include "Common.h"
 
 #include "CoreStats.h"
@@ -27,22 +29,36 @@ MemoryManager::~MemoryManager() {
   while (!objects.empty()) {
     MemoryObject *mo = *objects.begin();
     if (!mo->isFixed)
-      free((void *)mo->address);
+      munmap((void *)mo->address, mo->size);
     objects.erase(mo);
     delete mo;
   }
 }
 
-MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal, 
+// @low_address means 32-bit address
+static uint64_t allocate_memory(uint64_t size, bool low_address = false)
+{
+  int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+  if (low_address)
+    flags |= MAP_32BIT;
+
+  void *mem = mmap(0, size, PROT_READ | PROT_WRITE, flags, -1, 0);
+  if (mem == MAP_FAILED)
+    return 0;
+
+  return (uint64_t) mem;
+}
+
+MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
                                       bool isGlobal,
                                       const llvm::Value *allocSite) {
   if (size>10*1024*1024)
     klee_warning_once(0, "Large alloc: %u bytes.  KLEE may run out of memory.", (unsigned) size);
-  
-  uint64_t address = (uint64_t) (unsigned long) malloc((unsigned) size);
+
+  uint64_t address = allocate_memory(size, true /* 32-bit */);
   if (!address)
     return 0;
-  
+
   ++stats::allocations;
   MemoryObject *res = new MemoryObject(address, size, isLocal, isGlobal, false,
                                        allocSite, this);
@@ -76,7 +92,7 @@ void MemoryManager::markFreed(MemoryObject *mo) {
   if (objects.find(mo) != objects.end())
   {
     if (!mo->isFixed)
-      free((void *)mo->address);
+      munmap((void *)mo->address, mo->size);
     objects.erase(mo);
   }
 }
