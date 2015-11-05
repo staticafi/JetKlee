@@ -2643,6 +2643,7 @@ void Executor::run(ExecutionState &initialState) {
   
  dump:
   if (DumpStatesOnHalt && !states.empty()) {
+    /*
     llvm::errs() << "KLEE: halting execution, dumping remaining states\n";
     for (std::set<ExecutionState*>::iterator
            it = states.begin(), ie = states.end();
@@ -2652,6 +2653,8 @@ void Executor::run(ExecutionState &initialState) {
       terminateStateEarly(state, "Execution halting.");
     }
     updateStates(0);
+    */
+    llvm::errs() << "KLEE: halting execution, leaking all the states!\n";
   }
 }
 
