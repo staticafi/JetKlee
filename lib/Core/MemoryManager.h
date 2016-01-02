@@ -36,6 +36,8 @@ namespace klee {
                                 const llvm::Value *allocSite);
     void deallocate(const MemoryObject *mo);
     void markFreed(MemoryObject *mo);
+    void setPointerBitWidth(unsigned bw) { pointerBitWidth = bw; }
+    unsigned getPointerBitWidth() const { return pointerBitWidth; }
   };
 
 } // End klee namespace
