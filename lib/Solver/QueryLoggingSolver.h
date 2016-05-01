@@ -27,6 +27,9 @@ protected:
   Solver *solver;
   std::string ErrorInfo;
   llvm::raw_ostream *os;
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  std::error_code ec;
+#endif
   // @brief Buffer used by logBuffer
   std::string BufferString;
   // @brief buffer to store logs before flushing to file

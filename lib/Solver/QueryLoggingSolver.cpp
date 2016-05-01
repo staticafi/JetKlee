@@ -42,7 +42,10 @@ QueryLoggingSolver::QueryLoggingSolver(Solver *_solver, std::string path,
 #ifdef HAVE_ZLIB_H
   if (!CreateCompressedQueryLog) {
 #endif
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    os = new llvm::raw_fd_ostream(path.c_str(), ec,
+                                  llvm::sys::fs::OpenFlags::F_Text);
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
     os = new llvm::raw_fd_ostream(path.c_str(), ErrorInfo,
                                   llvm::sys::fs::OpenFlags::F_Text);
 #else

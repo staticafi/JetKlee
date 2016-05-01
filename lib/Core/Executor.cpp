@@ -1471,9 +1471,13 @@ Function* Executor::getTargetFunction(Value *calledVal, ExecutionState &state) {
 
   while (true) {
     if (GlobalValue *gv = dyn_cast<GlobalValue>(c)) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+      if (!Visited.insert(gv).second)
+        return 0;
+#else
       if (!Visited.insert(gv))
         return 0;
-
+#endif
       std::string alias = state.getFnAlias(gv->getName());
       if (alias != "") {
         llvm::Module* currModule = kmodule->module;
@@ -1484,7 +1488,7 @@ Function* Executor::getTargetFunction(Value *calledVal, ExecutionState &state) {
                      old_gv->getName().str().c_str());
         }
       }
-     
+
       if (Function *f = dyn_cast<Function>(gv))
         return f;
       else if (GlobalAlias *ga = dyn_cast<GlobalAlias>(gv))
@@ -1646,8 +1650,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(cond)) {
       // Somewhat gross to create these all the time, but fine till we
       // switch to an internal rep.
-      LLVM_TYPE_Q llvm::IntegerType *Ty = 
-        cast<IntegerType>(si->getCondition()->getType());
+      LLVM_TYPE_Q llvm::IntegerType *Ty =
+          cast<IntegerType>(si->getCondition()->getType());
       ConstantInt *ci = ConstantInt::get(Ty, CE->getZExtValue());
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 1)
       unsigned index = si->findCaseValue(ci).getSuccessorIndex();
@@ -1703,7 +1707,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         bool result;
         bool success = solver->mayBeTrue(state, match, result);
         assert(success && "FIXME: Unhandled solver failure");
-        (void) success;
+        (void)success;
         if (result) {
           BasicBlock *caseSuccessor = it->second;
 
@@ -3072,8 +3076,16 @@ void Executor::callExternalFunction(ExecutionState &state,
     else
       klee_warning_once(function, "%s", os.str().c_str());
   }
-  
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  // MCJIT needs unique module, so we create quick external dispatcher for call.
+  // reference:
+  // http://blog.llvm.org/2013/07/using-mcjit-with-kaleidoscope-tutorial.html
+  ExternalDispatcher *e = new ExternalDispatcher();
+  bool success = e->executeCall(function, target->inst, args);
+  delete e;
+#else
   bool success = externalDispatcher->executeCall(function, target->inst, args);
+#endif
   if (!success) {
     terminateStateOnError(state, "failed external call: " + function->getName(),
                           External);
