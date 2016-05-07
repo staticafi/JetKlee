@@ -4,9 +4,15 @@ set -ev
 sudo apt-get install -y --force-yes llvm-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev
 
 if [ "${LLVM_VERSION}" != "2.9" ]; then
-    sudo apt-get install -y --force-yes llvm-${LLVM_VERSION}-tools clang-${LLVM_VERSION}
     sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${LLVM_VERSION} 20
     sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-${LLVM_VERSION} 20
+    # LLVM 3.8 no longer distributes the testing tools, we need to build LLVM
+    # from source to obtain them, but it takes too long for Travis to handle.
+    # Maybe hack it somehow?
+    if [ "${LLVM_VERSION}" != "3.8" ]; then
+        sudo apt-get install -y --force-yes llvm-${LLVM_VERSION}-tools
+    fi
+    sudo apt-get install -y --force-yes clang-${LLVM_VERSION}
 else
     # Get llvm-gcc. We don't bother installing it
     wget http://llvm.org/releases/2.9/llvm-gcc4.2-2.9-x86_64-linux.tar.bz2
