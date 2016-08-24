@@ -82,6 +82,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FileSystem.h"
 
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
 #include "llvm/Support/CallSite.h"
@@ -91,6 +92,10 @@
 
 #ifdef HAVE_ZLIB_H
 #include "klee/Internal/Support/CompressionStream.h"
+#endif
+
+#if LLVM_VERSION_CODE > LLVM_VERSION(3, 5)
+#include <system_error>
 #endif
 
 #include <cassert>
@@ -373,14 +378,22 @@ Executor::Executor(const InterpreterOptions &opts, InterpreterHandler *ih)
       optionIsSet(DebugPrintInstructions, FILE_SRC)) {
     std::string debug_file_name =
         interpreterHandler->getOutputFilename("instructions.txt");
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    std::error_code EC;
+#endif
     std::string ErrorInfo;
+
 #ifdef HAVE_ZLIB_H
     if (!DebugCompressInstructions) {
 #endif
 
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    debugInstFile = new llvm::raw_fd_ostream(debug_file_name.c_str(), EC,
+#else
     debugInstFile = new llvm::raw_fd_ostream(debug_file_name.c_str(), ErrorInfo,
-                                             llvm::sys::fs::OpenFlags::F_Text),
+#endif
+                                             llvm::sys::fs::OpenFlags::F_Text);
 #else
     debugInstFile =
         new llvm::raw_fd_ostream(debug_file_name.c_str(), ErrorInfo);
@@ -391,7 +404,12 @@ Executor::Executor(const InterpreterOptions &opts, InterpreterHandler *ih)
           (debug_file_name + ".gz").c_str(), ErrorInfo);
     }
 #endif
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+    if (EC) {
+        ErrorInfo = EC.message();
+#else
     if (ErrorInfo != "") {
+#endif
       klee_error("Could not open file %s : %s", debug_file_name.c_str(),
                  ErrorInfo.c_str());
     }
