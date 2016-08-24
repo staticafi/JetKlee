@@ -429,8 +429,11 @@ const Module *Executor::setModule(llvm::Module *module,
 #else
   DataLayout *TD = kmodule->targetData;
 #endif
+  unsigned bw = TD->getPointerSizeInBits();
+
+  memory->setPointerBitWidth(bw);
   Context::initialize(TD->isLittleEndian(),
-                      (Expr::Width) TD->getPointerSizeInBits());
+                      (Expr::Width) bw);
 
   specialFunctionHandler = new SpecialFunctionHandler(*this);
 
@@ -3658,7 +3661,13 @@ void Executor::runFunctionAsMain(Function *f,
 
   // hack to clear memory objects
   delete memory;
-  memory = new MemoryManager(NULL);
+
+#if LLVM_VERSION_CODE <= LLVM_VERSION(3, 1)
+  TargetData *TD = kmodule->targetData;
+#else
+  DataLayout *TD = kmodule->targetData;
+#endif
+  memory = new MemoryManager(NULL, TD->getPointerSizeInBits());
 
   globalObjects.clear();
   globalAddresses.clear();
