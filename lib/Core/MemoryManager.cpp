@@ -86,11 +86,19 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache,
   }
 }
 
+static void free_address(MemoryObject *mo, bool low_address)
+{
+  if (low_address)
+    munmap((void *)mo->address, mo->size);
+  else
+    free((void *) mo->address);
+}
+
 MemoryManager::~MemoryManager() {
   while (!objects.empty()) {
     MemoryObject *mo = *objects.begin();
     if (!mo->isFixed && !DeterministicAllocation)
-      free((void *)mo->address);
+      free_address(mo, pointerBitWidth == 32);
     objects.erase(mo);
     delete mo;
   }
@@ -193,14 +201,6 @@ MemoryObject *MemoryManager::allocateFixed(uint64_t address, uint64_t size,
 }
 
 void MemoryManager::deallocate(const MemoryObject *mo) { assert(0); }
-
-static void free_address(MemoryObject *mo, bool low_address)
-{
-  if (low_address)
-    munmap((void *)mo->address, mo->size);
-  else
-    free((void *) mo->address);
-}
 
 void MemoryManager::markFreed(MemoryObject *mo) {
   if (objects.find(mo) != objects.end()) {
