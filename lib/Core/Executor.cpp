@@ -2974,16 +2974,18 @@ void Executor::terminateState(ExecutionState &state) {
 
 void Executor::terminateStateEarly(ExecutionState &state, 
                                    const Twine &message) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew ||
-      (AlwaysOutputSeeds && seedMap.count(&state)))
+  if (ExitOnErrorType.empty() &&
+      (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+      (AlwaysOutputSeeds && seedMap.count(&state))))
     interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
                                         "early");
   terminateState(state);
 }
 
 void Executor::terminateStateOnExit(ExecutionState &state) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew || 
-      (AlwaysOutputSeeds && seedMap.count(&state)))
+  if (ExitOnErrorType.empty() &&
+      (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+      (AlwaysOutputSeeds && seedMap.count(&state))))
     interpreterHandler->processTestCase(state, 0, 0);
   terminateState(state);
 }
@@ -3051,9 +3053,16 @@ void Executor::terminateStateOnError(ExecutionState &state,
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
-  
-  if (EmitAllErrors ||
-      emittedErrors.insert(std::make_pair(lastInst, message)).second) {
+
+  if (shouldExitOn(termReason))
+    haltExecution = true;
+
+  // emit the error if we either should emit all errors, or if we search
+  // for a specific error and this is the error (haltExecution is set to true),
+  // or if we do not search for a specific error and we haven't emitted this error yet
+  if (EmitAllErrors || haltExecution ||
+      (ExitOnErrorType.empty() &&
+      emittedErrors.insert(std::make_pair(lastInst, message)).second)) {
     if (ii.file != "") {
       klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
     } else {
@@ -3086,11 +3095,8 @@ void Executor::terminateStateOnError(ExecutionState &state,
 
     interpreterHandler->processTestCase(state, msg.str().c_str(), suffix);
   }
-    
-  terminateState(state);
 
-  if (shouldExitOn(termReason))
-    haltExecution = true;
+  terminateState(state);
 }
 
 // XXX shoot me
