@@ -3600,7 +3600,8 @@ static std::string terminationTypeFileExtension(StateTerminationType type) {
 };
 
 void Executor::terminateStateOnExit(ExecutionState &state) {
-  if (shouldWriteTest(state) || (AlwaysOutputSeeds && seedMap.count(&state)))
+  if (ExitOnErrorType.empty() &&
+      (shouldWriteTest(state) || (AlwaysOutputSeeds && seedMap.count(&state))))
     interpreterHandler->processTestCase(
         state, nullptr,
         terminationTypeFileExtension(StateTerminationType::Exit).c_str());
@@ -3611,9 +3612,10 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
 
 void Executor::terminateStateEarly(ExecutionState &state, const Twine &message,
                                    StateTerminationType terminationType) {
-  if ((terminationType <= StateTerminationType::EXECERR &&
+  if (ExitOnErrorType.empty() &&
+      ((terminationType <= StateTerminationType::EXECERR &&
        shouldWriteTest(state)) ||
-      (AlwaysOutputSeeds && seedMap.count(&state))) {
+      (AlwaysOutputSeeds && seedMap.count(&state)))) {
     interpreterHandler->processTestCase(
         state, (message + "\n").str().c_str(),
         terminationTypeFileExtension(terminationType).c_str());
@@ -3684,8 +3686,15 @@ void Executor::terminateStateOnError(ExecutionState &state,
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
 
-  if (EmitAllErrors ||
-      emittedErrors.insert(std::make_pair(lastInst, message)).second) {
+  if (shouldExitOn(terminationType))
+    haltExecution = true;
+
+  // emit the error if we either should emit all errors, or if we search
+  // for a specific error and this is the error (haltExecution is set to true),
+  // or if we do not search for a specific error and we haven't emitted this error yet
+  if (EmitAllErrors || haltExecution ||
+      (ExitOnErrorType.empty() &&
+      emittedErrors.insert(std::make_pair(lastInst, message)).second)) {
     if (!ii.file.empty()) {
       klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
     } else {
@@ -3717,9 +3726,6 @@ void Executor::terminateStateOnError(ExecutionState &state,
   }
 
   terminateState(state);
-
-  if (shouldExitOn(terminationType))
-    haltExecution = true;
 }
 
 void Executor::terminateStateOnExecError(ExecutionState &state,
