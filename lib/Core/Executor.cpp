@@ -3032,12 +3032,10 @@ void Executor::terminateStateOnError(ExecutionState &state,
   if (shouldExitOn(termReason))
     haltExecution = true;
 
-  // emit the error if we either should emit all errors, or if we search
-  // for a specific error and this is the error (haltExecution is set to true),
-  // or if we do not search for a specific error and we haven't emitted this error yet
-  if (EmitAllErrors || haltExecution ||
-      (ExitOnErrorType.empty() &&
-      emittedErrors.insert(std::make_pair(lastInst, message)).second)) {
+  bool notemitted = emittedErrors.insert(std::make_pair(lastInst, message)).second;
+
+  // give a message about found error
+  if (EmitAllErrors || notemitted) {
     if (ii.file != "") {
       klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
     } else {
@@ -3045,7 +3043,12 @@ void Executor::terminateStateOnError(ExecutionState &state,
     }
     if (!EmitAllErrors)
       klee_message("NOTE: now ignoring this error at this location");
+  }
 
+  // process the testcase if we either should emit all errors, or if we search
+  // for a specific error and this is the error (haltExecution is set to true),
+  // or if we do not search for a specific error and we haven't emitted this error yet
+  if (EmitAllErrors || haltExecution || (ExitOnErrorType.empty() && notemitted)) {
     std::string MsgString;
     llvm::raw_string_ostream msg(MsgString);
     msg << "Error: " << message << "\n";
