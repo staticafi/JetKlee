@@ -678,7 +678,15 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
   Executor::ExactResolutionList rl;
   executor.resolveExact(state, arguments[0], rl, "make_symbolic");
-  
+
+  // if the given size is 0, then we whould infer the size from the memory object
+  // (the 'whole' memory object is symbolic)
+  bool whole_object = false;
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(arguments[1])) {
+    if (CE->isZero())
+      whole_object = true;
+  }
+
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
     const MemoryObject *mo = it->first.first;
@@ -695,12 +703,22 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
     // FIXME: Type coercion should be done consistently somewhere.
     bool res;
-    bool success __attribute__ ((unused)) =
-      executor.solver->mustBeTrue(*s, 
-                                  EqExpr::create(ZExtExpr::create(arguments[1],
-                                                                  Context::get().getPointerWidth()),
-                                                 mo->getSizeExpr()),
-                                  res);
+    bool success __attribute__ ((unused));
+      if (whole_object) {
+        success =
+        executor.solver->mustBeTrue(*s,
+                                    EqExpr::create(ZExtExpr::create(ConstantExpr::create(mo->size, Context::get().getPointerWidth()),
+                                                                    Context::get().getPointerWidth()),
+                                                   mo->getSizeExpr()),
+                                    res);
+      } else {
+        success =
+        executor.solver->mustBeTrue(*s,
+                                    EqExpr::create(ZExtExpr::create(arguments[1],
+                                                                    Context::get().getPointerWidth()),
+                                                   mo->getSizeExpr()),
+                                    res);
+      }
     assert(success && "FIXME: Unhandled solver failure");
     
     if (res) {
