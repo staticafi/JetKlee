@@ -3147,25 +3147,35 @@ void Executor::executeAlloc(ExecutionState &state,
       } else {
         // See if a *really* big value is possible. If so assume
         // malloc will fail for it, so lets fork and return 0.
-        StatePair hugeSize = 
-          fork(*fixedSize.second, 
+        // Then try also concretize the value to some very big value
+        // and a path with this big value.
+        StatePair hugeSize =
+          fork(*fixedSize.second,
                UltExpr::create(ConstantExpr::alloc(1U<<31, W), size),
                true);
         if (hugeSize.first) {
           klee_message("NOTE: found huge malloc, returning 0");
-          bindLocal(target, *hugeSize.first, 
+          bindLocal(target, *hugeSize.first,
                     ConstantExpr::alloc(0, Context::get().getPointerWidth()));
         }
-        
-        if (hugeSize.second) {
 
+        if (hugeSize.second) {
           std::string Str;
           llvm::raw_string_ostream info(Str);
           ExprPPrinter::printOne(info, "  size expr", size);
           info << "  concretization : " << example << "\n";
           info << "  unbound example: " << tmp << "\n";
-          terminateStateOnError(*hugeSize.second, "concretized symbolic size",
-                                Model, NULL, info.str());
+
+          // this is only underapprox, but we'll try it, maybe we will find
+          // an error. If no error is found, than we know nothing
+          klee_warning_once(target, "ERROR: concretized symbolic size to 2^17,"
+                            "analysis may be unsound");
+          bindLocal(target, *hugeSize.second,
+                    ConstantExpr::alloc(1 << 17, Context::get().getPointerWidth()));
+
+          executeAlloc(*fixedSize.second,
+                       ConstantExpr::create(1 << 17, Context::get().getPointerWidth()),
+                       isLocal, target, zeroMemory, reallocFrom);
         }
       }
     }
