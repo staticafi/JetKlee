@@ -204,7 +204,7 @@ static bool linkBCA(object::Archive* archive, Module* composite, std::string& er
   KLEE_DEBUG_WITH_TYPE("klee_linker", dbgs() << "Loading modules\n");
   // Load all bitcode files in to memory so we can examine their symbols
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
-  Error Err;
+  Error Err = Error::success();
   for (object::Archive::child_iterator AI = archive->child_begin(Err),
        AE = archive->child_end(); AI != AE; ++AI)
 #elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
@@ -229,8 +229,14 @@ static bool linkBCA(object::Archive* archive, Module* composite, std::string& er
 #else
     object::Archive::child_iterator childErr = AI;
 #endif
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+    Expected<StringRef> memberNameErr = childErr->getName();
+    ec = memberNameErr ? std::error_code() :
+      errorToErrorCode(memberNameErr.takeError());
+#else
     ErrorOr<StringRef> memberNameErr = childErr->getName();
     ec = memberNameErr.getError();
+#endif
     if (!ec) {
       memberName = memberNameErr.get();
 #else
@@ -267,7 +273,10 @@ static bool linkBCA(object::Archive* archive, Module* composite, std::string& er
 #endif
     if (ec) {
       // If we can't open as a binary object file its hopefully a bitcode file
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+      Expected<MemoryBufferRef> buff = childErr->getMemoryBufferRef();
+      ec = buff ? std::error_code() : errorToErrorCode(buff.takeError());
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
       ErrorOr<MemoryBufferRef> buff = childErr->getMemoryBufferRef();
       ec = buff.getError();
 #elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
@@ -291,13 +300,20 @@ static bool linkBCA(object::Archive* archive, Module* composite, std::string& er
         Module *Result = 0;
         // FIXME: Maybe load bitcode file lazily? Then if we need to link, materialise the module
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+        Expected<std::unique_ptr<Module> > resultErr =
+            parseBitcodeFile(buff.get(), composite->getContext());
+        ec = resultErr ? std::error_code() :
+          errorToErrorCode(resultErr.takeError());
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
         ErrorOr<std::unique_ptr<Module> > resultErr =
-#else
-        ErrorOr<Module *> resultErr =
-#endif
 	    parseBitcodeFile(buff.get(), composite->getContext());
         ec = resultErr.getError();
+#else
+        ErrorOr<Module *> resultErr =
+	    parseBitcodeFile(buff.get(), composite->getContext());
+        ec = resultErr.getError();
+#endif
         if (ec)
           errorMessage = ec.message();
         else
@@ -474,7 +490,12 @@ Module *klee::linkWithLibrary(Module *module,
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 8)
     Module *Result = 0;
 #endif
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+    Expected<std::unique_ptr<Module> > ResultErr =
+	parseBitcodeFile(Buffer, Context);
+    if (!ResultErr) {
+      ErrorMessage = errorToErrorCode(ResultErr.takeError()).message();
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
     ErrorOr<std::unique_ptr<Module> > ResultErr =
 #else
@@ -680,14 +701,22 @@ Module *klee::loadModule(LLVMContext &ctx, const std::string &path, std::string 
     return nullptr;
   }
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+  std::error_code ec;
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+  Expected<std::unique_ptr<Module>> errorOrModule =
+    getOwningLazyBitcodeModule(std::move(buffer.get()), ctx);
+  ec = errorOrModule ? std::error_code() :
+    errorToErrorCode(errorOrModule.takeError());
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
   auto errorOrModule = getLazyBitcodeModule(std::move(buffer.get()), ctx);
+  ec = errorOrModule.getError();
 #else
   auto errorOrModule = getLazyBitcodeModule(buffer->get(), ctx);
+  ec = errorOrModule.getError();
 #endif
 
-  if (!errorOrModule) {
-    errorMsg = errorOrModule.getError().message().c_str();
+  if (ec) {
+    errorMsg = ec.message();
     return nullptr;
   }
   // The module has taken ownership of the MemoryBuffer so release it
@@ -699,7 +728,10 @@ Module *klee::loadModule(LLVMContext &ctx, const std::string &path, std::string 
   auto module = *errorOrModule;
 #endif
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+  if (llvm::Error err = module->materializeAll()) {
+    std::error_code ec = errorToErrorCode(std::move(err));
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
   if (auto ec = module->materializeAll()) {
 #else
   if (auto ec = module->materializeAllPermanently()) {
