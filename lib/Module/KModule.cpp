@@ -21,7 +21,11 @@
 #include "klee/Internal/Support/Debug.h"
 #include "klee/Internal/Support/ModuleUtil.h"
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+#include "llvm/Bitcode/BitcodeWriter.h"
+#else
 #include "llvm/Bitcode/ReaderWriter.h"
+#endif
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
