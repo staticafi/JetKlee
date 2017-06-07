@@ -26,7 +26,9 @@
 #include "llvm/Object/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/SourceMgr.h"
+#if LLVM_VERSION_CODE < LLVM_VERSION(4, 0)
 #include "llvm/Support/DataStream.h"
+#endif
 
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
 #include "llvm/Linker.h"
@@ -36,8 +38,13 @@
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #endif
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+#include <llvm/Bitcode/BitcodeReader.h>
+#else
+#include <llvm/Bitcode/ReaderWriter.h>
+#endif
+
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Path.h"
