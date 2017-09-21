@@ -39,6 +39,7 @@
 
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/Path.h"
 
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
 #include "llvm/Support/system_error.h"
