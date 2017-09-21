@@ -258,13 +258,24 @@ static bool linkBCA(object::Archive* archive, Module* composite, std::string& er
         Module *Result = 0;
         // FIXME: Maybe load bitcode file lazily? Then if we need to link, materialise the module
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
-        ErrorOr<Module *> resultErr = parseBitcodeFile(buff.get(),
-	    composite->getContext());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+        ErrorOr<std::unique_ptr<Module> > resultErr
+			= parseBitcodeFile(buff.get(), composite->getContext());
+#else
+        ErrorOr<Module *> resultErr
+			= parseBitcodeFile(buff.get(), composite->getContext());
+#endif
+
         ec = resultErr.getError();
         if (ec)
           errorMessage = ec.message();
         else
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+          Result = resultErr->release();
+#else
           Result = resultErr.get();
+#endif
+
 #else
         Result = ParseBitcodeFile(buff.get(), composite->getContext(),
 	    &errorMessage);
@@ -421,7 +432,13 @@ Module *klee::linkWithLibrary(Module *module,
   if (magic == sys::fs::file_magic::bitcode) {
     Module *Result = 0;
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 5)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+    ErrorOr<std::unique_ptr<Module> > ResultErr
+		= parseBitcodeFile(Buffer, Context);
+#else
     ErrorOr<Module *> ResultErr = parseBitcodeFile(Buffer, Context);
+#endif
+
     if ((ec = ResultErr.getError())) {
       ErrorMessage = ec.message();
 #else
@@ -446,7 +463,10 @@ Module *klee::linkWithLibrary(Module *module,
           ErrorMessage.c_str());
     }
 
+// unique_ptr owns the Module, we don't have to delete it
+#if LLVM_VERSION_CODE < LLVM_VERSION(3, 7)
     delete Result;
+#endif
 
   } else if (magic == sys::fs::file_magic::archive) {
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
@@ -615,7 +635,11 @@ Module *klee::loadModule(LLVMContext &ctx, const std::string &path, std::string 
   // The module has taken ownership of the MemoryBuffer so release it
   // from the std::unique_ptr
   buffer->release();
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+  auto module = errorOrModule->release();
+#else
   auto module = *errorOrModule;
+#endif
 
   if (auto ec = module->materializeAllPermanently()) {
     errorMsg = ec.message();
