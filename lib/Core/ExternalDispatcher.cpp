@@ -319,6 +319,9 @@ Function *ExternalDispatcherImpl::createDispatcher(Function *target,
     Type *argTy =
         (i < FTy->getNumParams() ? FTy->getParamType(i) : (*ai)->getType());
     Instruction *argI64p = GetElementPtrInst::Create(
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 7)
+        nullptr,
+#endif
         argI64s, ConstantInt::get(Type::getInt32Ty(ctx), idx), "", dBB);
 
     Instruction *argp =
