@@ -85,6 +85,7 @@ ExecutionState::~ExecutionState() {
 }
 
 ExecutionState::ExecutionState(const ExecutionState& state):
+    symbolicNames(state.symbolicNames),
     pc(state.pc),
     prevPC(state.prevPC),
     stack(state.stack),
