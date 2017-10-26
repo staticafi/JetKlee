@@ -674,6 +674,14 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
     assert(arguments.size()==3 &&
            "invalid number of arguments to klee_make_symbolic");  
     name = readStringAtAddress(state, arguments[2]);
+    // if we already have such a name, attach a number as a suffix
+    // to be able to tell the objects apart
+    auto it = state.symbolicNames.find(name);
+    if (it == state.symbolicNames.end()) {
+        state.symbolicNames.emplace_hint(it, name, 0);
+    } else {
+        name += "." + std::to_string(++it->second);
+    }
   }
 
   Executor::ExactResolutionList rl;
