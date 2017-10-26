@@ -776,7 +776,7 @@ void SpecialFunctionHandler::handleDefineFixedObject(ExecutionState &state,
 void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
                                                 KInstruction *target,
                                                 const std::vector<Cell> &arguments) {
-  std::string name;
+  std::string name = "";
 
   if (arguments.size() != 3) {
     executor.terminateStateOnError(state, "Incorrect number of arguments to klee_make_symbolic(void*, size_t, char*)", Executor::User);
@@ -784,10 +784,18 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
   }
 
   name = arguments[2].value->isZero() ? "" : readStringAtAddress(state, arguments[2]);
-
   if (name.length() == 0) {
     name = "unnamed";
     klee_warning("klee_make_symbolic: renamed empty name to \"unnamed\"");
+  }
+
+  // if we already have such a name, attach a number as a suffix
+  // to be able to tell the objects apart
+  auto it = state.symbolicNames.find(name);
+  if (it == state.symbolicNames.end()) {
+      state.symbolicNames.emplace_hint(it, name, 0);
+  } else {
+      name += ":" + std::to_string(++it->second);
   }
 
   Executor::ExactResolutionList rl;
