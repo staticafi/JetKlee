@@ -771,7 +771,7 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
   if (it == state.symbolicNames.end()) {
       state.symbolicNames.emplace_hint(it, name, 0);
   } else {
-      name += "." + std::to_string(++it->second);
+      name += ":" + std::to_string(++it->second);
   }
 
   Executor::ExactResolutionList rl;
