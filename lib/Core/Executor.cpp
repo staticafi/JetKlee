@@ -3194,6 +3194,9 @@ void Executor::executeAlloc(ExecutionState &state,
           bindLocal(target, *hugeSize.second,
                     ConstantExpr::alloc(1 << 17, Context::get().getPointerWidth()));
 
+          addConstraint(*hugeSize.second,
+                        UleExpr::create(size, ConstantExpr::create(1 << 17, Context::get().getPointerWidth())));
+
           executeAlloc(*fixedSize.second,
                        ConstantExpr::create(1 << 17, Context::get().getPointerWidth()),
                        isLocal, target, zeroMemory, reallocFrom);
