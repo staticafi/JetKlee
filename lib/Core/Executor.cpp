@@ -1003,7 +1003,7 @@ ref<Expr> Executor::maxStaticPctChecks(ExecutionState &current,
 Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
                                    bool isInternal, BranchType reason) {
   Solver::Validity res;
-  std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it = 
+  std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it =
     seedMap.find(&current);
   bool isSeeding = it != seedMap.end();
 
@@ -1796,7 +1796,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
         // instead of implementing it, we can do a simple hack: just
         // make a function believe that all varargs are on stack.
         executeMemoryOperation(
-            state, true, 
+            state, true,
             arguments[0],
             ConstantExpr::create(48, 32), 0); // gp_offset
         executeMemoryOperation(
@@ -3571,7 +3571,7 @@ std::string Executor::getAddressInfo(ExecutionState &state,
     std::string alloc_info;
     mo->getAllocInfo(alloc_info);
     info << "object at " << mo->getAddressString()
-         << " of size " << mo->size << "\n"
+         << " of size " << mo->getSizeString() << "\n"
          << "\t\t" << alloc_info << "\n";
   }
   if (lower!=state.addressSpace.objects.begin()) {
@@ -3584,7 +3584,7 @@ std::string Executor::getAddressInfo(ExecutionState &state,
       std::string alloc_info;
       mo->getAllocInfo(alloc_info);
       info << "object at " << mo->getAddressString()
-           << " of size " << mo->size << "\n"
+           << " of size " << mo->getSizeString() << "\n"
            << "\t\t" << alloc_info << "\n";
     }
   }
