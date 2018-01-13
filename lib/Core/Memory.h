@@ -120,6 +120,9 @@ public:
   std::string getAddressString() const {
     return std::to_string(address);
   }
+  std::string getSizeString() const {
+    return std::to_string(size);
+  }
   ref<ConstantExpr> getSizeExpr() const { 
     return ConstantExpr::create(size, Context::get().getPointerWidth());
   }
