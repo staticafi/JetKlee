@@ -614,7 +614,7 @@ void Executor::initializeGlobals(ExecutionState &state) {
           klee_error("unable to load symbol(%s) while initializing globals.", 
                      i->getName().data());
 
-        for (unsigned offset=0; offset<mo->size; offset++)
+        for (unsigned offset=0; offset<size; offset++)
           os->write8(offset, ((unsigned char*)addr)[offset]);
       }
     } else {
@@ -2719,7 +2719,7 @@ std::string Executor::getAddressInfo(ExecutionState &state,
     std::string alloc_info;
     mo->getAllocInfo(alloc_info);
     info << "object at " << mo->getAddressString()
-         << " of size " << mo->size << "\n"
+         << " of size " << mo->getSizeString() << "\n"
          << "\t\t" << alloc_info << "\n";
   }
   if (lower!=state.addressSpace.objects.begin()) {
@@ -2732,7 +2732,7 @@ std::string Executor::getAddressInfo(ExecutionState &state,
       std::string alloc_info;
       mo->getAllocInfo(alloc_info);
       info << "object at " << mo->getAddressString()
-           << " of size " << mo->size << "\n"
+           << " of size " << mo->getSizeString() << "\n"
            << "\t\t" << alloc_info << "\n";
     }
   }
