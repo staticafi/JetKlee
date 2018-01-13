@@ -3461,8 +3461,7 @@ void Executor::runFunctionAsMain(Function *f,
       arguments.push_back(argvMO->getBaseExpr());
 
       if (++ai!=ae) {
-        uint64_t envp_start = argvMO->address + (argc+1)*NumPtrBytes;
-        arguments.push_back(Expr::createPointer(envp_start));
+        arguments.push_back(argvMO->getAddressExpr((argc + 1) * NumPtrBytes));
 
         if (++ai!=ae)
           klee_error("invalid main function (expect 0-3 arguments)");
