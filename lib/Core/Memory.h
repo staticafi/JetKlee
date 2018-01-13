@@ -114,6 +114,9 @@ public:
     return AddExpr::create(getBaseExpr(),
             ConstantExpr::create(offset, Context::get().getPointerWidth()));
   }
+  std::string getAddressString() const {
+    return std::to_string(address);
+  }
   ref<ConstantExpr> getSizeExpr() const { 
     return ConstantExpr::create(size, Context::get().getPointerWidth());
   }
