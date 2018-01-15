@@ -270,6 +270,8 @@ ref<Expr> ExprOptimizer::getSelectOptExpr(
         width = info.second;
       }
       unsigned size = read->updates.root->getSize();
+      if (size == 0) // symbolic-sized array
+          return e;
       unsigned bytesPerElement = width / 8;
       unsigned elementsInArray = size / bytesPerElement;
 

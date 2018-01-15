@@ -360,7 +360,7 @@ public:
     // Check for a concrete read of a constant array.
     if (array.isConstantArray() && 
         index.isFixed() && 
-        index.min() < array.size)
+        index.min() < array.constantValues.size())
       return ValueRange(array.constantValues[index.min()]->getZExtValue(8));
 
     return ValueRange(0, 255);

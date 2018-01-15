@@ -31,7 +31,7 @@ ConstraintSet Assignment::createConstraintsFromAssignment() const {
     const auto &array = binding.first;
     const auto &values = binding.second;
 
-    for (unsigned arrayIndex = 0; arrayIndex < array->size; ++arrayIndex) {
+    for (unsigned arrayIndex = 0; arrayIndex < values.size(); ++arrayIndex) {
       unsigned char value = values[arrayIndex];
       result.push_back(EqExpr::create(
           ReadExpr::create(UpdateList(array, 0),

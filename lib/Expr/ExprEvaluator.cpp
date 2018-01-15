@@ -30,7 +30,7 @@ ExprVisitor::Action ExprEvaluator::evalRead(const UpdateList &ul,
     }
   }
   
-  if (ul.root->isConstantArray() && index < ul.root->size)
+  if (ul.root->isConstantArray() && index < ul.root->constantValues.size())
     return Action::changeTo(ul.root->constantValues[index]);
 
   return Action::changeTo(getInitialValue(*ul.root, index));

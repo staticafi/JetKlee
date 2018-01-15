@@ -187,10 +187,10 @@ bool QueryLoggingSolver::computeInitialValues(
         std::vector<unsigned char> &data = *values_it;
         logBuffer << queryCommentSign << "     " << array->name << " = [";
 
-        for (unsigned j = 0; j < array->size; j++) {
+        for (unsigned j = 0; j < data.size(); j++) {
           logBuffer << (int)data[j];
 
-          if (j + 1 < array->size) {
+          if (j + 1 < data.size()) {
             logBuffer << ",";
           }
         }
