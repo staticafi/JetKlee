@@ -6,7 +6,7 @@ if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
 
   sudo apt-get install -y clang-${LLVM_VERSION}
   # this is horrible
-  if [ "${LLVM_VERSION}" != "3.8" -a "${LLVM_VERSION}" != "3.9" -a "${LLVM_VERSION}" != "4.0" ]; then
+  if [ "${LLVM_VERSION}" != "3.8" -a "${LLVM_VERSION}" != "3.9" -a "${LLVM_VERSION}" != "4.0" -a "${LLVM_VERSION}" != "5.0" ]; then
       sudo apt-get install -y llvm-${LLVM_VERSION}-tools
   fi
   sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-${LLVM_VERSION} 20
