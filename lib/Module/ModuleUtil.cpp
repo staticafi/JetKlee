@@ -14,6 +14,9 @@
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "../Core/SpecialFunctionHandler.h"
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+#include "llvm/BinaryFormat/Magic.h"
+#endif
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -477,7 +480,9 @@ Module *klee::linkWithLibrary(Module *module,
   MemoryBuffer *Buffer = bufferErr->get();
 #endif
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  file_magic magic = identify_magic(Buffer.getBuffer());
+#elif LLVM_VERSION_CODE >= LLVM_VERSION(3, 6)
   sys::fs::file_magic magic = sys::fs::identify_magic(Buffer.getBuffer());
 #else
   sys::fs::file_magic magic = sys::fs::identify_magic(Buffer->getBuffer());
@@ -486,7 +491,11 @@ Module *klee::linkWithLibrary(Module *module,
   LLVMContext &Context = module->getContext();
   std::string ErrorMessage;
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  if (magic == file_magic::bitcode) {
+#else
   if (magic == sys::fs::file_magic::bitcode) {
+#endif
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 8)
     Module *Result = 0;
 #endif
@@ -538,7 +547,11 @@ Module *klee::linkWithLibrary(Module *module,
     delete Result;
 #endif
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  } else if (magic == file_magic::archive) {
+#else
   } else if (magic == sys::fs::file_magic::archive) {
+#endif
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
     Expected<std::unique_ptr<object::Binary> > arch =
         object::createBinary(Buffer, &Context);
