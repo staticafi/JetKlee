@@ -512,6 +512,10 @@ Array::Array(const std::string &_name, uint64_t _size,
 Array::~Array() {
 }
 
+ref<Expr> Array::getSize() const {
+  return ConstantExpr::create(size, Expr::Int64);
+}
+
 unsigned Array::computeHash() {
   unsigned res = 0;
   for (unsigned i = 0, e = name.size(); i != e; ++i)

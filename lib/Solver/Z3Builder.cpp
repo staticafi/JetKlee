@@ -403,7 +403,7 @@ Z3ASTHandle Z3Builder::getInitialArray(const Array *root) {
 
     if (root->isConstantArray() && constant_array_assertions.count(root) == 0) {
       std::vector<Z3ASTHandle> array_assertions;
-      for (unsigned i = 0, e = root->size; i != e; ++i) {
+      for (unsigned i = 0, e = root->constantValues.size(); i != e; ++i) {
         // construct(= (select i root) root->value[i]) to be asserted in
         // Z3Solver.cpp
         int width_out;

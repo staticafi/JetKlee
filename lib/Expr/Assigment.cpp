@@ -30,7 +30,7 @@ void Assignment::createConstraintsFromAssignment(
        it != ie; ++it) {
     const Array *array = it->first;
     const std::vector<unsigned char> &values = it->second;
-    for (unsigned arrayIndex = 0; arrayIndex < array->size; ++arrayIndex) {
+    for (unsigned arrayIndex = 0; arrayIndex < values.size(); ++arrayIndex) {
       unsigned char value = values[arrayIndex];
       out.push_back(EqExpr::create(
           ReadExpr::create(UpdateList(array, 0),
