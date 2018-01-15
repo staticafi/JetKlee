@@ -658,7 +658,11 @@ static int initEnv(Module *mainModule) {
   Instruction *firstInst = &*(mainFn->begin()->begin());
 
   Value *oldArgc = &*(mainFn->arg_begin());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  Value *oldArgv = &*(mainFn->arg_begin() + 1);
+#else
   Value *oldArgv = &*(++mainFn->arg_begin());
+#endif
 
   AllocaInst* argcPtr =
     new AllocaInst(oldArgc->getType(), "argcPtr", firstInst);
@@ -1117,7 +1121,11 @@ static llvm::Module *linkWithUclibc(llvm::Module *mainModule, StringRef libDir) 
   args.push_back(llvm::ConstantExpr::getBitCast(userMainFn,
                                                 ft->getParamType(0)));
   args.push_back(&*(stub->arg_begin())); // argc
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  args.push_back(&*(stub->arg_begin() + 1)); // argv
+#else
   args.push_back(&*(++stub->arg_begin())); // argv
+#endif
   args.push_back(Constant::getNullValue(ft->getParamType(3))); // app_init
   args.push_back(Constant::getNullValue(ft->getParamType(4))); // app_fini
   args.push_back(Constant::getNullValue(ft->getParamType(5))); // rtld_fini
