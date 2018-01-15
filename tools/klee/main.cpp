@@ -678,8 +678,8 @@ static int initEnv(Module *mainModule) {
     cast<Function>(mainModule->getOrInsertFunction("klee_init_env",
                                                    Type::getVoidTy(ctx),
                                                    argcPtr->getType(),
-                                                   argvPtr->getType(),
-                                                   NULL));
+                                                   argvPtr->getType()
+                                                   KLEE_LLVM_GOIF_TERMINATOR));
   assert(initEnvFn);
   std::vector<Value*> args;
   args.push_back(argcPtr);
@@ -1038,20 +1038,20 @@ static llvm::Module *linkWithUclibc(llvm::Module *mainModule, StringRef libDir) 
     mainModule->getOrInsertFunction("realpath",
                                     PointerType::getUnqual(i8Ty),
                                     PointerType::getUnqual(i8Ty),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("getutent",
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("__fgetc_unlocked",
                                     Type::getInt32Ty(ctx),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("__fputc_unlocked",
                                     Type::getInt32Ty(ctx),
                                     Type::getInt32Ty(ctx),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
   }
 
   f = mainModule->getFunction("__ctype_get_mb_cur_max");

@@ -208,7 +208,7 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
         // a call of the abort() function.
         Function *F = cast<Function>(
           M.getOrInsertFunction(
-            "abort", Type::getVoidTy(ctx), NULL));
+            "abort", Type::getVoidTy(ctx) KLEE_LLVM_GOIF_TERMINATOR));
         F->setDoesNotReturn();
         F->setDoesNotThrow();
 
