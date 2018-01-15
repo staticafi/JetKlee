@@ -664,10 +664,18 @@ static int initEnv(Module *mainModule) {
   Value *oldArgv = &*(++mainFn->arg_begin());
 #endif
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  const DataLayout &DL = mainFn->getParent()->getDataLayout();
+  AllocaInst* argcPtr =
+    new AllocaInst(oldArgc->getType(), DL.getAllocaAddrSpace(), "argcPtr", firstInst);
+  AllocaInst* argvPtr =
+    new AllocaInst(oldArgv->getType(), DL.getAllocaAddrSpace(), "argvPtr", firstInst);
+#else
   AllocaInst* argcPtr =
     new AllocaInst(oldArgc->getType(), "argcPtr", firstInst);
   AllocaInst* argvPtr =
     new AllocaInst(oldArgv->getType(), "argvPtr", firstInst);
+#endif
 
   /* Insert void klee_init_env(int* argc, char*** argv) */
   std::vector<const Type*> params;
