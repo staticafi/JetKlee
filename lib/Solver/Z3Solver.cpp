@@ -330,14 +330,13 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(::Z3_solver theSo
     assert(theModel && "Failed to retrieve model");
     Z3_model_inc_ref(builder->ctx, theModel);
     values->reserve(objects->size());
-    for (std::vector<const Array *>::const_iterator it = objects->begin(),
-                                                    ie = objects->end();
-         it != ie; ++it) {
-      const Array *array = *it;
+    for (unsigned i = 0; i < objects->size(); i++) {
+      const Array *array = objects->at(i);
+      const uint64_t size = sizes->at(i);
       std::vector<unsigned char> data;
 
-      data.reserve(array->size);
-      for (unsigned offset = 0; offset < array->size; offset++) {
+      data.reserve(size);
+      for (unsigned offset = 0; offset < size; offset++) {
         // We can't use Z3ASTHandle here so have to do ref counting manually
         ::Z3_ast arrayElementExpr;
         Z3ASTHandle initial_read = builder->getInitialRead(array, offset);
