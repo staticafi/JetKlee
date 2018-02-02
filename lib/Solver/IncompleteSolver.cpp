@@ -125,13 +125,15 @@ bool
 StagedSolverImpl::computeInitialValues(const Query& query,
                                        const std::vector<const Array*> 
                                          &objects,
+                                       const std::vector<uint64_t>
+                                         &sizes,
                                        std::vector< std::vector<unsigned char> >
                                          &values,
                                        bool &hasSolution) {
-  if (primary->computeInitialValues(query, objects, values, hasSolution))
+  if (primary->computeInitialValues(query, objects, sizes, values, hasSolution))
     return true;
   
-  return secondary->impl->computeInitialValues(query, objects, values,
+  return secondary->impl->computeInitialValues(query, objects, sizes, values,
                                                hasSolution);
 }
 

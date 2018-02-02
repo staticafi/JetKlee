@@ -27,6 +27,7 @@ public:
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
                             const std::vector<const Array *> &objects,
+                            const std::vector<uint64_t> &sizes,
                             std::vector<std::vector<unsigned char> > &values,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -82,10 +83,11 @@ bool ValidatingSolver::computeValue(const Query &query, ref<Expr> &result) {
 
 bool ValidatingSolver::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
+    const std::vector<uint64_t> &sizes,
     std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
   bool answer;
 
-  if (!solver->impl->computeInitialValues(query, objects, values, hasSolution))
+  if (!solver->impl->computeInitialValues(query, objects, sizes, values, hasSolution))
     return false;
 
   if (hasSolution) {

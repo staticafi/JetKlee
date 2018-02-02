@@ -404,6 +404,7 @@ public:
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query& query,
                             const std::vector<const Array*> &objects,
+                            const std::vector<uint64_t> &sizes,
                             std::vector< std::vector<unsigned char> > &values,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -474,6 +475,7 @@ bool assertCreatedPointEvaluatesToTrue(const Query &query,
 
 bool IndependentSolver::computeInitialValues(const Query& query,
                                              const std::vector<const Array*> &objects,
+                                             const std::vector<uint64_t> &sizes,
                                              std::vector< std::vector<unsigned char> > &values,
                                              bool &hasSolution){
   // We assume the query has a solution except proven differently

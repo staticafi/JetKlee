@@ -77,6 +77,8 @@ public:
   virtual bool computeInitialValues(const Query&,
                                     const std::vector<const Array*> 
                                       &objects,
+                                    const std::vector<uint64_t>
+                                      &sizes,
                                     std::vector< std::vector<unsigned char> > 
                                       &values,
                                     bool &hasSolution) = 0;
@@ -99,6 +101,7 @@ public:
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query&,
                             const std::vector<const Array*> &objects,
+                            const std::vector<uint64_t> &sizes,
                             std::vector< std::vector<unsigned char> > &values,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();

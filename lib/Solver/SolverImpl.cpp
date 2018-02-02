@@ -50,3 +50,15 @@ const char *SolverImpl::getOperationStatusString(SolverRunStatus statusCode) {
     return "UNRECOGNIZED OPERATION STATUS";
   }
 }
+
+bool SolverImpl::computeInitialValues(const Query& query,
+    const std::vector<const Array*>& objects,
+    std::vector<std::vector<unsigned char> >& values,
+    bool& hasSolution) {
+  std::vector<uint64_t> sizes;
+  for (const Array* array: objects) {
+    sizes.push_back(array->size);
+  }
+  return computeInitialValues(query, objects, sizes, values, hasSolution);
+}
+
