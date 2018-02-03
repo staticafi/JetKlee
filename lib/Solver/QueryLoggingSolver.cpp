@@ -210,7 +210,7 @@ bool QueryLoggingSolver::computeInitialValues(
         for (unsigned j = 0; j < sizes[i]; j++) {
           logBuffer << (int)data[j];
 
-          if (j + 1 < array->size) {
+          if (j + 1 < sizes[i]) {
             logBuffer << ",";
           }
         }
