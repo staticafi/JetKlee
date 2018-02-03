@@ -126,7 +126,7 @@ void SeedInfo::patchSeed(const ExecutionState &state,
   for (Assignment::bindings_ty::iterator it = assignment.bindings.begin(), 
          ie = assignment.bindings.end(); it != ie; ++it) {
     const Array *array = it->first;
-    for (unsigned i=0; i<array->size; ++i) {
+    for (unsigned i=0; i<it->second.size(); ++i) {
       ref<Expr> read = ReadExpr::create(UpdateList(array, 0),
                                         ConstantExpr::alloc(i, Expr::Int32));
       ref<Expr> isSeed = EqExpr::create(read, 
