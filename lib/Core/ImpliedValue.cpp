@@ -222,8 +222,7 @@ void ImpliedValue::checkForImpliedValues(Solver *S, ref<Expr> e,
          ie = reads.end(); i != ie; ++i) {
     ReadExpr *re = i->get();
     assumption.push_back(UltExpr::create(re->index, 
-                                         ConstantExpr::alloc(re->updates.root->size, 
-                                                             Context::get().getPointerWidth())));
+                                         re->updates.root->getSize()));
   }
 
   ConstraintManager assume(assumption);
