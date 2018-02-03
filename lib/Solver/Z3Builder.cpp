@@ -404,7 +404,7 @@ Z3ASTHandle Z3Builder::getInitialArray(const Array *root) {
       // FIXME: Flush the concrete values into Z3. Ideally we would do this
       // using assertions, which might be faster, but we need to fix the caching
       // to work correctly in that case.
-      for (unsigned i = 0, e = root->size; i != e; ++i) {
+      for (unsigned i = 0, e = root->constantValues.size(); i != e; ++i) {
         Z3ASTHandle prev = array_expr;
         array_expr = writeExpr(
             prev, construct(ConstantExpr::alloc(i, root->getDomain()), 0),
