@@ -217,7 +217,10 @@ private:
 
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
-  
+
+  void executeArithmeticInstruction(ExecutionState &state, KInstruction *ki,
+      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&));
+
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
   void printFileLine(ExecutionState &state, KInstruction *ki,
@@ -351,9 +354,18 @@ private:
   void bindLocal(KInstruction *target, 
                  ExecutionState &state, 
                  ref<Expr> value);
+  void bindLocal(KInstruction *target,
+                 ExecutionState &state,
+                 ref<Expr> pointerSegment,
+                 ref<Expr> value);
   void bindArgument(KFunction *kf, 
                     unsigned index,
                     ExecutionState &state,
+                    ref<Expr> value);
+  void bindArgument(KFunction *kf,
+                    unsigned index,
+                    ExecutionState &state,
+                    ref<Expr> pointerSegment,
                     ref<Expr> value);
 
   /// Evaluates an LLVM constant expression.  The optional argument ki
