@@ -1806,8 +1806,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     break;
   }
   case Instruction::PHI: {
-    ref<Expr> result = eval(ki, state.incomingBBIndex, state).value;
-    bindLocal(ki, state, result);
+    const Cell &cell = eval(ki, state.incomingBBIndex, state);
+    bindLocal(ki, state, cell.pointerSegment, cell.value);
     break;
   }
 
