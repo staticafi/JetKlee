@@ -2015,9 +2015,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     switch(ii->getPredicate()) {
     case ICmpInst::ICMP_EQ: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = EqExpr::create(left, right);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      ref<Expr> result = AndExpr::create(
+          EqExpr::create(left.pointerSegment, right.pointerSegment),
+          EqExpr::create(left.value, right.value)
+      );
       bindLocal(ki, state, result);
       break;
     }
