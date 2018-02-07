@@ -1526,7 +1526,8 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   //);
   // TODO check the constraint
   ref<Expr> value = exprFn(left.value, right.value);
-  ref<Expr> segment = SelectExpr::create(left.isPointer(), left.value, right.value);
+  ref<Expr> segment = SelectExpr::create(left.isPointer(),
+      left.pointerSegment, right.pointerSegment);
   bindLocal(ki, state, segment, value);
 }
 
