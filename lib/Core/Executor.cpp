@@ -2544,10 +2544,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Select: {
     // NOTE: It is not required that operands 1 and 2 be of scalar type.
     ref<Expr> cond = eval(ki, 0, state).value;
-    ref<Expr> tExpr = eval(ki, 1, state).value;
-    ref<Expr> fExpr = eval(ki, 2, state).value;
-    ref<Expr> result = SelectExpr::create(cond, tExpr, fExpr);
-    bindLocal(ki, state, result);
+    const Cell &tCell = eval(ki, 1, state);
+    const Cell &fCell = eval(ki, 2, state);
+    ref<Expr> result = SelectExpr::create(cond, tCell.value, fCell.value);
+    ref<Expr> resultSegment = SelectExpr::create(cond, tCell.pointerSegment,
+        fCell.pointerSegment);
+    bindLocal(ki, state, resultSegment, result);
     break;
   }
 
