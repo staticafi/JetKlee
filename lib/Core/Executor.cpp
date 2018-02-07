@@ -2156,45 +2156,57 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     // Conversion
   case Instruction::Trunc: {
     CastInst *ci = cast<CastInst>(i);
-    ref<Expr> result = ExtractExpr::create(eval(ki, 0, state).value,
+    const Cell &cell = eval(ki, 0, state);
+    ref<Expr> result = ExtractExpr::create(cell.value,
                                            0,
                                            getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, result);
+    ref<Expr> resultSegment = ExtractExpr::create(cell.pointerSegment,
+                                                  0,
+                                                  getWidthForLLVMType(ci->getType()));
+    bindLocal(ki, state, resultSegment, result);
     break;
   }
   case Instruction::ZExt: {
     CastInst *ci = cast<CastInst>(i);
-    ref<Expr> result = ZExtExpr::create(eval(ki, 0, state).value,
+    const Cell &cell = eval(ki, 0, state);
+    ref<Expr> result = ZExtExpr::create(cell.value,
                                         getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, result);
+    ref<Expr> resultSegment = ZExtExpr::create(cell.pointerSegment,
+                                               getWidthForLLVMType(ci->getType()));
+    bindLocal(ki, state, resultSegment, result);
     break;
   }
   case Instruction::SExt: {
     CastInst *ci = cast<CastInst>(i);
-    ref<Expr> result = SExtExpr::create(eval(ki, 0, state).value,
+    const Cell &cell = eval(ki, 0, state);
+    ref<Expr> result = SExtExpr::create(cell.value,
                                         getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, result);
+    ref<Expr> resultSegment = SExtExpr::create(cell.pointerSegment,
+                                               getWidthForLLVMType(ci->getType()));
+    bindLocal(ki, state, resultSegment, result);
     break;
   }
 
   case Instruction::IntToPtr: {
     CastInst *ci = cast<CastInst>(i);
     Expr::Width pType = getWidthForLLVMType(ci->getType());
-    ref<Expr> arg = eval(ki, 0, state).value;
-    bindLocal(ki, state, ZExtExpr::create(arg, pType));
+    const Cell &cell = eval(ki, 0, state);
+    bindLocal(ki, state, ZExtExpr::create(cell.pointerSegment, pType),
+        ZExtExpr::create(cell.value, pType));
     break;
   }
   case Instruction::PtrToInt: {
     CastInst *ci = cast<CastInst>(i);
     Expr::Width iType = getWidthForLLVMType(ci->getType());
-    ref<Expr> arg = eval(ki, 0, state).value;
-    bindLocal(ki, state, ZExtExpr::create(arg, iType));
+    const Cell &cell = eval(ki, 0, state);
+    bindLocal(ki, state, ZExtExpr::create(cell.pointerSegment, iType),
+        ZExtExpr::create(cell.value, iType));
     break;
   }
 
   case Instruction::BitCast: {
-    ref<Expr> result = eval(ki, 0, state).value;
-    bindLocal(ki, state, result);
+    const Cell &cell = eval(ki, 0, state);
+    bindLocal(ki, state, cell.pointerSegment, cell.value);
     break;
   }
 
