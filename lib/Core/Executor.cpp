@@ -1027,14 +1027,29 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
   }
 }
 
-void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
-                         ref<Expr> value) {
-  getDestCell(state, target).value = value;
+void Executor::bindLocal(KInstruction *target, ExecutionState &state,
+                         ref<Expr> pointerSegment, ref<Expr> value) {
+  Cell &cell = getDestCell(state, target);
+  cell.pointerSegment = pointerSegment;
+  cell.value = value;
 }
 
-void Executor::bindArgument(KFunction *kf, unsigned index, 
+void Executor::bindLocal(KInstruction *target, ExecutionState &state,
+                         ref<Expr> value) {
+  bindLocal(target, state, ConstantExpr::create(0, value->getWidth()), value);
+}
+
+void Executor::bindArgument(KFunction *kf, unsigned index,
+                            ExecutionState &state, ref<Expr> pointerSegment,
+                            ref<Expr> value) {
+  Cell &cell = getArgumentCell(state, kf, index);
+  cell.pointerSegment = pointerSegment;
+  cell.value = value;
+}
+
+void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, ref<Expr> value) {
-  getArgumentCell(state, kf, index).value = value;
+  bindArgument(kf, index, state, ConstantExpr::create(0, value->getWidth()), value);
 }
 
 ref<Expr> Executor::toUnique(const ExecutionState &state, 
@@ -2536,6 +2551,7 @@ void Executor::bindModuleConstants() {
   for (unsigned i=0; i<kmodule->constants.size(); ++i) {
     Cell &c = kmodule->constantTable[i];
     c.value = evalConstant(kmodule->constants[i]);
+    c.pointerSegment = ConstantExpr::create(0, c.value->getWidth());
   }
 }
 
