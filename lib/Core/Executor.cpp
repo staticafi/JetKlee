@@ -1541,6 +1541,16 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   bindLocal(ki, state, segment, value);
 }
 
+void Executor::executeRelationalInstruction(ExecutionState &state, KInstruction *ki,
+      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&)) {
+  const Cell &left = eval(ki, 0, state);
+  const Cell &right = eval(ki, 1, state);
+  // TODO must be true
+  ref<Expr> constraint = EqExpr::create(left.pointerSegment, right.pointerSegment);
+  ref<Expr> result = exprFn(left.value, right.value);
+  bindLocal(ki, state,result);
+}
+
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
   switch (i->getOpcode()) {
@@ -2064,66 +2074,42 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     case ICmpInst::ICMP_UGT: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = UgtExpr::create(left, right);
-      bindLocal(ki, state,result);
+      executeRelationalInstruction(state, ki, UgtExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_UGE: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = UgeExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, UgeExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_ULT: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = UltExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, UltExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_ULE: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = UleExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, UleExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_SGT: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = SgtExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, SgtExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_SGE: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = SgeExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, SgeExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_SLT: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = SltExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, SltExpr::create);
       break;
     }
 
     case ICmpInst::ICMP_SLE: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = SleExpr::create(left, right);
-      bindLocal(ki, state, result);
+      executeRelationalInstruction(state, ki, SleExpr::create);
       break;
     }
 

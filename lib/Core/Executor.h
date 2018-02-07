@@ -243,6 +243,9 @@ private:
   void executeArithmeticInstruction(ExecutionState &state, KInstruction *ki,
       ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&));
 
+  void executeRelationalInstruction(ExecutionState &state, KInstruction *ki,
+      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&));
+
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
   void printFileLine(ExecutionState &state, KInstruction *ki,
