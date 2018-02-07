@@ -1488,9 +1488,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     Instruction *caller = kcaller ? kcaller->inst : 0;
     bool isVoidReturn = (ri->getNumOperands() == 0);
     ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
+    ref<Expr> resultSegment = ConstantExpr::alloc(0, Expr::Bool);
     
     if (!isVoidReturn) {
-      result = eval(ki, 0, state).value;
+      const Cell &cell = eval(ki, 0, state);
+      result = cell.value;
+      resultSegment = cell.pointerSegment;
     }
     
     if (state.stack.size() <= 1) {
@@ -1524,12 +1527,14 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       bool isSExt = cs.paramHasAttr(0, llvm::Attribute::SExt);
             if (isSExt) {
               result = SExtExpr::create(result, to);
+              resultSegment = SExtExpr::create(resultSegment, to);
             } else {
               result = ZExtExpr::create(result, to);
+              resultSegment = ZExtExpr::create(resultSegment, to);
             }
           }
 
-          bindLocal(kcaller, state, result);
+          bindLocal(kcaller, state, resultSegment, result);
         }
       } else {
         // We check that the return value has no users instead of
