@@ -10,6 +10,8 @@
 #ifndef KLEE_SPECIALFUNCTIONHANDLER_H
 #define KLEE_SPECIALFUNCTIONHANDLER_H
 
+#include "klee/Internal/Module/Cell.h"
+
 #include <iterator>
 #include <map>
 #include <vector>
@@ -30,7 +32,7 @@ namespace klee {
   public:
     typedef void (SpecialFunctionHandler::*Handler)(ExecutionState &state,
                                                     KInstruction *target, 
-                                                    std::vector<ref<Expr> > 
+                                                    const std::vector<Cell>
                                                       &arguments);
     typedef std::map<const llvm::Function*, 
                      std::pair<Handler,bool> > handlers_ty;
@@ -89,17 +91,17 @@ namespace klee {
     bool handle(ExecutionState &state, 
                 llvm::Function *f,
                 KInstruction *target,
-                std::vector< ref<Expr> > &arguments);
+                const std::vector<Cell> &arguments);
 
     /* Convenience routines */
 
-    std::string readStringAtAddress(ExecutionState &state, ref<Expr> address);
+    std::string readStringAtAddress(ExecutionState &state, const Cell &address);
     
     /* Handlers */
 
 #define HANDLER(name) void name(ExecutionState &state, \
                                 KInstruction *target, \
-                                std::vector< ref<Expr> > &arguments)
+                                const std::vector<Cell> &arguments)
     HANDLER(handleAbort);
     HANDLER(handleAssert);
     HANDLER(handleAssertFail);
