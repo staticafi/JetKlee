@@ -2057,6 +2057,22 @@ Function* Executor::getTargetFunction(Value *calledVal, ExecutionState &state) {
   }
 }
 
+void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction *ki,
+      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&)) {
+  const Cell &left = eval(ki, 0, state);
+  const Cell &right = eval(ki, 1, state);
+  // TODO ptrdiff
+  //ref<Expr> constraint = XorExpr::create(
+  //    left.isPointer(),
+  //    right.isPointer()
+  //);
+  // TODO check the constraint
+  ref<Expr> value = exprFn(left.value, right.value);
+  //ref<Expr> segment = SelectExpr::create(left.isPointer(), left.value, right.value);
+  //bindLocal(ki, state, segment, value);
+  bindLocal(ki, state, value);
+}
+
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
   switch (i->getOpcode()) {
@@ -2524,103 +2540,67 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     // Arithmetic / logical
 
   case Instruction::Add: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    bindLocal(ki, state, AddExpr::create(left, right));
+    executeArithmeticInstruction(state, ki, AddExpr::create);
     break;
   }
 
   case Instruction::Sub: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    bindLocal(ki, state, SubExpr::create(left, right));
+    executeArithmeticInstruction(state, ki, SubExpr::create);
     break;
   }
  
   case Instruction::Mul: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    bindLocal(ki, state, MulExpr::create(left, right));
+    executeArithmeticInstruction(state, ki, MulExpr::create);
     break;
   }
 
   case Instruction::UDiv: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = UDivExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, UDivExpr::create);
     break;
   }
 
   case Instruction::SDiv: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = SDivExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, SDivExpr::create);
     break;
   }
 
   case Instruction::URem: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = URemExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, URemExpr::create);
     break;
   }
 
   case Instruction::SRem: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = SRemExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, SRemExpr::create);
     break;
   }
 
   case Instruction::And: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = AndExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, AndExpr::create);
     break;
   }
 
   case Instruction::Or: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = OrExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, OrExpr::create);
     break;
   }
 
   case Instruction::Xor: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = XorExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, XorExpr::create);
     break;
   }
 
   case Instruction::Shl: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = ShlExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, ShlExpr::create);
     break;
   }
 
   case Instruction::LShr: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = LShrExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, LShrExpr::create);
     break;
   }
 
   case Instruction::AShr: {
-    ref<Expr> left = eval(ki, 0, state).value;
-    ref<Expr> right = eval(ki, 1, state).value;
-    ref<Expr> result = AShrExpr::create(left, right);
-    bindLocal(ki, state, result);
+    executeArithmeticInstruction(state, ki, AShrExpr::create);
     break;
   }
 
