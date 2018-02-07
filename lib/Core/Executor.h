@@ -250,7 +250,7 @@ private:
   void callExternalFunction(ExecutionState &state,
                             KInstruction *target,
                             llvm::Function *function,
-                            std::vector< ref<Expr> > &arguments);
+                            const std::vector<Cell> &arguments);
 
   ObjectState *bindObjectInState(ExecutionState &state, const MemoryObject *mo,
                                  bool isLocal, const Array *array = 0);
@@ -304,7 +304,7 @@ private:
   void executeCall(ExecutionState &state, 
                    KInstruction *ki,
                    llvm::Function *f,
-                   std::vector< ref<Expr> > &arguments);
+                   const std::vector<Cell> &arguments);
                    
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
@@ -386,7 +386,7 @@ private:
   /// Return a unique constant value for the given expression in the
   /// given state, if it has one (i.e. it provably only has a single
   /// value). Otherwise return the original expression.
-  ref<Expr> toUnique(const ExecutionState &state, ref<Expr> &e);
+  ref<Expr> toUnique(const ExecutionState &state, const ref<Expr> &e);
 
   /// Return a constant value for the given expression, forcing it to
   /// be constant in the given state by adding a constraint if
