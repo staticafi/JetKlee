@@ -1890,9 +1890,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     case ICmpInst::ICMP_NE: {
-      ref<Expr> left = eval(ki, 0, state).value;
-      ref<Expr> right = eval(ki, 1, state).value;
-      ref<Expr> result = NeExpr::create(left, right);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      ref<Expr> result = OrExpr::create(
+          NeExpr::create(left.pointerSegment, right.pointerSegment),
+          NeExpr::create(left.value, right.value)
+      );
       bindLocal(ki, state, result);
       break;
     }
