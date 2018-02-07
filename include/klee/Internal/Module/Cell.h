@@ -17,6 +17,11 @@ namespace klee {
 
   struct Cell {
     ref<Expr> value;
+    ref<Expr> pointerSegment;
+
+    ref<Expr> isPointer() const {
+      return Expr::createIsZero(pointerSegment);
+    }
   };
 }
 
