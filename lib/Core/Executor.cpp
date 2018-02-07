@@ -1053,7 +1053,7 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
 }
 
 ref<Expr> Executor::toUnique(const ExecutionState &state, 
-                             ref<Expr> &e) {
+                             const ref<Expr> &e) {
   ref<Expr> result = e;
 
   if (!isa<ConstantExpr>(e)) {
@@ -1198,7 +1198,7 @@ void Executor::stepInstruction(ExecutionState &state) {
 void Executor::executeCall(ExecutionState &state, 
                            KInstruction *ki,
                            Function *f,
-                           std::vector< ref<Expr> > &arguments) {
+                           const std::vector<Cell> &arguments) {
   Instruction *i = ki->inst;
   if (f && f->isDeclaration()) {
     switch(f->getIntrinsicID()) {
@@ -1220,7 +1220,8 @@ void Executor::executeCall(ExecutionState &state,
       // size. This happens to work for x86-32 and x86-64, however.
       Expr::Width WordSize = Context::get().getPointerWidth();
       if (WordSize == Expr::Int32) {
-        executeMemoryOperation(state, true, arguments[0], 
+        // TODO segment
+        executeMemoryOperation(state, true, arguments[0].value,
                                sf.varargs->getBaseExpr(), 0);
       } else {
         assert(WordSize == Expr::Int64 && "Unknown word size!");
@@ -1228,18 +1229,19 @@ void Executor::executeCall(ExecutionState &state,
         // x86-64 has quite complicated calling convention. However,
         // instead of implementing it, we can do a simple hack: just
         // make a function believe that all varargs are on stack.
-        executeMemoryOperation(state, true, arguments[0],
+        // TODO segment
+        executeMemoryOperation(state, true, arguments[0].value,
                                ConstantExpr::create(48, 32), 0); // gp_offset
         executeMemoryOperation(state, true,
-                               AddExpr::create(arguments[0], 
+                               AddExpr::create(arguments[0].value,
                                                ConstantExpr::create(4, 64)),
                                ConstantExpr::create(304, 32), 0); // fp_offset
         executeMemoryOperation(state, true,
-                               AddExpr::create(arguments[0], 
+                               AddExpr::create(arguments[0].value,
                                                ConstantExpr::create(8, 64)),
                                sf.varargs->getBaseExpr(), 0); // overflow_arg_area
         executeMemoryOperation(state, true,
-                               AddExpr::create(arguments[0], 
+                               AddExpr::create(arguments[0].value,
                                                ConstantExpr::create(16, 64)),
                                ConstantExpr::create(0, 64), 0); // reg_save_area
       }
@@ -1305,9 +1307,9 @@ void Executor::executeCall(ExecutionState &state,
         // FIXME: This is really specific to the architecture, not the pointer
         // size. This happens to work for x86-32 and x86-64, however.
         if (WordSize == Expr::Int32) {
-          size += Expr::getMinBytesForWidth(arguments[i]->getWidth());
+          size += Expr::getMinBytesForWidth(arguments[i].value->getWidth());
         } else {
-          Expr::Width argWidth = arguments[i]->getWidth();
+          Expr::Width argWidth = arguments[i].value->getWidth();
           // AMD64-ABI 3.5.7p5: Step 7. Align l->overflow_arg_area upwards to a
           // 16 byte boundary if alignment needed by type exceeds 8 byte
           // boundary.
@@ -1343,16 +1345,18 @@ void Executor::executeCall(ExecutionState &state,
           // FIXME: This is really specific to the architecture, not the pointer
           // size. This happens to work for x86-32 and x86-64, however.
           if (WordSize == Expr::Int32) {
-            os->write(offset, arguments[i]);
-            offset += Expr::getMinBytesForWidth(arguments[i]->getWidth());
+            // TODO segment
+            os->write(offset, arguments[i].value);
+            offset += Expr::getMinBytesForWidth(arguments[i].value->getWidth());
           } else {
             assert(WordSize == Expr::Int64 && "Unknown word size!");
 
-            Expr::Width argWidth = arguments[i]->getWidth();
+            Expr::Width argWidth = arguments[i].value->getWidth();
             if (argWidth > Expr::Int64) {
               offset = llvm::RoundUpToAlignment(offset, 16);
             }
-            os->write(offset, arguments[i]);
+            // TODO segment
+            os->write(offset, arguments[i].value);
             offset += llvm::RoundUpToAlignment(argWidth, WordSize) / 8;
           }
         }
@@ -1361,7 +1365,7 @@ void Executor::executeCall(ExecutionState &state,
 
     unsigned numFormals = f->arg_size();
     for (unsigned i=0; i<numFormals; ++i) 
-      bindArgument(kf, i, state, arguments[i]);
+      bindArgument(kf, i, state, arguments[i].pointerSegment, arguments[i].value);
   }
 }
 
@@ -1713,11 +1717,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       break;
     }
     // evaluate arguments
-    std::vector< ref<Expr> > arguments;
+    std::vector<Cell> arguments;
     arguments.reserve(numArgs);
 
     for (unsigned j=0; j<numArgs; ++j)
-      arguments.push_back(eval(ki, j+1, state).value);
+      arguments.push_back(eval(ki, j+1, state));
 
     if (f) {
       const FunctionType *fType = 
@@ -1733,10 +1737,10 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
         // XXX this really needs thought and validation
         unsigned i=0;
-        for (std::vector< ref<Expr> >::iterator
+        for (std::vector<Cell>::iterator
                ai = arguments.begin(), ie = arguments.end();
              ai != ie; ++ai) {
-          Expr::Width to, from = (*ai)->getWidth();
+          Expr::Width to, from = ai->value->getWidth();
             
           if (i<fType->getNumParams()) {
             to = getWidthForLLVMType(fType->getParamType(i));
@@ -1745,9 +1749,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
               // XXX need to check other param attrs ?
               bool isSExt = cs.paramHasAttr(i+1, llvm::Attribute::SExt);
               if (isSExt) {
-                arguments[i] = SExtExpr::create(arguments[i], to);
+                arguments[i].value = SExtExpr::create(arguments[i].value, to);
+                arguments[i].pointerSegment = SExtExpr::create(arguments[i].pointerSegment, to);
               } else {
-                arguments[i] = ZExtExpr::create(arguments[i], to);
+                arguments[i].value = ZExtExpr::create(arguments[i].value, to);
+                arguments[i].pointerSegment = ZExtExpr::create(arguments[i].pointerSegment, to);
               }
             }
           }
@@ -1758,6 +1764,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
       executeCall(state, ki, f, arguments);
     } else {
+      // TODO segment
       ref<Expr> v = eval(ki, 0, state).value;
 
       ExecutionState *free = &state;
@@ -2916,7 +2923,7 @@ static std::set<std::string> okExternals(okExternalsList,
 void Executor::callExternalFunction(ExecutionState &state,
                                     KInstruction *target,
                                     Function *function,
-                                    std::vector< ref<Expr> > &arguments) {
+                                    const std::vector<Cell> &arguments) {
   // check if specialFunctionHandler wants it
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
@@ -2935,17 +2942,19 @@ void Executor::callExternalFunction(ExecutionState &state,
   uint64_t *args = (uint64_t*) alloca(2*sizeof(*args) * (arguments.size() + 1));
   memset(args, 0, 2 * sizeof(*args) * (arguments.size() + 1));
   unsigned wordIndex = 2;
-  for (std::vector<ref<Expr> >::iterator ai = arguments.begin(), 
+  for (std::vector<Cell>::const_iterator ai = arguments.begin(),
        ae = arguments.end(); ai!=ae; ++ai) {
     if (AllowExternalSymCalls) { // don't bother checking uniqueness
       ref<ConstantExpr> ce;
-      bool success = solver->getValue(state, *ai, ce);
+      // TODO segment
+      bool success = solver->getValue(state, ai->value, ce);
       assert(success && "FIXME: Unhandled solver failure");
       (void) success;
       ce->toMemory(&args[wordIndex]);
       wordIndex += (ce->getWidth()+63)/64;
     } else {
-      ref<Expr> arg = toUnique(state, *ai);
+      // TODO segment
+      ref<Expr> arg = toUnique(state, ai->value);
       if (ConstantExpr *ce = dyn_cast<ConstantExpr>(arg)) {
         // XXX kick toMemory functions from here
         ce->toMemory(&args[wordIndex]);
@@ -2967,7 +2976,8 @@ void Executor::callExternalFunction(ExecutionState &state,
     llvm::raw_string_ostream os(TmpStr);
     os << "calling external: " << function->getName().str() << "(";
     for (unsigned i=0; i<arguments.size(); i++) {
-      os << arguments[i];
+      // TODO segment
+      os << arguments[i].value;
       if (i != arguments.size()-1)
 	os << ", ";
     }
