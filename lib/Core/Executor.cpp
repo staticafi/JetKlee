@@ -1802,30 +1802,33 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       // size. This happens to work for x86-32 and x86-64, however.
       Expr::Width WordSize = Context::get().getPointerWidth();
       if (WordSize == Expr::Int32) {
-        // TODO segment
-        executeMemoryOperation(state, true, arguments[0].value,
-                               sf.varargs->getBaseExpr(), 0);
+        // TODO value segment
+        executeMemoryWrite(state, arguments[0].pointerSegment, arguments[0].value,
+                           sf.varargs->getBaseExpr());
       } else {
         assert(WordSize == Expr::Int64 && "Unknown word size!");
 
         // x86-64 has quite complicated calling convention. However,
         // instead of implementing it, we can do a simple hack: just
         // make a function believe that all varargs are on stack.
-        // TODO segment
-        executeMemoryOperation(state, true, arguments[0].value,
-            ConstantExpr::create(48, 32), 0); // gp_offset
-        executeMemoryOperation(
-            state, true,
-            AddExpr::create(arguments[0].value, ConstantExpr::create(4, 64)),
-            ConstantExpr::create(304, 32), 0); // fp_offset
-        executeMemoryOperation(
-            state, true,
-            AddExpr::create(arguments[0].value, ConstantExpr::create(8, 64)),
-            sf.varargs->getBaseExpr(), 0); // overflow_arg_area
-        executeMemoryOperation(
-            state, true,
-            AddExpr::create(arguments[0].value, ConstantExpr::create(16, 64)),
-            ConstantExpr::create(0, 64), 0); // reg_save_area
+        // TODO value segment
+        executeMemoryWrite(state, arguments[0].pointerSegment, arguments[0].value,
+                           ConstantExpr::create(48, 32)); // gp_offset
+        executeMemoryWrite(state,
+                           arguments[0].pointerSegment,
+                           AddExpr::create(arguments[0].value,
+                                           ConstantExpr::create(4, 64)),
+                           ConstantExpr::create(304, 32)); // fp_offset
+        executeMemoryWrite(state,
+                           arguments[0].pointerSegment,
+                           AddExpr::create(arguments[0].value,
+                                           ConstantExpr::create(8, 64)),
+                           sf.varargs->getBaseExpr()); // overflow_arg_area
+        executeMemoryWrite(state,
+                           arguments[0].pointerSegment,
+                           AddExpr::create(arguments[0].value,
+                                           ConstantExpr::create(16, 64)),
+                           ConstantExpr::create(0, 64)); // reg_save_area
       }
       break;
     }
@@ -2715,14 +2718,15 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   }
 
   case Instruction::Load: {
-    ref<Expr> base = eval(ki, 0, state).value;
-    executeMemoryOperation(state, false, base, 0, ki);
+    const Cell &baseCell = eval(ki, 0, state);
+    executeMemoryRead(state, baseCell.pointerSegment, baseCell.value, ki);
     break;
   }
   case Instruction::Store: {
-    ref<Expr> base = eval(ki, 1, state).value;
-    ref<Expr> value = eval(ki, 0, state).value;
-    executeMemoryOperation(state, true, base, value, 0);
+    const Cell &baseCell = eval(ki, 1, state);
+    const Cell &valueCell = eval(ki, 0, state);
+    executeMemoryWrite(state, baseCell.pointerSegment, baseCell.value,
+                       valueCell.pointerSegment, valueCell.value);
     break;
   }
 
@@ -4151,23 +4155,55 @@ void Executor::resolveExact(ExecutionState &state,
   }
 }
 
+void Executor::executeMemoryRead(ExecutionState &state,
+                                 ref<Expr> addressSegment,
+                                 ref<Expr> addressOffset,
+                                 KInstruction *target) {
+  executeMemoryOperation(state, false, addressSegment, addressOffset, 0, 0, target);
+}
+
+void Executor::executeMemoryWrite(ExecutionState &state,
+                                  ref<Expr> addressSegment,
+                                  ref<Expr> addressOffset,
+                                  ref<Expr> valueOffset) {
+  ref<Expr> valueSegment = ConstantExpr::create(0, valueOffset->getWidth());
+  executeMemoryWrite(state, addressSegment, addressOffset, valueSegment, valueOffset);
+}
+
+void Executor::executeMemoryWrite(ExecutionState &state,
+                                  ref<Expr> addressSegment,
+                                  ref<Expr> addressOffset,
+                                  ref<Expr> valueSegment,
+                                  ref<Expr> valueOffset) {
+  executeMemoryOperation(state, true, addressSegment, addressOffset,
+                         valueSegment, valueOffset, 0);
+}
 void Executor::executeMemoryOperation(ExecutionState &state,
                                       bool isWrite,
-                                      ref<Expr> address,
-                                      ref<Expr> value /* undef if read */,
+                                      ref<Expr> addressSegment,
+                                      ref<Expr> addressOffset,
+                                      ref<Expr> valueSegment, /* undef if read */
+                                      ref<Expr> valueOffset, /* undef if read */
                                       KInstruction *target /* undef if write */) {
-  Expr::Width type = (isWrite ? value->getWidth() : 
+  Expr::Width type = (isWrite ? valueOffset->getWidth() :
                      getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
   if (SimplifySymIndices) {
-    if (!isa<ConstantExpr>(address))
-      address = ConstraintManager::simplifyExpr(state.constraints, address);
-    if (isWrite && !isa<ConstantExpr>(value))
-      value = ConstraintManager::simplifyExpr(state.constraints, value);
+    if (!isa<ConstantExpr>(addressSegment))
+      addressSegment = ConstraintManager::simplifyExpr(state.constraints, addressSegment);
+    if (!isa<ConstantExpr>(addressOffset))
+      addressOffset = ConstraintManager::simplifyExpr(state.constraints, addressOffset);
+    if (isWrite) {
+      if (!isa<ConstantExpr>(valueSegment))
+        valueSegment = ConstraintManager::simplifyExpr(state.constraints, valueSegment);
+      if (!isa<ConstantExpr>(valueOffset))
+        valueOffset = ConstraintManager::simplifyExpr(state.constraints, valueOffset);
+    }
   }
 
-  address = optimizer.optimizeExpr(address, true);
+  ref<Expr> address = optimizer.optimizeExpr(addressOffset, true);
+  ref<Expr> value = valueOffset;
 
   // fast path: single in-bounds resolution
   ObjectPair op;
