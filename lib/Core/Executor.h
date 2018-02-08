@@ -318,13 +318,28 @@ private:
                    KInstruction *ki,
                    llvm::Function *f,
                    const std::vector<Cell> &arguments);
-                   
+
+  void executeMemoryRead(ExecutionState &state,
+                         ref<Expr> addressSegment,
+                         ref<Expr> addressOffset,
+                         KInstruction *target);
+  void executeMemoryWrite(ExecutionState &state,
+                          ref<Expr> addressSegment,
+                          ref<Expr> addressOffset,
+                          ref<Expr> valueOffset);
+  void executeMemoryWrite(ExecutionState &state,
+                          ref<Expr> addressSegment,
+                          ref<Expr> addressOffset,
+                          ref<Expr> valueSegment,
+                          ref<Expr> valueOffset);
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
   void executeMemoryOperation(ExecutionState &state,
                               bool isWrite,
-                              ref<Expr> address,
-                              ref<Expr> value /* undef if read */,
+                              ref<Expr> addressSegment,
+                              ref<Expr> addressOffset,
+                              ref<Expr> valueSegment, /* undef if read */
+                              ref<Expr> valueOffset, /* undef if read */
                               KInstruction *target /* undef if write */);
 
   void executeMakeSymbolic(ExecutionState &state, const MemoryObject *mo,
