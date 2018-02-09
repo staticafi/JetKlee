@@ -550,7 +550,6 @@ void SpecialFunctionHandler::handlePreferCex(ExecutionState &state,
   assert(arguments.size()==2 &&
          "invalid number of arguments to klee_prefex_cex");
 
-  // TODO segment
   ref<Expr> cond = arguments[1].value;
   if (cond->getWidth() != Expr::Bool)
     cond = NeExpr::create(cond, ConstantExpr::alloc(0, cond->getWidth()));
@@ -661,8 +660,8 @@ void SpecialFunctionHandler::handleGetObjSize(ExecutionState &state,
   assert(arguments.size()==1 &&
          "invalid number of arguments to klee_get_obj_size");
   Executor::ExactResolutionList rl;
-  // TODO segment
-  executor.resolveExact(state, arguments[0].value, rl, "klee_get_obj_size");
+  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
+                        rl, "klee_get_obj_size");
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
     executor.bindLocal(
@@ -753,7 +752,7 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
     } 
     if (zeroPointer.second) { // address != 0
       Executor::ExactResolutionList rl;
-      executor.resolveExact(*zeroPointer.second, address, rl, "realloc");
+      executor.resolveExact(*zeroPointer.second, segment, address, rl, "realloc");
       
       for (Executor::ExactResolutionList::iterator it = rl.begin(), 
              ie = rl.end(); it != ie; ++it) {
@@ -861,8 +860,8 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
   }
 
   Executor::ExactResolutionList rl;
-  // TODO segment
-  executor.resolveExact(state, arguments[0].value, rl, "make_symbolic");
+  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
+                        rl, "make_symbolic");
   
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
@@ -903,8 +902,8 @@ void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
          "invalid number of arguments to klee_mark_global");  
 
   Executor::ExactResolutionList rl;
-  // TODO segment
-  executor.resolveExact(state, arguments[0].value, rl, "mark_global");
+  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
+                        rl, "mark_global");
   
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
