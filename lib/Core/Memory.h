@@ -46,6 +46,7 @@ private:
 
 public:
   unsigned id;
+  uint64_t segment;
   uint64_t address;
 
   /// size in bytes
@@ -74,6 +75,7 @@ public:
   explicit
   MemoryObject(uint64_t _address) 
     : id(counter++),
+      segment(0),
       address(_address),
       size(0),
       isFixed(true),
@@ -86,6 +88,7 @@ public:
                const llvm::Value *_allocSite,
                MemoryManager *_parent)
     : id(counter++),
+      segment(0),
       address(_address),
       size(_size),
       name("unnamed"),
@@ -106,7 +109,10 @@ public:
     this->name = name;
   }
 
-  ref<ConstantExpr> getBaseExpr() const { 
+  ref<ConstantExpr> getSegmentExpr() const {
+    return ConstantExpr::create(segment, Context::get().getPointerWidth());
+  }
+  ref<ConstantExpr> getBaseExpr() const {
     return ConstantExpr::create(address, Context::get().getPointerWidth());
   }
   // TODO simplify to ConstantExpr
