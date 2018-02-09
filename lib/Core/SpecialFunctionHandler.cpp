@@ -235,7 +235,6 @@ std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state, 
                                             const Cell &addressCell) {
   ObjectPair op;
-  // TODO segment
   ref<Expr> addressExpr = executor.toUnique(state, addressCell.value);
   if (!isa<ConstantExpr>(addressExpr)) {
     executor.terminateStateOnError(
@@ -243,14 +242,25 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
         Executor::TerminateReason::User);
     return "";
   }
+  ref<Expr> segmentExpr = executor.toUnique(state, addressCell.pointerSegment);
+  if (!isa<ConstantExpr>(segmentExpr)) {
+          executor.terminateStateOnError(
+                state, "String with symbolic segment passed to one of the klee_ functions",
+                      Executor::TerminateReason::User);
+              return "";
+  }
+
   ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
-  if (!state.addressSpace.resolveOne(address, op)) {
+  ref<ConstantExpr> segment = cast<ConstantExpr>(segmentExpr);
+  if (!state.addressSpace.resolveOne(segment, address, op)) {
     executor.terminateStateOnError(
         state, "Invalid string pointer passed to one of the klee_ functions",
         Executor::TerminateReason::User);
     return "";
   }
+
   bool res __attribute__ ((unused));
+  // TODO segment?
   assert(executor.solver->mustBeTrue(state, 
                                      EqExpr::create(address, 
                                                     op.first->getBaseExpr()),
@@ -619,8 +629,10 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
 
   // Retrieve the memory object of the errno variable
   ObjectPair result;
-  bool resolved = state.addressSpace.resolveOne(
-      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  //TODO segment
+  auto segmentExpr = ConstantExpr::create(0, Expr::Int64);
+  auto addrExpr = ConstantExpr::create((uint64_t)errno_addr, Expr::Int64);
+  bool resolved = state.addressSpace.resolveOne(segmentExpr, addrExpr, result);
   if (!resolved)
     executor.terminateStateOnError(state, "Could not resolve address for errno",
                                    Executor::User);
@@ -713,22 +725,26 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
   assert(arguments.size()==2 &&
          "invalid number of arguments to klee_check_memory_access");
 
-  // TODO segment
+  ref<Expr> segment = executor.toUnique(state, arguments[0].pointerSegment);
   ref<Expr> address = executor.toUnique(state, arguments[0].value);
   ref<Expr> size = executor.toUnique(state, arguments[1].value);
-  if (!isa<ConstantExpr>(address) || !isa<ConstantExpr>(size)) {
+  if (!isa<ConstantExpr>(segment) || !isa<ConstantExpr>(address) ||
+      !isa<ConstantExpr>(size)) {
     executor.terminateStateOnError(state, 
                                    "check_memory_access requires constant args",
 				   Executor::User);
   } else {
     ObjectPair op;
 
-    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(address), op)) {
+    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(segment),
+                                       cast<ConstantExpr>(address), op)) {
       executor.terminateStateOnError(state,
                                      "check_memory_access: memory error",
 				     Executor::Ptr, NULL,
+                                     // TODO segment
                                      executor.getAddressInfo(state, address));
     } else {
+      // TODO segment
       ref<Expr> chk = 
         op.first->getBoundsCheckPointer(address, 
                                         cast<ConstantExpr>(size)->getZExtValue());
@@ -736,6 +752,7 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
         executor.terminateStateOnError(state,
                                        "check_memory_access: memory error",
 				       Executor::Ptr, NULL,
+                                       // TODO segment
                                        executor.getAddressInfo(state, address));
       }
     }
