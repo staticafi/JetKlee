@@ -3229,11 +3229,13 @@ void Executor::resolveExact(ExecutionState &state,
                             const std::string &name) {
   // XXX we may want to be capping this?
   ResolutionList rl;
-  state.addressSpace.resolve(state, solver, p, rl);
+  // TODO segment
+  state.addressSpace.resolve(state, solver, ConstantExpr::alloc(0, p->getWidth()), p, rl);
   
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
+    // TODO segment
     ref<Expr> inBounds = EqExpr::create(p, it->first->getBaseExpr());
     
     StatePair branches = fork(*unbound, inBounds, true);
@@ -3307,9 +3309,13 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   ObjectPair op;
   bool success;
   solver->setTimeout(coreSolverTimeout);
-  if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
-    address = toConstant(state, address, "resolveOne failure");
-    success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
+  if (!state.addressSpace.resolveOne(state, solver, addressSegment, addressOffset,
+                                     op, success)) {
+    addressSegment = toConstant(state, addressSegment, "resolveOne failure");
+    addressOffset = toConstant(state, addressOffset, "resolveOne failure");
+    success = state.addressSpace.resolveOne(cast<ConstantExpr>(addressSegment),
+                                            cast<ConstantExpr>(addressOffset),
+                                            op);
   }
   solver->setTimeout(0);
 
@@ -3362,7 +3368,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
-  bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
+  bool incomplete = state.addressSpace.resolve(state, solver, addressSegment,
+                                               addressOffset, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(0);
   
