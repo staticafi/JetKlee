@@ -298,6 +298,7 @@ private:
   /// state to fork and that \ref state cannot be safely accessed
   /// afterwards.
   void executeFree(ExecutionState &state,
+                   ref<Expr> segment,
                    ref<Expr> address,
                    KInstruction *target = 0);
   
