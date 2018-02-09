@@ -409,8 +409,7 @@ void SpecialFunctionHandler::handleDelete(ExecutionState &state,
 
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to delete");
-  // TODO segment
-  executor.executeFree(state, arguments[0].value);
+  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
 }
 
 void SpecialFunctionHandler::handleNewArray(ExecutionState &state,
@@ -426,8 +425,7 @@ void SpecialFunctionHandler::handleDeleteArray(ExecutionState &state,
                                  const std::vector<Cell> &arguments) {
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to delete[]");
-  // TODO segment
-  executor.executeFree(state, arguments[0].value);
+  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
 }
 
 void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
@@ -735,7 +733,7 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==2 &&
          "invalid number of arguments to realloc");
-  // TODO segment
+  ref<Expr> segment = arguments[0].pointerSegment;
   ref<Expr> address = arguments[0].value;
   ref<Expr> size = arguments[1].value;
 
@@ -743,7 +741,7 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
       executor.fork(state, Expr::createIsZero(size), true, BranchType::Realloc);
 
   if (zeroSize.first) { // size == 0
-    executor.executeFree(*zeroSize.first, address, target);   
+    executor.executeFree(*zeroSize.first, segment, address, target);
   }
   if (zeroSize.second) { // size != 0
     Executor::StatePair zeroPointer =
@@ -772,8 +770,7 @@ void SpecialFunctionHandler::handleFree(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==1 &&
          "invalid number of arguments to free");
-  // TODO segment
-  executor.executeFree(state, arguments[0].value);
+  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
 }
 
 void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
