@@ -123,7 +123,7 @@ public:
   std::string getSizeString() const {
     return std::to_string(size);
   }
-  ref<ConstantExpr> getSizeExpr() const { 
+  ref<Expr> getSizeExpr() const {
     return ConstantExpr::create(size, Context::get().getPointerWidth());
   }
   ref<Expr> getOffsetExpr(ref<Expr> pointer) const {
