@@ -51,8 +51,9 @@ namespace klee {
     /// the resolution is complete (`p` can only point to the given
     /// memory object), and 2 otherwise.
     int checkPointerInObject(ExecutionState &state, TimingSolver *solver,
-                             ref<Expr> p, const ObjectPair &op,
-                             ResolutionList &rl, unsigned maxResolutions) const;
+                             const ref<Expr> &segment, const ref<Expr> &p,
+                             const ObjectPair &op, ResolutionList &rl,
+                             unsigned maxResolutions) const;
 
   public:
     /// The MemoryObject -> ObjectState map that constitutes the
@@ -70,7 +71,8 @@ namespace klee {
 
     /// Resolve address to an ObjectPair in result.
     /// \return true iff an object was found.
-    bool resolveOne(const ref<ConstantExpr> &address, 
+    bool resolveOne(const ref<ConstantExpr> &segment,
+                    const ref<ConstantExpr> &address,
                     ObjectPair &result) const;
 
     /// Resolve address to an ObjectPair in result.
@@ -84,6 +86,7 @@ namespace klee {
     /// \return true iff an object was found at \a address.
     bool resolveOne(ExecutionState &state, 
                     TimingSolver *solver,
+                    ref<Expr> segment,
                     ref<Expr> address,
                     ObjectPair &result,
                     bool &success) const;
@@ -96,7 +99,8 @@ namespace klee {
     /// is non-zero and it was reached, or a query timed out).
     bool resolve(ExecutionState &state,
                  TimingSolver *solver,
-                 ref<Expr> p,
+                 ref<Expr> segment,
+                 ref<Expr> address,
                  ResolutionList &rl, 
                  unsigned maxResolutions=0,
                  time::Span timeout=time::Span()) const;

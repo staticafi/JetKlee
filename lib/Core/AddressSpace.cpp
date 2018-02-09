@@ -54,8 +54,10 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
 
 /// 
 
-bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr, 
+bool AddressSpace::resolveOne(const ref<ConstantExpr> &segment,
+                              const ref<ConstantExpr> &addr,
                               ObjectPair &result) const {
+  // TODO segment
   uint64_t address = addr->getZExtValue();
   MemoryObject hack(address);
 
@@ -76,11 +78,13 @@ bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr,
 
 bool AddressSpace::resolveOne(ExecutionState &state,
                               TimingSolver *solver,
+                              ref<Expr> segment,
                               ref<Expr> address,
                               ObjectPair &result,
                               bool &success) const {
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(address)) {
-    success = resolveOne(CE, result);
+  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(address)) {
+    success = resolveOne(dyn_cast<ConstantExpr>(segment),
+                         dyn_cast<ConstantExpr>(address), result);
     return true;
   } else {
     TimerStatIncrementer timer(stats::resolveTime);
@@ -169,7 +173,9 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 }
 
 int AddressSpace::checkPointerInObject(ExecutionState &state,
-                                       TimingSolver *solver, ref<Expr> p,
+                                       TimingSolver *solver,
+                                       const ref<Expr> &segment,
+                                       const ref<Expr> &p,
                                        const ObjectPair &op, ResolutionList &rl,
                                        unsigned maxResolutions) const {
   // XXX in the common case we can save one query if we ask
@@ -204,12 +210,17 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
   return 2;
 }
 
-bool AddressSpace::resolve(ExecutionState &state, TimingSolver *solver,
-                           ref<Expr> p, ResolutionList &rl,
-                           unsigned maxResolutions, time::Span timeout) const {
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(p)) {
+bool AddressSpace::resolve(ExecutionState &state,
+                           TimingSolver *solver,
+                           ref<Expr> segment,
+                           ref<Expr> p,
+                           ResolutionList &rl,
+                           unsigned maxResolutions,
+                           time::Span timeout) const {
+  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(p)) {
     ObjectPair res;
-    if (resolveOne(CE, res))
+    if (resolveOne(dyn_cast<ConstantExpr>(segment),
+                   dyn_cast<ConstantExpr>(p), res))
       rl.push_back(res);
     return false;
   } else {
@@ -253,7 +264,7 @@ bool AddressSpace::resolve(ExecutionState &state, TimingSolver *solver,
       auto op = std::make_pair<>(mo, oi->second.get());
 
       int incomplete =
-          checkPointerInObject(state, solver, p, op, rl, maxResolutions);
+          checkPointerInObject(state, solver, segment, p, op, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
 
@@ -282,7 +293,7 @@ bool AddressSpace::resolve(ExecutionState &state, TimingSolver *solver,
       auto op = std::make_pair<>(mo, oi->second.get());
 
       int incomplete =
-          checkPointerInObject(state, solver, p, op, rl, maxResolutions);
+          checkPointerInObject(state, solver, segment, p, op, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
     }

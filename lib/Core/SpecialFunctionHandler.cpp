@@ -244,15 +244,22 @@ std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state, 
                                             const Cell &addressCell) {
   ObjectPair op;
-  // TODO segment
   ref<Expr> addressExpr = executor.toUnique(state, addressCell.value);
   if (!isa<ConstantExpr>(addressExpr)) {
     executor.terminateStateOnUserError(
         state, "Symbolic string pointer passed to one of the klee_ functions");
     return "";
   }
+  ref<Expr> segmentExpr = executor.toUnique(state, addressCell.pointerSegment);
+  if (!isa<ConstantExpr>(segmentExpr)) {
+    executor.terminateStateOnUserError(
+        state, "String with symbolic segment passed to one of the klee_ functions");
+    return "";
+  }
+
   ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
-  if (!state.addressSpace.resolveOne(address, op)) {
+  ref<ConstantExpr> segment = cast<ConstantExpr>(segmentExpr);
+  if (!state.addressSpace.resolveOne(segment, address, op)) {
     executor.terminateStateOnUserError(
         state, "Invalid string pointer passed to one of the klee_ functions");
     return "";
@@ -682,8 +689,10 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
 
   // Retrieve the memory object of the errno variable
   ObjectPair result;
-  bool resolved = state.addressSpace.resolveOne(
-      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  //TODO segment
+  auto segmentExpr = ConstantExpr::create(0, Expr::Int64);
+  auto addrExpr = ConstantExpr::create((uint64_t)errno_addr, Expr::Int64);
+  bool resolved = state.addressSpace.resolveOne(segmentExpr, addrExpr, result);
   if (!resolved)
     executor.terminateStateOnUserError(state, "Could not resolve address for errno");
   executor.bindLocal(target, state, result.second->read(0, Expr::Int32));
@@ -774,27 +783,32 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
   assert(arguments.size()==2 &&
          "invalid number of arguments to klee_check_memory_access");
 
-  // TODO segment
+  ref<Expr> segment = executor.toUnique(state, arguments[0].pointerSegment);
   ref<Expr> address = executor.toUnique(state, arguments[0].value);
   ref<Expr> size = executor.toUnique(state, arguments[1].value);
-  if (!isa<ConstantExpr>(address) || !isa<ConstantExpr>(size)) {
+  if (!isa<ConstantExpr>(segment) || !isa<ConstantExpr>(address) ||
+      !isa<ConstantExpr>(size)) {
     executor.terminateStateOnUserError(state, "check_memory_access requires constant args");
   } else {
     ObjectPair op;
 
-    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(address), op)) {
+    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(segment),
+                                       cast<ConstantExpr>(address), op)) {
       executor.terminateStateOnError(state,
                                      "check_memory_access: memory error",
                                      StateTerminationType::Ptr,
+                                     // TODO segment
                                      executor.getAddressInfo(state, address));
     } else {
-      ref<Expr> chk = 
+      // TODO segment
+      ref<Expr> chk =
         op.first->getBoundsCheckPointer(address, 
                                         cast<ConstantExpr>(size)->getZExtValue());
       if (!chk->isTrue()) {
         executor.terminateStateOnError(state,
                                        "check_memory_access: memory error",
                                        StateTerminationType::Ptr,
+                                       // TODO segment
                                        executor.getAddressInfo(state, address));
       }
     }

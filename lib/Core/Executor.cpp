@@ -1987,11 +1987,12 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
             // TODO segment
             os->write(offsets[k], arguments[k].value);
           } else {
-            ConstantExpr *CE = dyn_cast<ConstantExpr>(arguments[k].value);
-            assert(CE); // byval argument needs to be a concrete pointer
+            ConstantExpr *segment = dyn_cast<ConstantExpr>(arguments[k].pointerSegment);
+            ConstantExpr *address = dyn_cast<ConstantExpr>(arguments[k].value);
+            assert(address); // byval argument needs to be a concrete pointer
 
             ObjectPair op;
-            state.addressSpace.resolveOne(CE, op);
+            state.addressSpace.resolveOne(segment, address, op);
             const ObjectState *osarg = op.second;
             assert(osarg);
             for (unsigned i = 0; i < osarg->size; i++)
@@ -3824,12 +3825,13 @@ void Executor::callExternalFunction(ExecutionState &state,
       bool success =
           solver->getValue(state.constraints, value, ce, state.queryMetaData);
       assert(success && "FIXME: Unhandled solver failure");
-      (void) success;
       ce->toMemory(&args[wordIndex]);
       ObjectPair op;
       // Checking to see if the argument is a pointer to something
+      // TODO segment
+      auto segment = ConstantExpr::create(0, ce->getWidth());
       if (ce->getWidth() == Context::get().getPointerWidth() &&
-          state.addressSpace.resolveOne(ce, op)) {
+          state.addressSpace.resolveOne(segment, ce, op)) {
         op.second->flushToConcreteStore(solver, state);
       }
       wordIndex += (ce->getWidth()+63)/64;
@@ -3859,8 +3861,10 @@ void Executor::callExternalFunction(ExecutionState &state,
   // Update external errno state with local state value
   int *errno_addr = getErrnoLocation(state);
   ObjectPair result;
-  bool resolved = state.addressSpace.resolveOne(
-      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  // TODO segment
+  auto segment = ConstantExpr::create(0, Expr::Int64);
+  auto addr = ConstantExpr::create((uint64_t)errno_addr, Expr::Int64);
+  bool resolved = state.addressSpace.resolveOne(segment, addr, result);
   if (!resolved)
     klee_error("Could not resolve memory object for errno");
   ref<Expr> errValueExpr = result.second->read(0, sizeof(*errno_addr) * 8);
@@ -4131,11 +4135,13 @@ void Executor::resolveExact(ExecutionState &state,
   p = optimizer.optimizeExpr(p, true);
   // XXX we may want to be capping this?
   ResolutionList rl;
-  state.addressSpace.resolve(state, solver, p, rl);
+  // TODO segment
+  state.addressSpace.resolve(state, solver, ConstantExpr::alloc(0, p->getWidth()), p, rl);
   
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
+    // TODO segment
     ref<Expr> inBounds = EqExpr::create(p, it->first->getBaseExpr());
 
     StatePair branches =
@@ -4209,9 +4215,13 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   ObjectPair op;
   bool success;
   solver->setTimeout(coreSolverTimeout);
-  if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
-    address = toConstant(state, address, "resolveOne failure");
-    success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
+  if (!state.addressSpace.resolveOne(state, solver, addressSegment, addressOffset,
+                                     op, success)) {
+    addressSegment = toConstant(state, addressSegment, "resolveOne failure");
+    addressOffset = toConstant(state, addressOffset, "resolveOne failure");
+    success = state.addressSpace.resolveOne(cast<ConstantExpr>(addressSegment),
+                                            cast<ConstantExpr>(addressOffset),
+                                            op);
   }
   solver->setTimeout(time::Span());
 
@@ -4266,7 +4276,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   address = optimizer.optimizeExpr(address, true);
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
-  bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
+  bool incomplete = state.addressSpace.resolve(state, solver, addressSegment,
+                                               addressOffset, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(time::Span());
   
