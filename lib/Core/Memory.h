@@ -41,6 +41,7 @@ private:
 
 public:
   unsigned id;
+  uint64_t segment;
   uint64_t address;
 
   /// size in bytes
@@ -75,7 +76,8 @@ public:
   explicit
   MemoryObject(uint64_t _address) 
     : refCount(0),
-      id(counter++), 
+      id(counter++),
+      segment(0),
       address(_address),
       size(0),
       isFixed(true),
@@ -89,6 +91,7 @@ public:
                MemoryManager *_parent)
     : refCount(0), 
       id(counter++),
+      segment(0),
       address(_address),
       size(_size),
       name("unnamed"),
@@ -109,6 +112,9 @@ public:
     this->name = name;
   }
 
+  ref<ConstantExpr> getSegmentExpr() const {
+    return ConstantExpr::create(segment, Context::get().getPointerWidth());
+  }
   ref<ConstantExpr> getBaseExpr() const { 
     return ConstantExpr::create(address, Context::get().getPointerWidth());
   }
