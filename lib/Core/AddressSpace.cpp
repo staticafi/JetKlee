@@ -51,8 +51,10 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
 
 /// 
 
-bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr, 
+bool AddressSpace::resolveOne(const ref<ConstantExpr> &segment,
+                              const ref<ConstantExpr> &addr,
                               ObjectPair &result) {
+  // TODO segment
   uint64_t address = addr->getZExtValue();
   MemoryObject hack(address);
 
@@ -72,11 +74,13 @@ bool AddressSpace::resolveOne(const ref<ConstantExpr> &addr,
 
 bool AddressSpace::resolveOne(ExecutionState &state,
                               TimingSolver *solver,
+                              ref<Expr> segment,
                               ref<Expr> address,
                               ObjectPair &result,
                               bool &success) {
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(address)) {
-    success = resolveOne(CE, result);
+  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(address)) {
+    success = resolveOne(dyn_cast<ConstantExpr>(segment),
+                         dyn_cast<ConstantExpr>(address), result);
     return true;
   } else {
     TimerStatIncrementer timer(stats::resolveTime);
@@ -161,14 +165,16 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 }
 
 bool AddressSpace::resolve(ExecutionState &state,
-                           TimingSolver *solver, 
+                           TimingSolver *solver,
+                           ref<Expr> segment,
                            ref<Expr> p, 
                            ResolutionList &rl, 
                            unsigned maxResolutions,
                            double timeout) {
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(p)) {
+  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(p)) {
     ObjectPair res;
-    if (resolveOne(CE, res))
+    if (resolveOne(dyn_cast<ConstantExpr>(segment),
+                   dyn_cast<ConstantExpr>(p), res))
       rl.push_back(res);
     return false;
   } else {

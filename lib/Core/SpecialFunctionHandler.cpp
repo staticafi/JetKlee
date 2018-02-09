@@ -230,12 +230,14 @@ std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state, 
                                             const Cell &addressCell) {
   ObjectPair op;
-  // TODO segment
   ref<Expr> addressExpr = executor.toUnique(state, addressCell.value);
+  ref<Expr> segmentExpr = executor.toUnique(state, addressCell.pointerSegment);
   ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
-  if (!state.addressSpace.resolveOne(address, op))
+  ref<ConstantExpr> segment = cast<ConstantExpr>(segmentExpr);
+  if (!state.addressSpace.resolveOne(segment, address, op))
     assert(0 && "XXX out of bounds / multiple resolution unhandled");
   bool res __attribute__ ((unused));
+  // TODO segment?
   assert(executor.solver->mustBeTrue(state, 
                                      EqExpr::create(address, 
                                                     op.first->getBaseExpr()),
@@ -667,22 +669,26 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
   assert(arguments.size()==2 &&
          "invalid number of arguments to klee_check_memory_access");
 
-  // TODO segment
+  ref<Expr> segment = executor.toUnique(state, arguments[0].pointerSegment);
   ref<Expr> address = executor.toUnique(state, arguments[0].value);
   ref<Expr> size = executor.toUnique(state, arguments[1].value);
-  if (!isa<ConstantExpr>(address) || !isa<ConstantExpr>(size)) {
+  if (!isa<ConstantExpr>(segment) || !isa<ConstantExpr>(address) ||
+      !isa<ConstantExpr>(size)) {
     executor.terminateStateOnError(state, 
                                    "check_memory_access requires constant args",
 				   Executor::User);
   } else {
     ObjectPair op;
 
-    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(address), op)) {
+    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(segment),
+                                       cast<ConstantExpr>(address), op)) {
       executor.terminateStateOnError(state,
                                      "check_memory_access: memory error",
 				     Executor::Ptr, NULL,
+                                     // TODO segment
                                      executor.getAddressInfo(state, address));
     } else {
+      // TODO segment
       ref<Expr> chk = 
         op.first->getBoundsCheckPointer(address, 
                                         cast<ConstantExpr>(size)->getZExtValue());
@@ -690,6 +696,7 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
         executor.terminateStateOnError(state,
                                        "check_memory_access: memory error",
 				       Executor::Ptr, NULL,
+                                       // TODO segment
                                        executor.getAddressInfo(state, address));
       }
     }
