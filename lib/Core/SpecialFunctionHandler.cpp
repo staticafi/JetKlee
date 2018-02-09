@@ -382,7 +382,6 @@ void SpecialFunctionHandler::handleNew(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to new");
 
-  // TODO segment
   executor.executeAlloc(state, arguments[0].value, false, target);
 }
 
@@ -402,7 +401,6 @@ void SpecialFunctionHandler::handleNewArray(ExecutionState &state,
                               const std::vector<Cell> &arguments) {
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to new[]");
-  // TODO segment
   executor.executeAlloc(state, arguments[0].value, false, target);
 }
 
@@ -419,7 +417,6 @@ void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
                                   const std::vector<Cell> &arguments) {
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to malloc");
-  // TODO segment
   executor.executeAlloc(state, arguments[0].value, false, target);
 }
 
