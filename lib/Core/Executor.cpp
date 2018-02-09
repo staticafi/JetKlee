@@ -3204,15 +3204,17 @@ void Executor::executeFree(ExecutionState &state,
   }
   if (zeroPointer.second) { // address != 0
     ExactResolutionList rl;
-    resolveExact(*zeroPointer.second, address, rl, "free");
+    resolveExact(*zeroPointer.second, segment, address, rl, "free");
     
     for (Executor::ExactResolutionList::iterator it = rl.begin(), 
            ie = rl.end(); it != ie; ++it) {
       const MemoryObject *mo = it->first.first;
       if (mo->isLocal) {
+        // TODO segment
         terminateStateOnError(*it->second, "free of alloca", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else if (mo->isGlobal) {
+        // TODO segment
         terminateStateOnError(*it->second, "free of global", Free, NULL,
                               getAddressInfo(*it->second, address));
       } else {
@@ -3225,13 +3227,13 @@ void Executor::executeFree(ExecutionState &state,
 }
 
 void Executor::resolveExact(ExecutionState &state,
+                            ref<Expr> segment,
                             ref<Expr> p,
                             ExactResolutionList &results, 
                             const std::string &name) {
   // XXX we may want to be capping this?
   ResolutionList rl;
-  // TODO segment
-  state.addressSpace.resolve(state, solver, ConstantExpr::alloc(0, p->getWidth()), p, rl);
+  state.addressSpace.resolve(state, solver, segment, p, rl);
   
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
@@ -3250,6 +3252,7 @@ void Executor::resolveExact(ExecutionState &state,
   }
 
   if (unbound) {
+    // TODO segment
     terminateStateOnError(*unbound, "memory error: invalid pointer: " + name,
                           Ptr, NULL, getAddressInfo(*unbound, p));
   }
