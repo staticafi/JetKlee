@@ -3365,6 +3365,7 @@ void Executor::executeAlloc(ExecutionState &state,
 }
 
 void Executor::executeFree(ExecutionState &state,
+                           ref<Expr> segment,
                            ref<Expr> address,
                            KInstruction *target) {
   StatePair zeroPointer = fork(state, Expr::createIsZero(address), true);
