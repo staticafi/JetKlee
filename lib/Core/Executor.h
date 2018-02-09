@@ -288,6 +288,7 @@ private:
   typedef std::vector< std::pair<std::pair<const MemoryObject*, const ObjectState*>, 
                                  ExecutionState*> > ExactResolutionList;
   void resolveExact(ExecutionState &state,
+                    ref<Expr> segment,
                     ref<Expr> p,
                     ExactResolutionList &results,
                     const std::string &name);
