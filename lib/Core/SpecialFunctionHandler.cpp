@@ -235,16 +235,14 @@ std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state, 
                                             const Cell &addressCell) {
   ObjectPair op;
-  ref<Expr> addressExpr = executor.toUnique(state, addressCell.value);
-  ref<Expr> segmentExpr = executor.toUnique(state, addressCell.pointerSegment);
-  ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
-  ref<ConstantExpr> segment = cast<ConstantExpr>(segmentExpr);
-  if (!state.addressSpace.resolveOne(segment, address, op))
+  KValue address(executor.toUnique(state, addressCell.getSegment()),
+                 executor.toUnique(state, addressCell.getOffset()));
+  if (!state.addressSpace.resolveConstantAddress(address, op))
     assert(0 && "XXX out of bounds / multiple resolution unhandled");
   bool res __attribute__ ((unused));
   // TODO segment?
   assert(executor.solver->mustBeTrue(state, 
-                                     EqExpr::create(address, 
+                                     EqExpr::create(address.getOffset(),
                                                     op.first->getBaseExpr()),
                                      res) &&
          res &&
@@ -393,7 +391,7 @@ void SpecialFunctionHandler::handleDelete(ExecutionState &state,
 
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to delete");
-  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
+  executor.executeFree(state, arguments[0]);
 }
 
 void SpecialFunctionHandler::handleNewArray(ExecutionState &state,
@@ -409,7 +407,7 @@ void SpecialFunctionHandler::handleDeleteArray(ExecutionState &state,
                                  const std::vector<Cell> &arguments) {
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to delete[]");
-  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
+  executor.executeFree(state, arguments[0]);
 }
 
 void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
@@ -469,8 +467,7 @@ void SpecialFunctionHandler::handlePreferCex(ExecutionState &state,
     cond = NeExpr::create(cond, ConstantExpr::alloc(0, cond->getWidth()));
 
   Executor::ExactResolutionList rl;
-  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
-                        rl, "prefex_cex");
+  executor.resolveExact(state, arguments[0], rl, "prefex_cex");
   
   assert(rl.size() == 1 &&
          "prefer_cex target must resolve to precisely one object");
@@ -582,8 +579,7 @@ void SpecialFunctionHandler::handleGetObjSize(ExecutionState &state,
   assert(arguments.size()==1 &&
          "invalid number of arguments to klee_get_obj_size");
   Executor::ExactResolutionList rl;
-  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
-                        rl, "klee_get_obj_size");
+  executor.resolveExact(state, arguments[0], rl, "klee_get_obj_size");
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
     executor.bindLocal(
@@ -653,8 +649,7 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==2 &&
          "invalid number of arguments to realloc");
-  ref<Expr> segment = arguments[0].pointerSegment;
-  ref<Expr> address = arguments[0].value;
+  const KValue &address = arguments[0];
   ref<Expr> size = arguments[1].value;
 
   Executor::StatePair zeroSize = executor.fork(state, 
@@ -662,11 +657,11 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
                                                true);
   
   if (zeroSize.first) { // size == 0
-    executor.executeFree(*zeroSize.first, segment, address, target);
+    executor.executeFree(*zeroSize.first, address, target);
   }
   if (zeroSize.second) { // size != 0
     Executor::StatePair zeroPointer = executor.fork(*zeroSize.second, 
-                                                    Expr::createIsZero(address), 
+                                                    Expr::createIsZero(address.getOffset()),
                                                     true);
     
     if (zeroPointer.first) { // address == 0
@@ -674,7 +669,7 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
     } 
     if (zeroPointer.second) { // address != 0
       Executor::ExactResolutionList rl;
-      executor.resolveExact(*zeroPointer.second, segment, address, rl, "realloc");
+      executor.resolveExact(*zeroPointer.second, address, rl, "realloc");
       
       for (Executor::ExactResolutionList::iterator it = rl.begin(), 
              ie = rl.end(); it != ie; ++it) {
@@ -691,7 +686,7 @@ void SpecialFunctionHandler::handleFree(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==1 &&
          "invalid number of arguments to free");
-  executor.executeFree(state, arguments[0].pointerSegment, arguments[0].value);
+  executor.executeFree(state, arguments[0]);
 }
 
 void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
@@ -701,32 +696,28 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
   assert(arguments.size()==2 &&
          "invalid number of arguments to klee_check_memory_access");
 
-  ref<Expr> segment = executor.toUnique(state, arguments[0].pointerSegment);
-  ref<Expr> address = executor.toUnique(state, arguments[0].value);
+  const KValue &address = arguments[0];
   ref<Expr> size = executor.toUnique(state, arguments[1].value);
-  if (!isa<ConstantExpr>(segment) || !isa<ConstantExpr>(address) ||
-      !isa<ConstantExpr>(size)) {
+  if (!address.isConstant() || !isa<ConstantExpr>(size)) {
     executor.terminateStateOnError(state, 
                                    "check_memory_access requires constant args",
 				   Executor::User);
   } else {
     ObjectPair op;
 
-    if (!state.addressSpace.resolveOne(cast<ConstantExpr>(segment),
-                                       cast<ConstantExpr>(address), op)) {
+    if (!state.addressSpace.resolveConstantAddress(address, op)) {
       executor.terminateStateOnError(state,
                                      "check_memory_access: memory error",
 				     Executor::Ptr, NULL,
-                                     executor.getAddressInfo(state, arguments[0]));
+                                     executor.getAddressInfo(state, address));
     } else {
       ref<Expr> chk = 
-        op.first->getBoundsCheckPointer(segment, address,
-                                        cast<ConstantExpr>(size)->getZExtValue());
+        op.first->getBoundsCheckPointer(address, cast<ConstantExpr>(size)->getZExtValue());
       if (!chk->isTrue()) {
         executor.terminateStateOnError(state,
                                        "check_memory_access: memory error",
 				       Executor::Ptr, NULL,
-                                       executor.getAddressInfo(state, arguments[0]));
+                                       executor.getAddressInfo(state, address));
       }
     }
   }
@@ -780,8 +771,7 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
   }
 
   Executor::ExactResolutionList rl;
-  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
-                        rl, "make_symbolic");
+  executor.resolveExact(state, arguments[0], rl, "make_symbolic");
   
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
@@ -825,8 +815,7 @@ void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
          "invalid number of arguments to klee_mark_global");  
 
   Executor::ExactResolutionList rl;
-  executor.resolveExact(state, arguments[0].pointerSegment, arguments[0].value,
-                        rl, "mark_global");
+  executor.resolveExact(state, arguments[0], rl, "mark_global");
   
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
