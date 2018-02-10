@@ -3228,18 +3228,17 @@ void Executor::executeFree(ExecutionState &state,
 
 void Executor::resolveExact(ExecutionState &state,
                             ref<Expr> segment,
-                            ref<Expr> p,
+                            ref<Expr> offset,
                             ExactResolutionList &results, 
                             const std::string &name) {
   // XXX we may want to be capping this?
   ResolutionList rl;
-  state.addressSpace.resolve(state, solver, segment, p, rl);
+  state.addressSpace.resolve(state, solver, segment, offset, rl);
   
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
-    // TODO segment
-    ref<Expr> inBounds = EqExpr::create(p, it->first->getBaseExpr());
+    ref<Expr> inBounds = it->first->getBoundsCheckPointer(segment, offset);
     
     StatePair branches = fork(*unbound, inBounds, true);
     
@@ -3253,7 +3252,7 @@ void Executor::resolveExact(ExecutionState &state,
 
   if (unbound) {
     terminateStateOnError(*unbound, "memory error: invalid pointer: " + name,
-                          Ptr, NULL, getAddressInfo(*unbound, segment, p));
+                          Ptr, NULL, getAddressInfo(*unbound, segment, offset));
   }
 }
 
@@ -3326,7 +3325,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     const MemoryObject *mo = op.first;
 
     if (MaxSymArraySize && mo->size>=MaxSymArraySize) {
-      address = toConstant(state, address, "max-sym-array-size");
+      addressSegment = toConstant(state, addressSegment, "max-sym-array-size");
+      addressOffset = toConstant(state, addressOffset, "max-sym-array-size");
     }
     
     ref<Expr> offset = mo->getOffsetExpr(address);
