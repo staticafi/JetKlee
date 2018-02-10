@@ -39,8 +39,20 @@ namespace klee {
       this->value = offset;
     }
 
+    void setOffset(ref<Expr> offset) {
+      this->value = offset;
+    }
+
+    bool isConstant() const {
+      return isa<ConstantExpr>(value) && isa<ConstantExpr>(pointerSegment);
+    }
+
     ref<Expr> isPointer() const {
       return Expr::createIsZero(pointerSegment);
+    }
+
+    Expr::Width getWidth() const {
+      return getValue()->getWidth();
     }
   };
 }

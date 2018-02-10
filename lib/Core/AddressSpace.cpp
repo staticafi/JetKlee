@@ -14,6 +14,7 @@
 
 #include "klee/Expr.h"
 #include "klee/TimerStatIncrementer.h"
+#include "klee/KValue.h"
 
 using namespace klee;
 
@@ -51,11 +52,10 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
 
 /// 
 
-bool AddressSpace::resolveOne(const ref<ConstantExpr> &segment,
-                              const ref<ConstantExpr> &addr,
-                              ObjectPair &result) const {
+bool AddressSpace::resolveConstantAddress(const KValue &pointer,
+                                          ObjectPair &result) const {
   // TODO segment
-  uint64_t address = addr->getZExtValue();
+  uint64_t address = cast<ConstantExpr>(pointer.getValue())->getZExtValue();
   MemoryObject hack(address);
 
   if (const MemoryMap::value_type *res = objects.lookup_previous(&hack)) {
@@ -74,13 +74,11 @@ bool AddressSpace::resolveOne(const ref<ConstantExpr> &segment,
 
 bool AddressSpace::resolveOne(ExecutionState &state,
                               TimingSolver *solver,
-                              ref<Expr> segment,
-                              ref<Expr> address,
+                              const KValue &pointer,
                               ObjectPair &result,
                               bool &success) const {
-  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(address)) {
-    success = resolveOne(dyn_cast<ConstantExpr>(segment),
-                         dyn_cast<ConstantExpr>(address), result);
+  if (pointer.isConstant()) {
+    success = resolveConstantAddress(pointer, result);
     return true;
   } else {
     TimerStatIncrementer timer(stats::resolveTime);
@@ -88,7 +86,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
     // try cheap search, will succeed for any inbounds pointer
 
     ref<ConstantExpr> cex;
-    if (!solver->getValue(state, address, cex))
+    if (!solver->getValue(state, pointer.getOffset(), cex))
       return false;
     uint64_t example = cex->getZExtValue();
     MemoryObject hack(example);
@@ -116,7 +114,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
         
       bool mayBeTrue;
       if (!solver->mayBeTrue(state, 
-                             mo->getBoundsCheckPointer(segment, address), mayBeTrue))
+                             mo->getBoundsCheckPointer(pointer), mayBeTrue))
         return false;
       if (mayBeTrue) {
         result = *oi;
@@ -125,7 +123,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
       } else {
         bool mustBeTrue;
         if (!solver->mustBeTrue(state, 
-                                UgeExpr::create(address, mo->getBaseExpr()),
+                                UgeExpr::create(pointer.getOffset(), mo->getBaseExpr()),
                                 mustBeTrue))
           return false;
         if (mustBeTrue)
@@ -139,7 +137,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 
       bool mustBeTrue;
       if (!solver->mustBeTrue(state, 
-                              UltExpr::create(address, mo->getBaseExpr()),
+                              UltExpr::create(pointer.getOffset(), mo->getBaseExpr()),
                               mustBeTrue))
         return false;
       if (mustBeTrue) {
@@ -148,7 +146,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
         bool mayBeTrue;
 
         if (!solver->mayBeTrue(state, 
-                               mo->getBoundsCheckPointer(segment, address),
+                               mo->getBoundsCheckPointer(pointer),
                                mayBeTrue))
           return false;
         if (mayBeTrue) {
@@ -166,7 +164,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 
 int AddressSpace::checkPointerInObject(ExecutionState &state,
                                        TimingSolver *solver,
-                                       ref<Expr> segment, ref<Expr> addr,
+                                       const KValue& pointer,
                                        const ObjectPair &op, ResolutionList &rl,
                                        unsigned maxResolutions) const {
   // XXX I think there is some query wasteage here?
@@ -174,7 +172,7 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
   // mustBeTrue before mayBeTrue for the first result. easy
   // to add I just want to have a nice symbolic test case first.
   const MemoryObject *mo = op.first;
-  ref<Expr> inBounds = mo->getBoundsCheckPointer(segment, addr);
+  ref<Expr> inBounds = mo->getBoundsCheckPointer(pointer);
   bool mayBeTrue;
   if (!solver->mayBeTrue(state, inBounds, mayBeTrue)) {
     return 1;
@@ -202,15 +200,13 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
 
 bool AddressSpace::resolve(ExecutionState &state,
                            TimingSolver *solver,
-                           ref<Expr> segment,
-                           ref<Expr> p, 
+                           const KValue &pointer,
                            ResolutionList &rl, 
                            unsigned maxResolutions,
                            time::Span timeout) const {
-  if (isa<ConstantExpr>(segment) && isa<ConstantExpr>(p)) {
+  if (pointer.isConstant()) {
     ObjectPair res;
-    if (resolveOne(dyn_cast<ConstantExpr>(segment),
-                   dyn_cast<ConstantExpr>(p), res))
+    if (resolveConstantAddress(pointer, res))
       rl.push_back(res);
     return false;
   } else {
@@ -232,7 +228,7 @@ bool AddressSpace::resolve(ExecutionState &state,
     // just get this by inspection of the expr.
 
     ref<ConstantExpr> cex;
-    if (!solver->getValue(state, p, cex))
+    if (!solver->getValue(state, pointer.getOffset(), cex))
       return true;
     uint64_t example = cex->getZExtValue();
     MemoryObject hack(example);
@@ -252,13 +248,14 @@ bool AddressSpace::resolve(ExecutionState &state,
         return true;
 
       int incomplete =
-          checkPointerInObject(state, solver, segment, p,
+          checkPointerInObject(state, solver, pointer,
                                *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
 
       bool mustBeTrue;
-      if (!solver->mustBeTrue(state, UgeExpr::create(p, mo->getBaseExpr()),
+      if (!solver->mustBeTrue(state, UgeExpr::create(pointer.getOffset(),
+                                                     mo->getBaseExpr()),
                               mustBeTrue))
         return true;
       if (mustBeTrue)
@@ -272,14 +269,16 @@ bool AddressSpace::resolve(ExecutionState &state,
         return true;
 
       bool mustBeTrue;
-      if (!solver->mustBeTrue(state, UltExpr::create(p, mo->getBaseExpr()),
+      if (!solver->mustBeTrue(state,
+                              UltExpr::create(pointer.getOffset(),
+                                              mo->getBaseExpr()),
                               mustBeTrue))
         return true;
       if (mustBeTrue)
         break;
 
       int incomplete =
-          checkPointerInObject(state, solver, segment, p,
+          checkPointerInObject(state, solver, pointer,
                                *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
