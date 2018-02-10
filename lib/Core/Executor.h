@@ -289,7 +289,7 @@ private:
                                  ExecutionState*> > ExactResolutionList;
   void resolveExact(ExecutionState &state,
                     ref<Expr> segment,
-                    ref<Expr> p,
+                    ref<Expr> offset,
                     ExactResolutionList &results,
                     const std::string &name);
 
