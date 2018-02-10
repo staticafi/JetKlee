@@ -121,7 +121,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 
       bool mayBeTrue;
       if (!solver->mayBeTrue(state.constraints,
-                             mo->getBoundsCheckPointer(address), mayBeTrue,
+                             mo->getBoundsCheckPointer(segment, address), mayBeTrue,
                              state.queryMetaData))
         return false;
       if (mayBeTrue) {
@@ -155,7 +155,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
         bool mayBeTrue;
 
         if (!solver->mayBeTrue(state.constraints,
-                               mo->getBoundsCheckPointer(address), mayBeTrue,
+                               mo->getBoundsCheckPointer(segment, address), mayBeTrue,
                                state.queryMetaData))
           return false;
         if (mayBeTrue) {
@@ -178,11 +178,12 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
                                        const ref<Expr> &p,
                                        const ObjectPair &op, ResolutionList &rl,
                                        unsigned maxResolutions) const {
-  // XXX in the common case we can save one query if we ask
+  // XXX I think there is some query wasteage here?
+  // In the common case we can save one query if we ask
   // mustBeTrue before mayBeTrue for the first result. easy
   // to add I just want to have a nice symbolic test case first.
   const MemoryObject *mo = op.first;
-  ref<Expr> inBounds = mo->getBoundsCheckPointer(p);
+  ref<Expr> inBounds = mo->getBoundsCheckPointer(segment, p);
   bool mayBeTrue;
   if (!solver->mayBeTrue(state.constraints, inBounds, mayBeTrue,
                          state.queryMetaData)) {
