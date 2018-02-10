@@ -266,8 +266,7 @@ private:
   typedef std::vector< std::pair<std::pair<const MemoryObject*, const ObjectState*>, 
                                  ExecutionState*> > ExactResolutionList;
   void resolveExact(ExecutionState &state,
-                    ref<Expr> segment,
-                    ref<Expr> offset,
+                    const KValue &address,
                     ExactResolutionList &results,
                     const std::string &name);
 
@@ -299,8 +298,7 @@ private:
   /// state to fork and that \ref state cannot be safely accessed
   /// afterwards.
   void executeFree(ExecutionState &state,
-                   ref<Expr> segment,
-                   ref<Expr> address,
+                   const KValue &address,
                    KInstruction *target = 0);
   
   void executeCall(ExecutionState &state, 
@@ -309,26 +307,17 @@ private:
                    const std::vector<Cell> &arguments);
 
   void executeMemoryRead(ExecutionState &state,
-                         ref<Expr> addressSegment,
-                         ref<Expr> addressOffset,
+                         const KValue &address,
                          KInstruction *target);
   void executeMemoryWrite(ExecutionState &state,
-                          ref<Expr> addressSegment,
-                          ref<Expr> addressOffset,
-                          ref<Expr> valueOffset);
-  void executeMemoryWrite(ExecutionState &state,
-                          ref<Expr> addressSegment,
-                          ref<Expr> addressOffset,
-                          ref<Expr> valueSegment,
-                          ref<Expr> valueOffset);
+                          const KValue &address,
+                          const KValue &value);
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
   void executeMemoryOperation(ExecutionState &state,
                               bool isWrite,
-                              ref<Expr> addressSegment,
-                              ref<Expr> addressOffset,
-                              ref<Expr> valueSegment, /* undef if read */
-                              ref<Expr> valueOffset, /* undef if read */
+                              KValue address,
+                              KValue value, /* undef if read */
                               KInstruction *target /* undef if write */);
 
   void executeMakeSymbolic(ExecutionState &state, const MemoryObject *mo,
@@ -419,7 +408,7 @@ private:
   void executeGetValue(ExecutionState &state, ref<Expr> e, KInstruction *target);
 
   /// Get textual information regarding a memory address.
-  std::string getAddressInfo(ExecutionState &state, KValue address) const;
+  std::string getAddressInfo(ExecutionState &state, const KValue &address) const;
 
   // Determines the \param lastInstruction of the \param state which is not KLEE
   // internal and returns its InstructionInfo

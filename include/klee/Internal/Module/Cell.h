@@ -10,7 +10,7 @@
 #ifndef KLEE_CELL_H
 #define KLEE_CELL_H
 
-#include <klee/Internal/Module/KValue.h>
+#include <klee/KValue.h>
 
 namespace klee {
   class Cell : public KValue {};

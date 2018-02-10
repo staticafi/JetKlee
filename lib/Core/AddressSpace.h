@@ -14,6 +14,7 @@
 
 #include "klee/Expr.h"
 #include "klee/Internal/ADT/ImmutableMap.h"
+#include "klee/KValue.h"
 
 namespace klee {
   class ExecutionState;
@@ -58,9 +59,8 @@ namespace klee {
 
     /// Resolve address to an ObjectPair in result.
     /// \return true iff an object was found.
-    bool resolveOne(const ref<ConstantExpr> &segment,
-                    const ref<ConstantExpr> &address,
-                    ObjectPair &result);
+    bool resolveConstantAddress(const KValue &pointer,
+                                ObjectPair &result);
 
     /// Resolve address to an ObjectPair in result.
     ///
@@ -73,8 +73,7 @@ namespace klee {
     /// \return true iff an object was found at \a address.
     bool resolveOne(ExecutionState &state, 
                     TimingSolver *solver,
-                    ref<Expr> segment,
-                    ref<Expr> address,
+                    const KValue &pointer,
                     ObjectPair &result,
                     bool &success);
 
@@ -86,8 +85,7 @@ namespace klee {
     /// is non-zero and the search terminated early, or a query timed out).
     bool resolve(ExecutionState &state,
                  TimingSolver *solver,
-                 ref<Expr> segment,
-                 ref<Expr> address, 
+                 const KValue &pointer,
                  ResolutionList &rl, 
                  unsigned maxResolutions=0,
                  double timeout=0.);
