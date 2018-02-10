@@ -13,7 +13,7 @@
 #include "Context.h"
 #include "TimingSolver.h"
 
-#include "klee/Expr/Expr.h"
+#include "klee/Module/KValue.h"
 
 #include "llvm/ADT/StringExtras.h"
 
@@ -132,13 +132,13 @@ public:
   ref<Expr> getOffsetExpr(ref<Expr> pointer) const {
     return SubExpr::create(pointer, getBaseExpr());
   }
-  ref<Expr> getBoundsCheckPointer(ref<Expr> segment, ref<Expr> offset) const {
+  ref<Expr> getBoundsCheckPointer(KValue pointer) const {
     // TODO segment
-    return getBoundsCheckOffset(getOffsetExpr(offset));
+    return getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()));
   }
-  ref<Expr> getBoundsCheckPointer(ref<Expr> segment, ref<Expr> offset, unsigned bytes) const {
+  ref<Expr> getBoundsCheckPointer(KValue pointer, unsigned bytes) const {
     // TODO segment
-    return getBoundsCheckOffset(getOffsetExpr(offset), bytes);
+    return getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()), bytes);
   }
 
   ref<Expr> getBoundsCheckOffset(ref<Expr> offset) const {
