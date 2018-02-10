@@ -116,7 +116,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
         
       bool mayBeTrue;
       if (!solver->mayBeTrue(state, 
-                             mo->getBoundsCheckPointer(address), mayBeTrue))
+                             mo->getBoundsCheckPointer(segment, address), mayBeTrue))
         return false;
       if (mayBeTrue) {
         result = *oi;
@@ -148,7 +148,7 @@ bool AddressSpace::resolveOne(ExecutionState &state,
         bool mayBeTrue;
 
         if (!solver->mayBeTrue(state, 
-                               mo->getBoundsCheckPointer(address),
+                               mo->getBoundsCheckPointer(segment, address),
                                mayBeTrue))
           return false;
         if (mayBeTrue) {
@@ -223,7 +223,7 @@ bool AddressSpace::resolve(ExecutionState &state,
         return true;
 
       // XXX I think there is some query wasteage here?
-      ref<Expr> inBounds = mo->getBoundsCheckPointer(p);
+      ref<Expr> inBounds = mo->getBoundsCheckPointer(segment, p);
       bool mayBeTrue;
       if (!solver->mayBeTrue(state, inBounds, mayBeTrue))
         return true;
@@ -266,7 +266,7 @@ bool AddressSpace::resolve(ExecutionState &state,
         break;
       
       // XXX I think there is some query wasteage here?
-      ref<Expr> inBounds = mo->getBoundsCheckPointer(p);
+      ref<Expr> inBounds = mo->getBoundsCheckPointer(segment, p);
       bool mayBeTrue;
       if (!solver->mayBeTrue(state, inBounds, mayBeTrue))
         return true;
