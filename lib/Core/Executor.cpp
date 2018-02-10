@@ -3554,7 +3554,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
     const MemoryObject *mo = i->first;
     const ObjectState *os = i->second;
-    ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
+    ref<Expr> inBounds = mo->getBoundsCheckPointer(addressSegment, addressOffset, bytes);
     
     StatePair branches = fork(*unbound, inBounds, true);
     ExecutionState *bound = branches.first;
