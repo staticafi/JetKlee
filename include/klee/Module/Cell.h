@@ -10,19 +10,10 @@
 #ifndef KLEE_CELL_H
 #define KLEE_CELL_H
 
-#include "klee/Expr/Expr.h"
+#include "klee/Module/KValue.h"
 
 namespace klee {
-  class MemoryObject;
-
-  struct Cell {
-    ref<Expr> value;
-    ref<Expr> pointerSegment;
-
-    ref<Expr> isPointer() const {
-      return Expr::createIsZero(pointerSegment);
-    }
-  };
+  struct Cell : public KValue {};
 }
 
 #endif /* KLEE_CELL_H */
