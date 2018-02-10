@@ -740,9 +740,8 @@ void SpecialFunctionHandler::handleCheckMemoryAccess(ExecutionState &state,
                                      // TODO segment
                                      executor.getAddressInfo(state, address));
     } else {
-      // TODO segment
       ref<Expr> chk = 
-        op.first->getBoundsCheckPointer(address, 
+        op.first->getBoundsCheckPointer(segment, address,
                                         cast<ConstantExpr>(size)->getZExtValue());
       if (!chk->isTrue()) {
         executor.terminateStateOnError(state,
