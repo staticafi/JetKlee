@@ -538,10 +538,8 @@ void SpecialFunctionHandler::handleIsSymbolic(ExecutionState &state,
                                 const std::vector<Cell> &arguments) {
   assert(arguments.size()==1 && "invalid number of arguments to klee_is_symbolic");
 
-  // TODO segment
-  executor.bindLocal(target, state,
-                     ConstantExpr::create(!isa<ConstantExpr>(arguments[0].value),
-                                          Expr::Int32));
+  KValue result(ConstantExpr::create(!arguments[0].isConstant(), Expr::Int32));
+  executor.bindLocal(target, state, result);
 }
 
 void SpecialFunctionHandler::handlePreferCex(ExecutionState &state,
@@ -665,9 +663,9 @@ void SpecialFunctionHandler::handleGetObjSize(ExecutionState &state,
          ie = rl.end(); it != ie; ++it) {
     executor.bindLocal(
         target, *it->second,
-        ConstantExpr::create(it->first.first->size,
-                             executor.kmodule->targetData->getTypeSizeInBits(
-                                 target->inst->getType())));
+        KValue(ConstantExpr::create(it->first.first->size,
+                                    executor.kmodule->targetData->getTypeSizeInBits(
+                                      target->inst->getType()))));
   }
 }
 
@@ -694,7 +692,8 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
                                 result, resolved);
   if (!resolved)
     executor.terminateStateOnUserError(state, "Could not resolve address for errno");
-  executor.bindLocal(target, state, result.second->read(0, Expr::Int32));
+  executor.bindLocal(target, state,
+                     KValue(ConstantExpr::create(errno, Expr::Int32)));
 }
 
 void SpecialFunctionHandler::handleErrnoLocation(

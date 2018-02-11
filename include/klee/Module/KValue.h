@@ -20,6 +20,7 @@ namespace klee {
 
   public:
     KValue() {}
+    KValue(const KValue &other) : value(other.value), pointerSegment(other.pointerSegment) {}
     KValue(ref<Expr> value)
       : value(value), pointerSegment(ConstantExpr::alloc(0, value->getWidth())) {}
     KValue(ref<Expr> segment, ref<Expr> offset)
