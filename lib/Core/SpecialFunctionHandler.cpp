@@ -249,7 +249,7 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
 
   unsigned i;
   for (i = 0; i < mo->size - 1; i++) {
-    ref<Expr> cur = os->read8(i);
+    ref<Expr> cur = os->read8(i).getValue();
     cur = executor.toUnique(state, cur);
     assert(isa<ConstantExpr>(cur) && 
            "hit symbolic char while reading concrete string");
