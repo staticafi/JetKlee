@@ -382,22 +382,16 @@ private:
     return state.stack.back().locals[target->dest];
   }
 
-  void bindLocal(KInstruction *target, 
-                 ExecutionState &state, 
-                 ref<Expr> value);
   void bindLocal(KInstruction *target,
                  ExecutionState &state,
-                 ref<Expr> pointerSegment,
+                 const KValue &value);
+  void bindLocal(KInstruction *target,
+                 ExecutionState &state,
                  ref<Expr> value);
-  void bindArgument(KFunction *kf, 
-                    unsigned index,
-                    ExecutionState &state,
-                    ref<Expr> value);
   void bindArgument(KFunction *kf,
                     unsigned index,
                     ExecutionState &state,
-                    ref<Expr> pointerSegment,
-                    ref<Expr> value);
+                    const KValue &value);
 
   /// Evaluates an LLVM constant expression.  The optional argument ki
   /// is the instruction where this constant was encountered, or NULL
