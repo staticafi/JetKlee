@@ -484,7 +484,7 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
   } else if (isa<ConstantAggregateZero>(c)) {
     unsigned i, size = targetData->getTypeStoreSize(c->getType());
     for (i=0; i<size; i++)
-      os->write8(offset+i, (uint8_t) 0);
+      os->write8(offset+i, (uint8_t)0, (uint8_t)0);
   } else if (const ConstantArray *ca = dyn_cast<ConstantArray>(c)) {
     unsigned elementSize =
       targetData->getTypeStoreSize(ca->getType()->getElementType());
@@ -513,7 +513,8 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
     if (StoreBits > C->getWidth())
       C = C->ZExt(StoreBits);
 
-    os->write(offset, C);
+    // TODO offset
+    os->write(offset, KValue(C));
   }
 }
 
@@ -524,7 +525,7 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
                                   size, nullptr);
   ObjectState *os = bindObjectInState(state, mo, false);
   for(unsigned i = 0; i < size; i++)
-    os->write8(i, ((uint8_t*)addr)[i]);
+    os->write8(i, (uint8_t)0, ((uint8_t*)addr)[i]);
   if(isReadOnly)
     os->setReadOnly(true);  
   return mo;
@@ -655,7 +656,8 @@ void Executor::initializeGlobals(ExecutionState &state) {
                      i->getName().data());
 
         for (unsigned offset=0; offset<size; offset++)
-          os->write8(offset, ((unsigned char*)addr)[offset]);
+          // TDOO segment
+          os->write8(offset, 0, ((unsigned char*)addr)[offset]);
       }
     } else {
       Type *ty = i->getType()->getElementType();
@@ -1338,9 +1340,9 @@ void Executor::executeCall(ExecutionState &state,
         // FIXME: This is really specific to the architecture, not the pointer
         // size. This happens to work for x86-32 and x86-64, however.
         if (WordSize == Expr::Int32) {
-          size += Expr::getMinBytesForWidth(arguments[i].value->getWidth());
+          size += Expr::getMinBytesForWidth(arguments[i].getWidth());
         } else {
-          Expr::Width argWidth = arguments[i].value->getWidth();
+          Expr::Width argWidth = arguments[i].getWidth();
           // AMD64-ABI 3.5.7p5: Step 7. Align l->overflow_arg_area upwards to a
           // 16 byte boundary if alignment needed by type exceeds 8 byte
           // boundary.
@@ -1384,13 +1386,12 @@ void Executor::executeCall(ExecutionState &state,
           // FIXME: This is really specific to the architecture, not the pointer
           // size. This happens to work for x86-32 and x86-64, however.
           if (WordSize == Expr::Int32) {
-            // TODO segment
-            os->write(offset, arguments[i].value);
-            offset += Expr::getMinBytesForWidth(arguments[i].value->getWidth());
+            os->write(offset, arguments[i]);
+            offset += Expr::getMinBytesForWidth(arguments[i].getWidth());
           } else {
             assert(WordSize == Expr::Int64 && "Unknown word size!");
 
-            Expr::Width argWidth = arguments[i].value->getWidth();
+            Expr::Width argWidth = arguments[i].getWidth();
             if (argWidth > Expr::Int64) {
 #if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
               offset = llvm::alignTo(offset, 16);
@@ -3262,7 +3263,8 @@ void Executor::executeAlloc(ExecutionState &state,
       if (reallocFrom) {
         unsigned count = std::min(reallocFrom->size, os->size);
         for (unsigned i=0; i<count; i++)
-          os->write(i, reallocFrom->read8(i));
+          // TODO segment
+          os->write(i, KValue(reallocFrom->read8(i)));
         state.addressSpace.unbindObject(reallocFrom->getObject());
       }
     }
@@ -3474,16 +3476,17 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-          wos->write(offset, value.getOffset());
+          wos->write(offset, value);
         }          
       } else {
-        ref<Expr> result = os->read(offset, type);
+        KValue result = os->read(offset, type);
         
-        if (interpreterOpts.MakeConcreteSymbolic)
-          result = replaceReadWithSymbolic(state, result);
+        if (interpreterOpts.MakeConcreteSymbolic) {
+          result.set(replaceReadWithSymbolic(state, result.getSegment()),
+                     replaceReadWithSymbolic(state, result.getOffset()));
+        }
 
-        // TODO segment
-        bindLocal(target, state, KValue(result));
+        bindLocal(target, state, result);
       }
 
       return;
@@ -3518,11 +3521,12 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
-          wos->write(mo->getOffsetExpr(address.getOffset()), value.getOffset());
+          // TODO segment
+          wos->write(mo->getOffsetExpr(address.getOffset()), value);
         }
       } else {
-        ref<Expr> result = os->read(mo->getOffsetExpr(address.getOffset()), type);
-        bindLocal(target, *bound, KValue(result));
+        KValue result = os->read(mo->getOffsetExpr(address.getOffset()), type);
+        bindLocal(target, *bound, result);
       }
     }
 
@@ -3611,7 +3615,8 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
         terminateStateOnError(state, "replay size mismatch", User);
       } else {
         for (unsigned i=0; i<mo->size; i++)
-          os->write8(i, obj->bytes[i]);
+          // TODO segment
+          os->write8(i, 0, obj->bytes[i]);
       }
     }
   }
@@ -3688,7 +3693,7 @@ void Executor::runFunctionAsMain(Function *f,
     for (int i=0; i<argc+1+envc+1+1; i++) {
       if (i==argc || i>=argc+1+envc) {
         // Write NULL pointer
-        argvOS->write(i * NumPtrBytes, Expr::createPointer(0));
+        argvOS->write(i * NumPtrBytes, KValue(Expr::createPointer(0)));
       } else {
         char *s = i<argc ? argv[i] : envp[i-(argc+1)];
         int j, len = strlen(s);
@@ -3699,11 +3704,13 @@ void Executor::runFunctionAsMain(Function *f,
         if (!arg)
           klee_error("Could not allocate memory for function arguments");
         ObjectState *os = bindObjectInState(*state, arg, false);
+        // TODO segment
         for (j=0; j<len+1; j++)
-          os->write8(j, s[j]);
+          os->write8(j, 0, s[j]);
 
         // Write pointer to newly allocated and initialised argv/envp c-string
-        argvOS->write(i * NumPtrBytes, arg->getBaseExpr());
+        // TODO segment
+        argvOS->write(i * NumPtrBytes, KValue(arg->getBaseExpr()));
       }
     }
   }
@@ -3859,7 +3866,7 @@ void Executor::doImpliedValueConcretization(ExecutionState &state,
         assert(!os->readOnly && 
                "not possible? read only object with static read?");
         ObjectState *wos = state.addressSpace.getWriteable(mo, os);
-        wos->write(CE, it->second);
+        wos->write(CE, KValue(it->second));
       }
     }
   }
