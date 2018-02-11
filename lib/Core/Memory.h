@@ -113,6 +113,9 @@ public:
     this->name = name;
   }
 
+  uint64_t getSegment() const {
+    return segment;
+  }
   ref<ConstantExpr> getSegmentExpr() const {
     return ConstantExpr::create(segment, Context::get().getPointerWidth());
   }
@@ -164,7 +167,7 @@ public:
   }
 };
 
-class ObjectState {
+class ObjectStatePlane {
 private:
   friend class AddressSpace;
   unsigned copyOnWriteOwner; // exclusively for AddressSpace
@@ -196,14 +199,14 @@ public:
   /// Create a new object state for the given memory object with concrete
   /// contents. The initial contents are undefined, it is the callers
   /// responsibility to initialize the object contents appropriately.
-  ObjectState(const MemoryObject *mo);
+  ObjectStatePlane(const MemoryObject *mo);
 
   /// Create a new object state for the given memory object with symbolic
   /// contents.
-  ObjectState(const MemoryObject *mo, const Array *array);
+  ObjectStatePlane(const MemoryObject *mo, const Array *array);
 
-  ObjectState(const ObjectState &os);
-  ~ObjectState();
+  ObjectStatePlane(const ObjectStatePlane &os);
+  ~ObjectStatePlane();
 
   const MemoryObject *getObject() const { return object; }
 
@@ -262,6 +265,69 @@ private:
   void setKnownSymbolic(unsigned offset, Expr *value);
 
   ArrayCache *getArrayCache() const;
+};
+
+class ObjectState {
+private:
+  friend class AddressSpace;
+  unsigned copyOnWriteOwner; // exclusively for AddressSpace
+
+  friend class ObjectHolder;
+  unsigned refCount;
+
+  const MemoryObject *object;
+
+  ObjectStatePlane segmentPlane;
+  ObjectStatePlane offsetPlane;
+
+public:
+  unsigned size;
+
+  bool readOnly;
+
+public:
+  /// Create a new object state for the given memory object with concrete
+  /// contents. The initial contents are undefined, it is the callers
+  /// responsibility to initialize the object contents appropriately.
+  ObjectState(const MemoryObject *mo);
+
+  /// Create a new object state for the given memory object with symbolic
+  /// contents.
+  ObjectState(const MemoryObject *mo, const Array *array);
+
+  ObjectState(const ObjectState &os);
+  ~ObjectState();
+
+  const MemoryObject *getObject() const { return object; }
+
+  void setReadOnly(bool ro) {
+    readOnly = ro;
+    segmentPlane.readOnly = ro;
+    offsetPlane.readOnly = ro;
+  }
+
+  // make contents all concrete and zero
+  void initializeToZero();
+  // make contents all concrete and random
+  void initializeToRandom();
+
+  void flushToConcreteStore(TimingSolver *solver,
+                            const ExecutionState &state) const {
+    offsetPlane.flushToConcreteStore(solver, state);
+  }
+
+  KValue read(ref<Expr> offset, Expr::Width width) const;
+  KValue read(unsigned offset, Expr::Width width) const;
+  KValue read8(unsigned offset) const;
+
+  // return bytes written.
+  void write(unsigned offset, const KValue &value);
+  void write(ref<Expr> offset, const KValue &value);
+
+  void write8(unsigned offset, uint8_t segment, uint8_t value);
+  void write16(unsigned offset, uint16_t segment, uint16_t value);
+  void write32(unsigned offset, uint32_t segment, uint32_t value);
+  void write64(unsigned offset, uint64_t segment, uint64_t value);
 };
   
 } // End klee namespace
