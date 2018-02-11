@@ -274,7 +274,7 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
   std::ostringstream buf;
   char c = 0;
   for (size_t i = offset; i < mo->size; ++i) {
-    ref<Expr> cur = os->read8(i);
+    ref<Expr> cur = os->read8(i).getValue();
     cur = executor.toUnique(state, cur);
     assert(isa<ConstantExpr>(cur) && 
            "hit symbolic char while reading concrete string");
