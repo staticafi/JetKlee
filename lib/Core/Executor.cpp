@@ -1028,28 +1028,19 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 }
 
 void Executor::bindLocal(KInstruction *target, ExecutionState &state,
-                         ref<Expr> pointerSegment, ref<Expr> value) {
-  Cell &cell = getDestCell(state, target);
-  cell.pointerSegment = pointerSegment;
-  cell.value = value;
+                         const KValue &value) {
+  getDestCell(state, target) = value;
 }
 
 void Executor::bindLocal(KInstruction *target, ExecutionState &state,
                          ref<Expr> value) {
-  bindLocal(target, state, ConstantExpr::create(0, value->getWidth()), value);
+  // TODO temporary
+  bindLocal(target, state, KValue(value));
 }
 
 void Executor::bindArgument(KFunction *kf, unsigned index,
-                            ExecutionState &state, ref<Expr> pointerSegment,
-                            ref<Expr> value) {
-  Cell &cell = getArgumentCell(state, kf, index);
-  cell.pointerSegment = pointerSegment;
-  cell.value = value;
-}
-
-void Executor::bindArgument(KFunction *kf, unsigned index,
-                            ExecutionState &state, ref<Expr> value) {
-  bindArgument(kf, index, state, ConstantExpr::create(0, value->getWidth()), value);
+                            ExecutionState &state, const KValue &value) {
+  getArgumentCell(state, kf, index) = value;
 }
 
 ref<Expr> Executor::toUnique(const ExecutionState &state, 
@@ -1114,7 +1105,8 @@ void Executor::executeGetValue(ExecutionState &state,
     bool success = solver->getValue(state, e, value);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
-    bindLocal(target, state, value);
+    // TODO segment
+    bindLocal(target, state, KValue(value));
   } else {
     std::set< ref<Expr> > values;
     for (std::vector<SeedInfo>::iterator siit = it->second.begin(), 
@@ -1140,7 +1132,8 @@ void Executor::executeGetValue(ExecutionState &state,
            vie = values.end(); vit != vie; ++vit) {
       ExecutionState *es = *bit;
       if (es)
-        bindLocal(target, *es, *vit);
+        // TODO segment
+        bindLocal(target, *es, KValue(*vit));
       ++bit;
     }
   }
@@ -1364,7 +1357,7 @@ void Executor::executeCall(ExecutionState &state,
 
     unsigned numFormals = f->arg_size();
     for (unsigned i=0; i<numFormals; ++i) 
-      bindArgument(kf, i, state, arguments[i].pointerSegment, arguments[i].value);
+      bindArgument(kf, i, state, arguments[i]);
   }
 }
 
@@ -1465,10 +1458,11 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   //    right.isPointer()
   //);
   // TODO check the constraint
-  ref<Expr> value = exprFn(left.value, right.value);
-  ref<Expr> segment = SelectExpr::create(left.isPointer(),
-      left.pointerSegment, right.pointerSegment);
-  bindLocal(ki, state, segment, value);
+  KValue result(SelectExpr::create(left.isPointer(),
+                                   left.getSegment(),
+                                   right.getOffset()),
+                exprFn(left.getValue(), right.getValue()));
+  bindLocal(ki, state, result);
 }
 
 void Executor::executeRelationalInstruction(ExecutionState &state, KInstruction *ki,
@@ -1477,8 +1471,8 @@ void Executor::executeRelationalInstruction(ExecutionState &state, KInstruction 
   const Cell &right = eval(ki, 1, state);
   // TODO must be true
   ref<Expr> constraint = EqExpr::create(left.pointerSegment, right.pointerSegment);
-  ref<Expr> result = exprFn(left.value, right.value);
-  bindLocal(ki, state,result);
+  KValue result(exprFn(left.value, right.value));
+  bindLocal(ki, state, result);
 }
 
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
@@ -1490,13 +1484,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     KInstIterator kcaller = state.stack.back().caller;
     Instruction *caller = kcaller ? kcaller->inst : 0;
     bool isVoidReturn = (ri->getNumOperands() == 0);
-    ref<Expr> result = ConstantExpr::alloc(0, Expr::Bool);
-    ref<Expr> resultSegment = ConstantExpr::alloc(0, Expr::Bool);
+    KValue result(ConstantExpr::alloc(0, Expr::Bool),
+                  ConstantExpr::alloc(0, Expr::Bool));
     
     if (!isVoidReturn) {
-      const Cell &cell = eval(ki, 0, state);
-      result = cell.value;
-      resultSegment = cell.pointerSegment;
+      result = eval(ki, 0, state);
     }
     
     if (state.stack.size() <= 1) {
@@ -1519,7 +1511,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         Type *t = caller->getType();
         if (t != Type::getVoidTy(i->getContext())) {
           // may need to do coercion due to bitcasts
-          Expr::Width from = result->getWidth();
+          Expr::Width from = result.getWidth();
           Expr::Width to = getWidthForLLVMType(t);
             
           if (from != to) {
@@ -1529,15 +1521,15 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
             // XXX need to check other param attrs ?
       bool isSExt = cs.paramHasAttr(0, llvm::Attribute::SExt);
             if (isSExt) {
-              result = SExtExpr::create(result, to);
-              resultSegment = SExtExpr::create(resultSegment, to);
+              result.set(SExtExpr::create(result.getSegment(), to),
+                         SExtExpr::create(result.getOffset(), to));
             } else {
-              result = ZExtExpr::create(result, to);
-              resultSegment = ZExtExpr::create(resultSegment, to);
+              result.set(ZExtExpr::create(result.getSegment(), to),
+                         ZExtExpr::create(result.getOffset(), to));
             }
           }
 
-          bindLocal(kcaller, state, resultSegment, result);
+          bindLocal(kcaller, state, result);
         }
       } else {
         // We check that the return value has no users instead of
@@ -1806,7 +1798,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   }
   case Instruction::PHI: {
     const Cell &cell = eval(ki, state.incomingBBIndex, state);
-    bindLocal(ki, state, cell.pointerSegment, cell.value);
+    bindLocal(ki, state, cell);
     break;
   }
 
@@ -1816,10 +1808,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     ref<Expr> cond = eval(ki, 0, state).value;
     const Cell &tCell = eval(ki, 1, state);
     const Cell &fCell = eval(ki, 2, state);
-    ref<Expr> result = SelectExpr::create(cond, tCell.value, fCell.value);
-    ref<Expr> resultSegment = SelectExpr::create(cond, tCell.pointerSegment,
-        fCell.pointerSegment);
-    bindLocal(ki, state, resultSegment, result);
+    KValue result(SelectExpr::create(cond, tCell.getSegment(), fCell.getSegment()),
+                  SelectExpr::create(cond, tCell.getOffset(),  fCell.getOffset()));
+    bindLocal(ki, state, result);
     break;
   }
 
@@ -2020,56 +2011,48 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Trunc: {
     CastInst *ci = cast<CastInst>(i);
     const Cell &cell = eval(ki, 0, state);
-    ref<Expr> result = ExtractExpr::create(cell.value,
-                                           0,
-                                           getWidthForLLVMType(ci->getType()));
-    ref<Expr> resultSegment = ExtractExpr::create(cell.pointerSegment,
-                                                  0,
-                                                  getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, resultSegment, result);
+    KValue result(ExtractExpr::create(cell.getSegment(), 0,
+                                      getWidthForLLVMType(ci->getType())),
+                  ExtractExpr::create(cell.getOffset(), 0,
+                                      getWidthForLLVMType(ci->getType())));
+    bindLocal(ki, state, result);
     break;
   }
   case Instruction::ZExt: {
     CastInst *ci = cast<CastInst>(i);
     const Cell &cell = eval(ki, 0, state);
-    ref<Expr> result = ZExtExpr::create(cell.value,
-                                        getWidthForLLVMType(ci->getType()));
-    ref<Expr> resultSegment = ZExtExpr::create(cell.pointerSegment,
-                                               getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, resultSegment, result);
+    KValue result(ZExtExpr::create(cell.getSegment(),
+                                   getWidthForLLVMType(ci->getType())),
+                  ZExtExpr::create(cell.getOffset(),
+                                   getWidthForLLVMType(ci->getType())));
+    bindLocal(ki, state, result);
     break;
   }
   case Instruction::SExt: {
     CastInst *ci = cast<CastInst>(i);
     const Cell &cell = eval(ki, 0, state);
-    ref<Expr> result = SExtExpr::create(cell.value,
-                                        getWidthForLLVMType(ci->getType()));
-    ref<Expr> resultSegment = SExtExpr::create(cell.pointerSegment,
-                                               getWidthForLLVMType(ci->getType()));
-    bindLocal(ki, state, resultSegment, result);
+    KValue result(SExtExpr::create(cell.getSegment(),
+                                   getWidthForLLVMType(ci->getType())),
+                  SExtExpr::create(cell.getOffset(),
+                                   getWidthForLLVMType(ci->getType())));
+    bindLocal(ki, state, result);
     break;
   }
 
-  case Instruction::IntToPtr: {
-    CastInst *ci = cast<CastInst>(i);
-    Expr::Width pType = getWidthForLLVMType(ci->getType());
-    const Cell &cell = eval(ki, 0, state);
-    bindLocal(ki, state, ZExtExpr::create(cell.pointerSegment, pType),
-        ZExtExpr::create(cell.value, pType));
-    break;
-  }
+  case Instruction::IntToPtr:
   case Instruction::PtrToInt: {
     CastInst *ci = cast<CastInst>(i);
-    Expr::Width iType = getWidthForLLVMType(ci->getType());
+    Expr::Width width = getWidthForLLVMType(ci->getType());
     const Cell &cell = eval(ki, 0, state);
-    bindLocal(ki, state, ZExtExpr::create(cell.pointerSegment, iType),
-        ZExtExpr::create(cell.value, iType));
+    KValue result(ZExtExpr::create(cell.getSegment(), width),
+                  ZExtExpr::create(cell.getOffset(), width));
+    bindLocal(ki, state, result);
     break;
   }
 
   case Instruction::BitCast: {
     const Cell &cell = eval(ki, 0, state);
-    bindLocal(ki, state, cell.pointerSegment, cell.value);
+    bindLocal(ki, state, cell);
     break;
   }
 
@@ -3028,7 +3011,8 @@ void Executor::callExternalFunction(ExecutionState &state,
   if (resultType != Type::getVoidTy(function->getContext())) {
     ref<Expr> e = ConstantExpr::fromMemory((void*) args, 
                                            getWidthForLLVMType(resultType));
-    bindLocal(target, state, e);
+    // TODO segment
+    bindLocal(target, state, KValue(e));
   }
 }
 
@@ -3093,7 +3077,7 @@ void Executor::executeAlloc(ExecutionState &state,
                          allocSite, allocationAlignment);
     if (!mo) {
       bindLocal(target, state, 
-                ConstantExpr::alloc(0, Context::get().getPointerWidth()));
+                KValue(ConstantExpr::alloc(0, Context::get().getPointerWidth())));
     } else {
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
@@ -3101,7 +3085,8 @@ void Executor::executeAlloc(ExecutionState &state,
       } else {
         os->initializeToRandom();
       }
-      bindLocal(target, state, mo->getBaseExpr());
+      // TODO segment
+      bindLocal(target, state, KValue(mo->getBaseExpr()));
       
       if (reallocFrom) {
         unsigned count = std::min(reallocFrom->size, os->size);
@@ -3167,7 +3152,7 @@ void Executor::executeAlloc(ExecutionState &state,
         if (hugeSize.first) {
           klee_message("NOTE: found huge malloc, returning 0");
           bindLocal(target, *hugeSize.first, 
-                    ConstantExpr::alloc(0, Context::get().getPointerWidth()));
+                    KValue(ConstantExpr::alloc(0, Context::get().getPointerWidth())));
         }
         
         if (hugeSize.second) {
@@ -3195,7 +3180,7 @@ void Executor::executeFree(ExecutionState &state,
   StatePair zeroPointer = fork(state, Expr::createIsZero(address.getOffset()), true);
   if (zeroPointer.first) {
     if (target)
-      bindLocal(target, *zeroPointer.first, Expr::createPointer(0));
+      bindLocal(target, *zeroPointer.first, KValue(Expr::createPointer(0)));
   }
   if (zeroPointer.second) { // address != 0
     ExactResolutionList rl;
@@ -3213,7 +3198,7 @@ void Executor::executeFree(ExecutionState &state,
       } else {
         it->second->addressSpace.unbindObject(mo);
         if (target)
-          bindLocal(target, *it->second, Expr::createPointer(0));
+          bindLocal(target, *it->second, KValue(Expr::createPointer(0)));
       }
     }
   }
@@ -3325,8 +3310,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         
         if (interpreterOpts.MakeConcreteSymbolic)
           result = replaceReadWithSymbolic(state, result);
-        
-        bindLocal(target, state, result);
+
+        // TODO segment
+        bindLocal(target, state, KValue(result));
       }
 
       return;
@@ -3365,7 +3351,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         }
       } else {
         ref<Expr> result = os->read(mo->getOffsetExpr(address.getOffset()), type);
-        bindLocal(target, *bound, result);
+        bindLocal(target, *bound, KValue(result));
       }
     }
 
@@ -3522,7 +3508,8 @@ void Executor::runFunctionAsMain(Function *f,
 
   assert(arguments.size() == f->arg_size() && "wrong number of arguments");
   for (unsigned i = 0, e = f->arg_size(); i != e; ++i)
-    bindArgument(kf, i, *state, arguments[i]);
+    // TODO segment
+    bindArgument(kf, i, *state, KValue(arguments[i]));
 
   if (argvMO) {
     ObjectState *argvOS = bindObjectInState(*state, argvMO, false);

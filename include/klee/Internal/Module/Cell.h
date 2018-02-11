@@ -13,7 +13,11 @@
 #include <klee/KValue.h>
 
 namespace klee {
-  class Cell : public KValue {};
+  class Cell : public KValue {
+  public:
+    Cell() {}
+    Cell(const KValue &other) : KValue(other) {}
+  };
 }
 
 #endif
