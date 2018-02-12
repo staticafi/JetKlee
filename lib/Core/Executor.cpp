@@ -3269,8 +3269,9 @@ void Executor::executeAlloc(ExecutionState &state,
           // an error. If no error is found, than we know nothing
           klee_warning_once(target, "ERROR: concretized symbolic size to 2^17,"
                             "analysis may be unsound");
-          bindLocal(target, *hugeSize.second,
-                    ConstantExpr::alloc(1 << 17, Context::get().getPointerWidth()));
+
+          addConstraint(*hugeSize.second,
+                        UleExpr::create(size, ConstantExpr::alloc(1 << 17, Context::get().getPointerWidth())));
 
           addConstraint(*hugeSize.second,
                         UleExpr::create(size, ConstantExpr::create(1 << 17, Context::get().getPointerWidth())));
