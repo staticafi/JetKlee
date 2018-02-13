@@ -490,6 +490,9 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
                                            bool isReadOnly) {
   MemoryObject *mo = memory->allocateFixed((uint64_t) (unsigned long) addr, 
                                            size, 0);
+  if (!mo)
+      klee_error("Failed allocating memory for an external object");
+
   ObjectState *os = bindObjectInState(state, mo, false);
   for(unsigned i = 0; i < size; i++)
     os->write8(i, ((uint8_t*)addr)[i]);
@@ -610,6 +613,9 @@ void Executor::initializeGlobals(ExecutionState &state) {
       MemoryObject *mo = memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/true, /*allocSite=*/v,
                                           /*alignment=*/globalObjectAlignment);
+      if (!mo)
+          klee_error("Unable to allocate memory for a global variables");
+
       ObjectState *os = bindObjectInState(state, mo, false);
       globalObjects.insert(std::make_pair(v, mo));
       globalAddresses.insert(std::make_pair(v, mo->getBaseExpr()));
@@ -3192,8 +3198,13 @@ void Executor::executeAlloc(ExecutionState &state,
         memory->allocate(CE->getZExtValue(), isLocal, /*isGlobal=*/false,
                          allocSite, allocationAlignment);
     if (!mo) {
-      bindLocal(target, state, 
-                ConstantExpr::alloc(0, Context::get().getPointerWidth()));
+      if (CE->getZExtValue() == 0) {
+        bindLocal(target, state,
+                  ConstantExpr::alloc(0, Context::get().getPointerWidth()));
+      } else {
+          terminateStateEarly(state, "Unable to allocate memory");
+          return;
+      }
     } else {
       ObjectState *os = bindObjectInState(state, mo, isLocal);
       if (zeroMemory) {
