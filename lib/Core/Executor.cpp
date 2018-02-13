@@ -3204,9 +3204,6 @@ void Executor::executeAlloc(ExecutionState &state,
                             "analysis may be unsound");
 
           addConstraint(*hugeSize.second,
-                        UleExpr::create(size, ConstantExpr::alloc(1 << 17, Context::get().getPointerWidth())));
-
-          addConstraint(*hugeSize.second,
                         UleExpr::create(size, ConstantExpr::create(1 << 17, Context::get().getPointerWidth())));
 
           executeAlloc(*fixedSize.second,
