@@ -161,13 +161,14 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
     }
   } else {
     // Use malloc for the standard case
-    if (alignment <= 8 || pointerBitWidth == 32)
+    if (alignment <= 8 || pointerBitWidth == 32) {
       address = allocate_memory(size, pointerBitWidth == 32);
       if (address == 0 && size != 0) {
           klee_warning("Allocating memory failed.");
           return 0;
       }
-    else {
+      assert(pointerBitWidth > 32 || address < (1L << 32));
+    } else {
       int res = posix_memalign((void **)&address, alignment, size);
       if (res < 0) {
         klee_warning("Allocating aligned memory failed.");
