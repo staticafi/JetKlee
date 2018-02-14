@@ -127,6 +127,13 @@ public:
     return AddExpr::create(getBaseExpr(),
             ConstantExpr::create(offset, Context::get().getPointerWidth()));
   }
+  KValue getPointer() const {
+    return KValue(getBaseExpr());
+  }
+  KValue getPointer(uint64_t offset) const {
+    return KValue(AddExpr::create(getBaseExpr(),
+                  ConstantExpr::create(offset, Context::get().getPointerWidth())));
+  }
   std::string getAddressString() const {
     return std::to_string(address);
   }
