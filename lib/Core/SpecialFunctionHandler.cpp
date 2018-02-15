@@ -511,7 +511,6 @@ void SpecialFunctionHandler::handleAssume(ExecutionState &state,
                             const std::vector<Cell> &arguments) {
   assert(arguments.size()==1 && "invalid number of arguments to klee_assume");
 
-  // TODO segment
   ref<Expr> e = arguments[0].value;
   
   if (e->getWidth() != Expr::Bool)
@@ -578,7 +577,6 @@ void SpecialFunctionHandler::handleSetForking(ExecutionState &state,
                                               const std::vector<Cell> &arguments) {
   assert(arguments.size()==1 &&
          "invalid number of arguments to klee_set_forking");
-  // TODO segment
   ref<Expr> value = executor.toUnique(state, arguments[0].value);
   
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(value)) {
@@ -870,7 +868,6 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
     // FIXME: Type coercion should be done consistently somewhere.
     bool res;
-    // TODO segment
     bool success __attribute__((unused)) = executor.solver->mustBeTrue(
         s->constraints,
         EqExpr::create(
