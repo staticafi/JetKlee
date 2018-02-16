@@ -12,6 +12,7 @@
 
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Expr.h"
+#include "klee/Module/KValue.h"
 #include "klee/Solver/Solver.h"
 #include "klee/System/Time.h"
 
@@ -61,6 +62,11 @@ public:
 
   bool getValue(const ConstraintSet &, ref<Expr> expr,
                 ref<ConstantExpr> &result, SolverQueryMetaData &metaData);
+
+  bool getValue(const ConstraintSet &, KValue value,
+                ref<ConstantExpr> &segmentResult,
+                ref<ConstantExpr> &offsetResult,
+                SolverQueryMetaData &metaData);
 
   bool getInitialValues(const ConstraintSet &,
                         const std::vector<const Array *> &objects,

@@ -12,6 +12,8 @@
 #include "ExecutionState.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Expr/Assignment.h"
+#include "klee/Expr/ExprUtil.h"
 #include "klee/Statistics/Statistics.h"
 #include "klee/Statistics/TimerStatIncrementer.h"
 #include "klee/Solver/Solver.h"
@@ -104,6 +106,44 @@ bool TimingSolver::getValue(const ConstraintSet &constraints, ref<Expr> expr,
   bool success = solver->getValue(Query(constraints, expr), result);
 
   metaData.queryCost += timer.delta();
+
+  return success;
+}
+
+bool TimingSolver::getValue(const ConstraintSet& constraints, KValue value,
+                            ref<ConstantExpr> &segmentResult,
+                            ref<ConstantExpr> &offsetResult,
+                            SolverQueryMetaData &metaData) {
+  ref<Expr> segment = value.getSegment();
+  ref<Expr> offset = value.getOffset();
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(segment)) {
+    segmentResult = CE;
+    return getValue(constraints, offset, offsetResult, metaData);
+  }
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(offset)) {
+    offsetResult = CE;
+    return getValue(constraints, segment, segmentResult, metaData);
+  }
+
+  TimerStatIncrementer timer(stats::solverTime);
+
+  if (simplifyExprs) {
+    segment = ConstraintManager::simplifyExpr(constraints, segment);
+    offset = ConstraintManager::simplifyExpr(constraints, offset);
+  }
+
+  Query query(constraints, ConstantExpr::alloc(0, Expr::Bool));
+  std::vector<const Array *> objects;
+  std::vector< std::vector<unsigned char> > values;
+  findSymbolicObjects(query.expr, objects);
+  bool success = solver->getInitialValues(query, objects, values);
+  if (success) {
+    Assignment a(objects, values);
+    segmentResult = cast<ConstantExpr>(a.evaluate(segment));
+    offsetResult = cast<ConstantExpr>(a.evaluate(offset));
+  }
+
+  metaData.queryCost += timer.delta() / 1e6;
 
   return success;
 }
