@@ -12,6 +12,7 @@
 
 #include "klee/Expr.h"
 #include "klee/Solver.h"
+#include "klee/KValue.h"
 
 #include <vector>
 
@@ -58,6 +59,8 @@ namespace klee {
 
     bool getValue(const ExecutionState &, ref<Expr> expr, 
                   ref<ConstantExpr> &result);
+    bool getValue(const ExecutionState &, KValue value,
+                  ref<ConstantExpr> &segmentResult, ref<ConstantExpr> &offsetResult);
 
     bool getInitialValues(const ExecutionState&, 
                           const std::vector<const Array*> &objects,
