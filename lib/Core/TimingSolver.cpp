@@ -16,6 +16,8 @@
 #include "klee/TimerStatIncrementer.h"
 
 #include "CoreStats.h"
+#include "klee/util/Assignment.h"
+#include "klee/util/ExprUtil.h"
 
 using namespace klee;
 using namespace llvm;
@@ -101,6 +103,42 @@ bool TimingSolver::getValue(const ExecutionState& state, ref<Expr> expr,
   bool success = solver->getValue(Query(state.constraints, expr), result);
 
   state.queryCost += timer.check();
+
+  return success;
+}
+
+bool TimingSolver::getValue(const ExecutionState& state, KValue value,
+                            ref<ConstantExpr> &segmentResult, ref<ConstantExpr> &offsetResult) {
+  ref<Expr> segment = value.getSegment();
+  ref<Expr> offset = value.getOffset();
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(segment)) {
+    segmentResult = CE;
+    return getValue(state, offset, offsetResult);
+  }
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(offset)) {
+    offsetResult = CE;
+    return getValue(state, segment, segmentResult);
+  }
+
+  TimerStatIncrementer timer(stats::solverTime);
+
+  if (simplifyExprs) {
+    segment = state.constraints.simplifyExpr(segment);
+    offset = state.constraints.simplifyExpr(offset);
+  }
+
+  Query query(state.constraints, ConstantExpr::alloc(0, Expr::Bool));
+  std::vector<const Array *> objects;
+  std::vector< std::vector<unsigned char> > values;
+  findSymbolicObjects(query.expr, objects);
+  bool success = solver->getInitialValues(query, objects, values);
+  if (success) {
+    Assignment a(objects, values);
+    segmentResult = cast<ConstantExpr>(a.evaluate(segment));
+    offsetResult = cast<ConstantExpr>(a.evaluate(offset));
+  }
+
+  state.queryCost += timer.check() / 1e6;
 
   return success;
 }
