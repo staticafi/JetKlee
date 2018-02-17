@@ -37,6 +37,8 @@ namespace klee {
       MemoryMap;
 
   class AddressSpace {
+    friend class ExecutionState;
+
   private:
     /// Epoch counter used to control ownership of objects.
     mutable unsigned cowKey;
