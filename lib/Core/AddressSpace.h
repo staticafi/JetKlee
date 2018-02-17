@@ -35,6 +35,8 @@ namespace klee {
   typedef ImmutableMap<const MemoryObject*, ObjectHolder, MemoryObjectLT> MemoryMap;
   
   class AddressSpace {
+    friend class ExecutionState;
+
   private:
     /// Epoch counter used to control ownership of objects.
     mutable unsigned cowKey;
@@ -42,7 +44,6 @@ namespace klee {
     /// Unsupported, use copy constructor
     AddressSpace &operator=(const AddressSpace&); 
     
-  public:
     /// The MemoryObject -> ObjectState map that constitutes the
     /// address space.
     ///
