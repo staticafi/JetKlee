@@ -2838,48 +2838,36 @@ std::string Executor::getAddressInfo(ExecutionState &state,
                                      const KValue &address) const{
   std::string Str;
   llvm::raw_string_ostream info(Str);
-  // TODO segment
-  info << "\taddress: " << address.getOffset() << "\n";
-  uint64_t example;
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(address.getOffset())) {
-    example = CE->getZExtValue();
+  info << "\taddress: " << address.getSegment() << ":" << address.getOffset() << "\n";
+  ref<ConstantExpr> segmentValue;
+  ref<ConstantExpr> offsetValue;
+  if (address.isConstant()) {
+    segmentValue = cast<ConstantExpr>(address.getSegment());
+    offsetValue = cast<ConstantExpr>(address.getOffset());
   } else {
-    ref<ConstantExpr> value;
-    bool success = solver->getValue(state, address.getOffset(), value);
+    bool success = solver->getValue(state, address, segmentValue, offsetValue);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
-    example = value->getZExtValue();
-    info << "\texample: " << example << "\n";
-    std::pair< ref<Expr>, ref<Expr> > res = solver->getRange(state, address.getOffset());
-    info << "\trange: [" << res.first << ", " << res.second <<"]\n";
+    info << "\texample: " << segmentValue->getZExtValue()
+        << ":" << offsetValue->getZExtValue() << "\n";
+    std::pair< ref<Expr>, ref<Expr> > res = solver->getRange(state, address.getSegment());
+    info << "\tsegment range: [" << res.first << ", " << res.second <<"]\n";
+    res = solver->getRange(state, address.getOffset());
+    info << "\toffset range: [" << res.first << ", " << res.second <<"]\n";
   }
   
-  MemoryObject hack((unsigned) example);    
-  MemoryMap::iterator lower = state.addressSpace.objects.upper_bound(&hack);
-  info << "\tnext: ";
-  if (lower==state.addressSpace.objects.end()) {
+  ObjectPair op;
+  bool success = state.addressSpace.resolveConstantAddress(KValue(segmentValue, offsetValue), op);
+  info << "\tpointing to: ";
+  if (!success) {
     info << "none\n";
   } else {
-    const MemoryObject *mo = lower->first;
+    const MemoryObject *mo = op.first;
     std::string alloc_info;
     mo->getAllocInfo(alloc_info);
     info << "object at " << mo->getAddressString()
          << " of size " << mo->getSizeString() << "\n"
          << "\t\t" << alloc_info << "\n";
-  }
-  if (lower!=state.addressSpace.objects.begin()) {
-    --lower;
-    info << "\tprev: ";
-    if (lower==state.addressSpace.objects.end()) {
-      info << "none\n";
-    } else {
-      const MemoryObject *mo = lower->first;
-      std::string alloc_info;
-      mo->getAllocInfo(alloc_info);
-      info << "object at " << mo->getAddressString()
-           << " of size " << mo->getSizeString() << "\n"
-           << "\t\t" << alloc_info << "\n";
-    }
   }
 
   return info.str();
