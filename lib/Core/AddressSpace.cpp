@@ -28,10 +28,14 @@ void AddressSpace::bindObject(const MemoryObject *mo, ObjectState *os) {
   assert(os->copyOnWriteOwner==0 && "object already has owner");
   os->copyOnWriteOwner = cowKey;
   objects = objects.replace(std::make_pair(mo, os));
+  if (mo->segment != 0)
+    segmentMap = segmentMap.replace(std::make_pair(mo->segment, mo));
 }
 
 void AddressSpace::unbindObject(const MemoryObject *mo) {
   objects = objects.remove(mo);
+  if (mo->segment != 0)
+    segmentMap = segmentMap.remove(mo->segment);
 }
 
 const ObjectState *AddressSpace::findObject(const MemoryObject *mo) const {
@@ -58,22 +62,31 @@ ObjectState *AddressSpace::getWriteable(const MemoryObject *mo,
 
 bool AddressSpace::resolveConstantAddress(const KValue &pointer,
                                           ObjectPair &result) const {
-  // TODO segment
-  uint64_t address = cast<ConstantExpr>(pointer.getValue())->getZExtValue();
-  MemoryObject hack(address);
+  uint64_t segment = cast<ConstantExpr>(pointer.getSegment())->getZExtValue();
 
-  if (const auto res = objects.lookup_previous(&hack)) {
-    const auto &mo = res->first;
-    // Check if the provided address is between start and end of the object
-    // [mo->address, mo->address + mo->size) or the object is a 0-sized object.
-    if ((mo->size==0 && address==mo->address) ||
-        (address - mo->address < mo->size)) {
-      result.first = res->first;
-      result.second = res->second.get();
+  if (segment != 0) {
+    if (const SegmentMap::value_type *res = segmentMap.lookup(segment)) {
+      // TODO bounds check?
+      const auto& objpair = *objects.lookup(res->second);
+      result.first = objpair.first;
+      result.second = objpair.second.get();
       return true;
     }
+  } else {
+    uint64_t address = cast<ConstantExpr>(pointer.getValue())->getZExtValue();
+    MemoryObject hack(address);
+    if (const auto res = objects.lookup_previous(&hack)) {
+      const auto &mo = res->first;
+      // Check if the provided address is between start and end of the object
+      // [mo->address, mo->address + mo->size) or the object is a 0-sized object.
+      if ((mo->size==0 && address==mo->address) ||
+          (address - mo->address < mo->size)) {
+        result.first = res->first;
+        result.second = res->second.get();
+        return true;
+      }
+    }
   }
-
   return false;
 }
 
@@ -86,6 +99,18 @@ bool AddressSpace::resolveOne(ExecutionState &state,
     success = resolveConstantAddress(pointer, result);
     return true;
   } else {
+    ref<ConstantExpr> segment = dyn_cast<ConstantExpr>(pointer.getSegment());
+    if (segment.isNull()) {
+      TimerStatIncrementer timer(stats::resolveTime);
+      if (!solver->getValue(state.constraints, pointer.getSegment(), segment,
+                            state.queryMetaData))
+        return false;
+    }
+
+    if (!segment->isZero()) {
+      return resolveConstantAddress(KValue(segment, pointer.getOffset()), result);
+    }
+
     TimerStatIncrementer timer(stats::resolveTime);
 
     // try cheap search, will succeed for any inbounds pointer

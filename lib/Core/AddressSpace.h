@@ -35,6 +35,7 @@ namespace klee {
 
   typedef ImmutableMap<const MemoryObject *, ref<ObjectState>, MemoryObjectLT>
       MemoryMap;
+  typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
 
   class AddressSpace {
     friend class ExecutionState;
@@ -67,6 +68,8 @@ namespace klee {
     ///
     /// \invariant forall o in objects, o->copyOnWriteOwner <= cowKey
     MemoryMap objects;
+
+    SegmentMap segmentMap;
 
     AddressSpace() : cowKey(1) {}
     AddressSpace(const AddressSpace &b) : cowKey(++b.cowKey), objects(b.objects) { }
