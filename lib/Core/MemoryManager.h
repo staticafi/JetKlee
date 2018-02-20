@@ -31,6 +31,7 @@ private:
   char *deterministicSpace;
   char *nextFreeSlot;
   size_t spaceSize;
+  uint64_t lastSegment;
 
 public:
   MemoryManager(ArrayCache *arrayCache);
