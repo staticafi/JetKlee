@@ -61,7 +61,8 @@ llvm::cl::opt<unsigned long long> DeterministicStartAddress(
 /***/
 MemoryManager::MemoryManager(ArrayCache *_arrayCache)
     : arrayCache(_arrayCache), deterministicSpace(0), nextFreeSlot(0),
-      spaceSize(DeterministicAllocationSize.getValue() * 1024 * 1024) {
+      spaceSize(DeterministicAllocationSize.getValue() * 1024 * 1024),
+      lastSegment(0) {
   if (DeterministicAllocation) {
     // Page boundary
     void *expectedAddress = (void *)DeterministicStartAddress.getValue();
@@ -146,7 +147,7 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
     return 0;
 
   ++stats::allocations;
-  MemoryObject *res = new MemoryObject(address, size, isLocal, isGlobal, false,
+  MemoryObject *res = new MemoryObject(++lastSegment, address, size, isLocal, isGlobal, false,
                                        allocSite, this);
   objects.insert(res);
   return res;
