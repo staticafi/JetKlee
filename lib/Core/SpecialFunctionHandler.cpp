@@ -477,8 +477,10 @@ void SpecialFunctionHandler::handlePrintExpr(ExecutionState &state,
          "invalid number of arguments to klee_print_expr");
 
   std::string msg_str = readStringAtAddress(state, arguments[0]);
-  // TODO segment
-  llvm::errs() << msg_str << ":" << arguments[1].value << "\n";
+  llvm::errs() << msg_str << ":";
+  if (!arguments[1].getSegment()->isZero())
+    llvm::errs() << arguments[1].getSegment() << ":";
+  llvm::errs() << arguments[1].getValue() << "\n";
 }
 
 void SpecialFunctionHandler::handleSetForking(ExecutionState &state,
