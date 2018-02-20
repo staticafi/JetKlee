@@ -223,47 +223,90 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
 bool AddressSpace::resolve(ExecutionState &state,
                            TimingSolver *solver,
                            const KValue &pointer,
-                           ResolutionList &rl, 
+                           ResolutionList &rl,
                            unsigned maxResolutions,
                            time::Span timeout) const {
+  if (isa<ConstantExpr>(pointer.getSegment()))
+    return resolveConstantSegment(state, solver, pointer, rl, maxResolutions, timeout);
+
+  TimerStatIncrementer timer(stats::resolveTime);
+  uint64_t timeout_us = (uint64_t) (timeout*1000000.);
+
+  bool mayBeTrue;
+  ref<Expr> zeroSegment = ConstantExpr::create(0, pointer.getWidth());
+  if (!solver->mayBeTrue(state, Expr::createIsZero(pointer.getSegment()), mayBeTrue))
+    return true;
+  if (mayBeTrue && resolveConstantSegment(state, solver,
+                                          KValue(zeroSegment, pointer.getValue()),
+                                          rl, maxResolutions, timeout))
+    return true;
+  // TODO inefficient
+  for (const SegmentMap::value_type &res : segmentMap) {
+    if (timeout_us && timeout_us < timer.check())
+      return true;
+    ref<Expr> segmentExpr = ConstantExpr::create(res.first, pointer.getWidth());
+    ref<Expr> expr = EqExpr::create(pointer.getSegment(), segmentExpr);
+    if (!solver->mayBeTrue(state, expr, mayBeTrue))
+      return true;
+    if (mayBeTrue)
+      rl.push_back(*objects.lookup(res.second));
+  }
+  return false;
+}
+
+bool AddressSpace::resolveConstantSegment(ExecutionState &state,
+                                          TimingSolver *solver,
+                                          const KValue &pointer,
+                                          ResolutionList &rl,
+                                          unsigned maxResolutions,
+                                          double timeout) const {
   if (pointer.isConstant()) {
     ObjectPair res;
     if (resolveConstantAddress(pointer, res))
       rl.push_back(res);
     return false;
-  } else {
-    TimerStatIncrementer timer(stats::resolveTime);
+  }
 
-    // XXX in general this isn't exactly what we want... for
-    // a multiple resolution case (or for example, a \in {b,c,0})
-    // we want to find the first object, find a cex assuming
-    // not the first, find a cex assuming not the second...
-    // etc.
+  TimerStatIncrementer timer(stats::resolveTime);
+  uint64_t timeout_us = (uint64_t) (timeout*1000000.);
 
-    // XXX how do we smartly amortize the cost of checking to
-    // see if we need to keep searching up/down, in bad cases?
-    // maybe we don't care?
 
-    // XXX we really just need a smart place to start (although
-    // if its a known solution then the code below is guaranteed
-    // to hit the fast path with exactly 2 queries). we could also
-    // just get this by inspection of the expr.
+  // XXX in general this isn't exactly what we want... for
+  // a multiple resolution case (or for example, a \in {b,c,0})
+  // we want to find the first object, find a cex assuming
+  // not the first, find a cex assuming not the second...
+  // etc.
 
-    ref<ConstantExpr> cex;
-    if (!solver->getValue(state, pointer.getOffset(), cex))
-      return true;
-    uint64_t example = cex->getZExtValue();
-    MemoryObject hack(example);
+  // XXX how do we smartly amortize the cost of checking to
+  // see if we need to keep searching up/down, in bad cases?
+  // maybe we don't care?
 
-    MemoryMap::iterator oi = objects.upper_bound(&hack);
-    MemoryMap::iterator begin = objects.begin();
-    MemoryMap::iterator end = objects.end();
+  // XXX we really just need a smart place to start (although
+  // if its a known solution then the code below is guaranteed
+  // to hit the fast path with exactly 2 queries). we could also
+  // just get this by inspection of the expr.
 
-    MemoryMap::iterator start = oi;
-    // search backwards, start with one minus because this
-    // is the object that p *should* be within, which means we
-    // get write off the end with 4 queries
-    while (oi != begin) {
+  ref<ConstantExpr> cex;
+  if (!solver->getValue(state, pointer.getOffset(), cex))
+    return true;
+  uint64_t example = cex->getZExtValue();
+  MemoryObject hack(example);
+
+  MemoryMap::iterator oi = objects.upper_bound(&hack);
+  MemoryMap::iterator begin = objects.begin();
+  MemoryMap::iterator end = objects.end();
+
+  MemoryMap::iterator start = oi;
+
+  // XXX in the common case we can save one query if we ask
+  // mustBeTrue before mayBeTrue for the first result. easy
+  // to add I just want to have a nice symbolic test case first.
+
+  // search backwards, start with one minus because this
+  // is the object that p *should* be within, which means we
+  // get write off the end with 4 queries (XXX can be better,
+  // no?)
+    while (oi!=begin) {
       --oi;
       const MemoryObject *mo = oi->first;
       if (timeout && timeout < timer.check())
@@ -275,13 +318,14 @@ bool AddressSpace::resolve(ExecutionState &state,
       if (incomplete != 2)
         return incomplete ? true : false;
 
+
       bool mustBeTrue;
       if (!solver->mustBeTrue(state, UgeExpr::create(pointer.getOffset(),
                                                      mo->getBaseExpr()),
                               mustBeTrue))
         return true;
       if (mustBeTrue)
-        break;
+         break;
     }
 
     // search forwards
@@ -305,7 +349,6 @@ bool AddressSpace::resolve(ExecutionState &state,
       if (incomplete != 2)
         return incomplete ? true : false;
     }
-  }
 
   return false;
 }
