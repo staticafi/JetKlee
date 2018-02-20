@@ -57,7 +57,10 @@ namespace klee {
     
   public:
     AddressSpace() : cowKey(1) {}
-    AddressSpace(const AddressSpace &b) : cowKey(++b.cowKey), objects(b.objects) { }
+    AddressSpace(const AddressSpace &b)
+      : cowKey(++b.cowKey),
+      objects(b.objects),
+      segmentMap(b.segmentMap) { }
     ~AddressSpace() {}
 
     /// Resolve address to an ObjectPair in result.
