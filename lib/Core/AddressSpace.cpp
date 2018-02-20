@@ -95,12 +95,12 @@ bool AddressSpace::resolveOne(ExecutionState &state,
     ref<ConstantExpr> segment = dyn_cast<ConstantExpr>(pointer.getSegment());
     if (segment.isNull()) {
       TimerStatIncrementer timer(stats::resolveTime);
-      if (!solver->getValue(state, pointer.getOffset(), segment))
+      if (!solver->getValue(state, pointer.getSegment(), segment))
         return false;
     }
 
     if (!segment->isZero()) {
-      return resolveConstantAddress(pointer, result);
+      return resolveConstantAddress(KValue(segment, pointer.getOffset()), result);
     }
 
     TimerStatIncrementer timer(stats::resolveTime);
