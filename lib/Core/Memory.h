@@ -104,6 +104,24 @@ public:
       allocSite(_allocSite) {
   }
 
+    MemoryObject(uint64_t segment, uint64_t _address, unsigned _size,
+               bool _isLocal, bool _isGlobal, bool _isFixed,
+               const llvm::Value *_allocSite,
+               MemoryManager *_parent)
+    : refCount(0),
+      id(counter++),
+      segment(segment),
+      address(_address),
+      size(_size),
+      name("unnamed"),
+      isLocal(_isLocal),
+      isGlobal(_isGlobal),
+      isFixed(_isFixed),
+      isUserSpecified(false),
+      parent(_parent),
+      allocSite(_allocSite) {
+  }
+
   ~MemoryObject();
 
   /// Get an identifying string for this allocation.
