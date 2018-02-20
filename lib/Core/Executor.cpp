@@ -1535,7 +1535,7 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   // TODO check the constraint
   KValue result(SelectExpr::create(left.isPointer(),
                                    left.getSegment(),
-                                   right.getOffset()),
+                                   right.getSegment()),
                 exprFn(left.getValue(), right.getValue()));
   bindLocal(ki, state, result);
 }
