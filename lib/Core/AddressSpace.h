@@ -71,7 +71,10 @@ namespace klee {
     SegmentMap segmentMap;
 
     AddressSpace() : cowKey(1) {}
-    AddressSpace(const AddressSpace &b) : cowKey(++b.cowKey), objects(b.objects) { }
+    AddressSpace(const AddressSpace &b)
+      : cowKey(++b.cowKey),
+      objects(b.objects),
+      segmentMap(b.segmentMap) { }
     ~AddressSpace() {}
 
     bool resolveConstantAddress(const KValue &pointer,
