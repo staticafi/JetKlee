@@ -102,6 +102,13 @@ namespace klee {
                  unsigned maxResolutions=0,
                  double timeout=0.) const;
 
+    bool resolveConstantSegment(ExecutionState &state,
+                                TimingSolver *solver,
+                                const KValue &pointer,
+                                ResolutionList &rl,
+                                unsigned maxResolutions=0,
+                                double timeout=0.);
+
     /***/
 
     /// Add a binding to the address space.
