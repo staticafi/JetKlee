@@ -278,7 +278,7 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
                                           ResolutionList &rl,
                                           unsigned maxResolutions,
                                           time::Span timeout) const {
-  if (pointer.isConstant()) {
+  if (!cast<ConstantExpr>(pointer.getSegment())->isZero()) {
     ObjectPair res;
     if (resolveConstantAddress(pointer, res))
       rl.push_back(res);
