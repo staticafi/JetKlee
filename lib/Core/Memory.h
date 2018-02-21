@@ -208,8 +208,6 @@ private:
   friend class AddressSpace;
   friend class ref<ObjectState>;
 
-  unsigned copyOnWriteOwner; // exclusively for AddressSpace
-
   /// @brief Required by klee::ref-managed objects
   class ReferenceCounter _refCount;
 
