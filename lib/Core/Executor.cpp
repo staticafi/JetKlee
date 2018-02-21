@@ -3277,7 +3277,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     bool inBounds;
     solver->setTimeout(coreSolverTimeout);
     bool success = solver->mustBeTrue(state, 
-                                      mo->getBoundsCheckOffset(offset, bytes),
+                                      mo->getBoundsCheckPointer(address, bytes),
                                       inBounds);
     solver->setTimeout(0);
     if (!success) {
