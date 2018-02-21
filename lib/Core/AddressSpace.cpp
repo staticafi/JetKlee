@@ -29,9 +29,10 @@ void AddressSpace::bindObject(const MemoryObject *mo, ObjectState *os) {
 }
 
 void AddressSpace::unbindObject(const MemoryObject *mo) {
-  objects = objects.remove(mo);
   if (mo->segment != 0)
     segmentMap = segmentMap.remove(mo->segment);
+  objects = objects.remove(mo);
+  // NOTE MemoryObjects are reference counted, *mo is deleted at this point
 }
 
 const ObjectState *AddressSpace::findObject(const MemoryObject *mo) const {
