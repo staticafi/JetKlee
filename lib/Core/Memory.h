@@ -192,10 +192,6 @@ public:
 class ObjectStatePlane {
 private:
   friend class AddressSpace;
-  unsigned copyOnWriteOwner; // exclusively for AddressSpace
-
-  friend class ObjectHolder;
-  unsigned refCount;
 
   const MemoryObject *object;
 
