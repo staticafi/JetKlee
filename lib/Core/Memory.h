@@ -162,14 +162,22 @@ public:
     return SubExpr::create(pointer, getBaseExpr());
   }
   ref<Expr> getBoundsCheckPointer(KValue pointer) const {
-    // TODO segment
-    return getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()));
+    return AndExpr::create(
+            getBoundsCheckSegment(pointer.getSegment()),
+            getBoundsCheckOffset(getOffsetExpr(pointer.getOffset())));
   }
   ref<Expr> getBoundsCheckPointer(KValue pointer, unsigned bytes) const {
-    // TODO segment
-    return getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()), bytes);
+    return AndExpr::create(
+            getBoundsCheckSegment(pointer.getSegment()),
+            getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()), bytes));
   }
 
+private:
+  ref<Expr> getBoundsCheckSegment(ref<Expr> segment) const {
+    return OrExpr::create(
+            EqExpr::create(segment, ConstantExpr::alloc(0, segment->getWidth())),
+            EqExpr::create(getSegmentExpr(), segment));
+  }
   ref<Expr> getBoundsCheckOffset(ref<Expr> offset) const {
     if (size==0) {
       return EqExpr::create(offset, 
