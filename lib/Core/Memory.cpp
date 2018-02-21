@@ -93,9 +93,7 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 /***/
 
 ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo)
-  : copyOnWriteOwner(0),
-    refCount(0),
-    object(mo),
+  : object(mo),
     concreteStore(new uint8_t[mo->size]),
     concreteMask(0),
     flushMask(0),
@@ -114,9 +112,7 @@ ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo)
 
 
 ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo, const Array *array)
-  : copyOnWriteOwner(0),
-    refCount(0),
-    object(mo),
+  : object(mo),
     concreteStore(new uint8_t[mo->size]),
     concreteMask(0),
     flushMask(0),
@@ -129,9 +125,7 @@ ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo, const Array *array)
 }
 
 ObjectStatePlane::ObjectStatePlane(const ObjectStatePlane &os)
-  : copyOnWriteOwner(0),
-    refCount(0),
-    object(os.object),
+  : object(os.object),
     concreteStore(new uint8_t[os.size]),
     concreteMask(os.concreteMask ? new BitArray(*os.concreteMask, os.size) : 0),
     flushMask(os.flushMask ? new BitArray(*os.flushMask, os.size) : 0),
