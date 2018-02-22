@@ -166,7 +166,7 @@ MemoryObject *MemoryManager::allocateFixed(uint64_t address, uint64_t size,
 
   ++stats::allocations;
   MemoryObject *res =
-      new MemoryObject(address, size, false, true, true, allocSite, this);
+      new MemoryObject(++lastSegment, address, size, false, true, true, allocSite, this);
   objects.insert(res);
   return res;
 }
