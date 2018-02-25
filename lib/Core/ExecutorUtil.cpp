@@ -32,8 +32,8 @@ using namespace llvm;
 
 namespace klee {
 
-  ref<klee::ConstantExpr> Executor::evalConstant(const Constant *c,
-                                                 const KInstruction *ki) {
+  KValue Executor::evalConstant(const Constant *c,
+                                const KInstruction *ki) {
     if (!ki) {
       KConstant* kc = kmodule->getKConstant(c);
       if (kc)
@@ -41,74 +41,70 @@ namespace klee {
     }
 
     if (const llvm::ConstantExpr *ce = dyn_cast<llvm::ConstantExpr>(c)) {
-      return evalConstantExpr(ce, ki);
+      // TODO segment
+      return KValue(evalConstantExpr(ce, ki));
     } else {
       if (const ConstantInt *ci = dyn_cast<ConstantInt>(c)) {
-        return ConstantExpr::alloc(ci->getValue());
+        return KValue(ConstantExpr::alloc(ci->getValue()));
       } else if (const ConstantFP *cf = dyn_cast<ConstantFP>(c)) {
-        return ConstantExpr::alloc(cf->getValueAPF().bitcastToAPInt());
+        return KValue(ConstantExpr::alloc(cf->getValueAPF().bitcastToAPInt()));
       } else if (const GlobalValue *gv = dyn_cast<GlobalValue>(c)) {
         auto it = globalAddresses.find(gv);
         assert(it != globalAddresses.end());
         return it->second;
       } else if (isa<ConstantPointerNull>(c)) {
-        return Expr::createPointer(0);
+        return KValue(Expr::createPointer(0));
       } else if (isa<UndefValue>(c) || isa<ConstantAggregateZero>(c)) {
         if (getWidthForLLVMType(c->getType()) == 0) {
           if (isa<llvm::LandingPadInst>(ki->inst)) {
             klee_warning_once(0, "Using zero size array fix for landingpad instruction filter");
-            return ConstantExpr::create(0, 1);
+            return KValue(ConstantExpr::create(0, 1));
           }
         }
-        return ConstantExpr::create(0, getWidthForLLVMType(c->getType()));
+        return KValue(ConstantExpr::create(0, getWidthForLLVMType(c->getType())));
       } else if (const ConstantDataSequential *cds =
                  dyn_cast<ConstantDataSequential>(c)) {
         // Handle a vector or array: first element has the smallest address,
         // the last element the highest
-        std::vector<ref<Expr> > kids;
+        std::vector<KValue> kids;
         for (unsigned i = cds->getNumElements(); i != 0; --i) {
-          ref<Expr> kid = evalConstant(cds->getElementAsConstant(i - 1), ki);
-          kids.push_back(kid);
+          kids.push_back(evalConstant(cds->getElementAsConstant(i - 1), ki));
         }
         assert(Context::get().isLittleEndian() &&
                "FIXME:Broken for big endian");
-        ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
-        return cast<ConstantExpr>(res);
+        return KValue::concatValues(kids);
       } else if (const ConstantStruct *cs = dyn_cast<ConstantStruct>(c)) {
         const StructLayout *sl = kmodule->targetData->getStructLayout(cs->getType());
-        llvm::SmallVector<ref<Expr>, 4> kids;
+        llvm::SmallVector<KValue, 4> kids;
         for (unsigned i = cs->getNumOperands(); i != 0; --i) {
           unsigned op = i-1;
-          ref<Expr> kid = evalConstant(cs->getOperand(op), ki);
+          KValue kid = evalConstant(cs->getOperand(op), ki);
 
           uint64_t thisOffset = sl->getElementOffsetInBits(op),
             nextOffset = (op == cs->getNumOperands() - 1)
             ? sl->getSizeInBits()
             : sl->getElementOffsetInBits(op+1);
-          if (nextOffset-thisOffset > kid->getWidth()) {
-            uint64_t paddingWidth = nextOffset-thisOffset-kid->getWidth();
-            kids.push_back(ConstantExpr::create(0, paddingWidth));
+          if (nextOffset-thisOffset > kid.getWidth()) {
+            uint64_t paddingWidth = nextOffset-thisOffset-kid.getWidth();
+            kids.push_back(KValue(ConstantExpr::create(0, paddingWidth)));
           }
 
           kids.push_back(kid);
         }
         assert(Context::get().isLittleEndian() &&
                "FIXME:Broken for big endian");
-        ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
-        return cast<ConstantExpr>(res);
+        return KValue::concatValues(kids);
       } else if (const ConstantArray *ca = dyn_cast<ConstantArray>(c)){
-        llvm::SmallVector<ref<Expr>, 4> kids;
+        llvm::SmallVector<KValue, 4> kids;
         for (unsigned i = ca->getNumOperands(); i != 0; --i) {
           unsigned op = i-1;
-          ref<Expr> kid = evalConstant(ca->getOperand(op), ki);
-          kids.push_back(kid);
+          kids.push_back(evalConstant(ca->getOperand(op), ki));
         }
         assert(Context::get().isLittleEndian() &&
                "FIXME:Broken for big endian");
-        ref<Expr> res = ConcatExpr::createN(kids.size(), kids.data());
-        return cast<ConstantExpr>(res);
+        return KValue::concatValues(kids);
       } else if (const ConstantVector *cv = dyn_cast<ConstantVector>(c)) {
-        llvm::SmallVector<ref<Expr>, 8> kids;
+        llvm::SmallVector<KValue, 8> kids;
         const size_t numOperands = cv->getNumOperands();
         kids.reserve(numOperands);
         for (unsigned i = numOperands; i != 0; --i) {
@@ -116,15 +112,12 @@ namespace klee {
         }
         assert(Context::get().isLittleEndian() &&
                "FIXME:Broken for big endian");
-        ref<Expr> res = ConcatExpr::createN(numOperands, kids.data());
-        assert(isa<ConstantExpr>(res) &&
-               "result of constant vector built is not a constant");
-        return cast<ConstantExpr>(res);
+        return KValue::concatValues(kids);
       } else if (const BlockAddress * ba = dyn_cast<BlockAddress>(c)) {
         // return the address of the specified basic block in the specified function
         const auto arg_bb = (BasicBlock *) ba->getOperand(1);
         const auto res = Expr::createPointer(reinterpret_cast<std::uint64_t>(arg_bb));
-        return cast<ConstantExpr>(res);
+        return KValue(cast<ConstantExpr>(res));
       } else {
         std::string msg("Cannot handle constant ");
         llvm::raw_string_ostream os(msg);
@@ -142,9 +135,9 @@ namespace klee {
     ref<ConstantExpr> op1(0), op2(0), op3(0);
     int numOperands = ce->getNumOperands();
 
-    if (numOperands > 0) op1 = evalConstant(ce->getOperand(0), ki);
-    if (numOperands > 1) op2 = evalConstant(ce->getOperand(1), ki);
-    if (numOperands > 2) op3 = evalConstant(ce->getOperand(2), ki);
+    if (numOperands > 0) op1 = cast<ConstantExpr>(evalConstant(ce->getOperand(0), ki).getOffset());
+    if (numOperands > 1) op2 = cast<ConstantExpr>(evalConstant(ce->getOperand(1), ki).getOffset());
+    if (numOperands > 2) op3 = cast<ConstantExpr>(evalConstant(ce->getOperand(2), ki).getOffset());
 
     /* Checking for possible errors during constant folding */
     switch (ce->getOpcode()) {
@@ -209,7 +202,8 @@ namespace klee {
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
         ref<ConstantExpr> indexOp =
-            evalConstant(cast<Constant>(ii.getOperand()), ki);
+            cast<ConstantExpr>(
+				evalConstant(cast<Constant>(ii.getOperand()), ki).getValue());
         if (indexOp->isZero())
           continue;
 

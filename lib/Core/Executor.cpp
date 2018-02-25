@@ -604,15 +604,14 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
                              offset + i*elementSize);
   } else if (!isa<UndefValue>(c) && !isa<MetadataAsValue>(c)) {
     unsigned StoreBits = targetData->getTypeStoreSizeInBits(c->getType());
-    ref<ConstantExpr> C = evalConstant(c);
+    KValue C = evalConstant(c);
 
     // Extend the constant if necessary;
-    assert(StoreBits >= C->getWidth() && "Invalid store size!");
-    if (StoreBits > C->getWidth())
-      C = C->ZExt(StoreBits);
+    assert(StoreBits >= C.getWidth() && "Invalid store size!");
+    if (StoreBits > C.getWidth())
+      C.ZExt(StoreBits);
 
-    // TODO offset
-    os->write(offset, KValue(C));
+    os->write(offset, C);
   }
 }
 
@@ -673,7 +672,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
       legalFunctions.emplace(mo->address, &f);
     }
 
-    globalAddresses.emplace(&f, addr);
+    globalAddresses.emplace(&f, KValue(addr));
   }
 
 #ifndef WINDOWS
@@ -752,8 +751,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
     if (!mo)
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
-    // TODO segment?
-    globalAddresses.emplace(&v, cast<ConstantExpr>(mo->getPointer().getOffset()));
+      globalAddresses.emplace(&v, mo->getPointer());
   }
 }
 
@@ -819,7 +817,6 @@ void Executor::initializeGlobalObjects(ExecutionState &state) {
                    static_cast<int>(v.getName().size()), v.getName().data());
       }
       for (unsigned offset = 0; offset < mo->size; offset++) {
-        // TODO: segment
         os->write8(offset, 0, static_cast<unsigned char *>(addr)[offset]);
       }
     } else if (v.hasInitializer()) {
@@ -1467,7 +1464,7 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
         llvm::GlobalValue *clause_type =
             dyn_cast<GlobalValue>(clause_bitcast->getOperand(0));
 
-        ti_addr = globalAddresses[clause_type]->getZExtValue();
+        ti_addr = cast<ConstantExpr>(globalAddresses[clause_type].getValue())->getZExtValue();
       } else if (current_clause->isNullValue()) {
         ti_addr = 0;
       } else {
@@ -1528,7 +1525,7 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
           }
 
           std::uint64_t const ti_addr =
-              globalAddresses[clause_value]->getZExtValue();
+              cast<ConstantExpr>(globalAddresses[clause_value].getValue())->getZExtValue();
 
           const std::size_t old_size = serialized.size();
           serialized.resize(old_size + 8);
@@ -2325,8 +2322,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
       // Iterate through all non-default cases and order them by expressions
       for (auto i : si->cases()) {
-        ref<Expr> value = evalConstant(i.getCaseValue());
-
+        ref<Expr> value = evalConstant(i.getCaseValue()).getValue();
         BasicBlock *caseSuccessor = i.getCaseSuccessor();
         expressionOrder.insert(std::make_pair(value, caseSuccessor));
       }
@@ -3325,7 +3321,8 @@ void Executor::computeOffsetsSeqTy(KGEPInstruction *kgepi,
   const Value *operand = it.getOperand();
   if (const Constant *c = dyn_cast<Constant>(operand)) {
     ref<ConstantExpr> index =
-        evalConstant(c)->SExt(Context::get().getPointerWidth());
+        cast<ConstantExpr>(evalConstant(c).getValue())
+            ->SExt(Context::get().getPointerWidth());
     ref<ConstantExpr> addend = index->Mul(
         ConstantExpr::alloc(elementSize, Context::get().getPointerWidth()));
     constantOffset = constantOffset->Add(addend);
@@ -3385,8 +3382,7 @@ void Executor::bindModuleConstants() {
       std::unique_ptr<Cell[]>(new Cell[kmodule->constants.size()]);
   for (unsigned i=0; i<kmodule->constants.size(); ++i) {
     Cell &c = kmodule->constantTable[i];
-    c.value = evalConstant(kmodule->constants[i]);
-    c.pointerSegment = ConstantExpr::create(0, c.value->getWidth());
+    c = evalConstant(kmodule->constants[i]);
   }
 }
 

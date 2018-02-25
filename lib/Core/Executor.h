@@ -143,7 +143,7 @@ private:
 
   /// Map of globals to their bound address. This also includes
   /// globals that have no representative object (i.e. functions).
-  std::map<const llvm::GlobalValue*, ref<ConstantExpr> > globalAddresses;
+  std::map<const llvm::GlobalValue*, KValue> globalAddresses;
 
   /// Map of legal function addresses to the corresponding Function.
   /// Used to validate and dereference function pointers.
@@ -396,8 +396,8 @@ private:
   /// Evaluates an LLVM constant.  The optional argument ki is the
   /// instruction where this constant was encountered, or NULL if
   /// not applicable/unavailable.
-  ref<klee::ConstantExpr> evalConstant(const llvm::Constant *c,
-				       const KInstruction *ki = NULL);
+  KValue evalConstant(const llvm::Constant *c,
+                      const KInstruction *ki = NULL);
 
   /// Return a unique constant value for the given expression in the
   /// given state, if it has one (i.e. it provably only has a single
