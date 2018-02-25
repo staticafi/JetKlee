@@ -55,6 +55,23 @@ namespace klee {
     Expr::Width getWidth() const {
       return getValue()->getWidth();
     }
+    
+    void ZExt(Expr::Width w) {
+      pointerSegment = ZExtExpr::create(pointerSegment, w);
+      value = ZExtExpr::create(value, w);
+    }
+
+    template <class T>
+    static KValue concatValues(const T &input) {
+      std::vector<ref<Expr> > segments;
+      std::vector<ref<Expr> > values;
+      for (const KValue& item : input) {
+        segments.push_back(item.getSegment());
+        values.push_back(item.getValue());
+      }
+      return KValue(ConcatExpr::createN(segments.size(), segments.data()),
+                    ConcatExpr::createN(values.size(), values.data()));
+    }
   };
 }
 
