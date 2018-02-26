@@ -1072,12 +1072,6 @@ void Executor::bindLocal(KInstruction *target, ExecutionState &state,
   getDestCell(state, target) = value;
 }
 
-void Executor::bindLocal(KInstruction *target, ExecutionState &state,
-                         ref<Expr> value) {
-  // TODO temporary
-  bindLocal(target, state, KValue(value));
-}
-
 void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, const KValue &value) {
   getArgumentCell(state, kf, index) = value;
