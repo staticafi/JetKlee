@@ -48,8 +48,7 @@ namespace klee {
     }
 
     if (const llvm::ConstantExpr *ce = dyn_cast<llvm::ConstantExpr>(c)) {
-      // TODO segment
-      return KValue(evalConstantExpr(ce, ki));
+      return evalConstantExpr(ce, ki);
     } else {
       if (const ConstantInt *ci = dyn_cast<ConstantInt>(c)) {
         return KValue(ConstantExpr::alloc(ci->getValue()));
@@ -123,7 +122,7 @@ namespace klee {
         // return the address of the specified basic block in the specified function
         const auto arg_bb = (BasicBlock *) ba->getOperand(1);
         const auto res = Expr::createPointer(reinterpret_cast<std::uint64_t>(arg_bb));
-        return KValue(cast<ConstantExpr>(res));
+        return KValue(res);
       } else {
         std::string msg("Cannot handle constant ");
         llvm::raw_string_ostream os(msg);
@@ -134,16 +133,19 @@ namespace klee {
     }
   }
 
-  ref<ConstantExpr> Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
-                                               const KInstruction *ki) {
+  KValue Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
+                                    const KInstruction *ki) {
     llvm::Type *type = ce->getType();
 
-    ref<ConstantExpr> op1(0), op2(0), op3(0);
+    KValue op1, op2, op3;
     int numOperands = ce->getNumOperands();
 
-    if (numOperands > 0) op1 = cast<ConstantExpr>(evalConstant(ce->getOperand(0), ki).getOffset());
-    if (numOperands > 1) op2 = cast<ConstantExpr>(evalConstant(ce->getOperand(1), ki).getOffset());
-    if (numOperands > 2) op3 = cast<ConstantExpr>(evalConstant(ce->getOperand(2), ki).getOffset());
+    if (numOperands > 0)
+      op1 = evalConstant(ce->getOperand(0), ki);
+    if (numOperands > 1)
+      op2 = evalConstant(ce->getOperand(1), ki);
+    if (numOperands > 2)
+      op3 = evalConstant(ce->getOperand(2), ki);
 
     /* Checking for possible errors during constant folding */
     switch (ce->getOpcode()) {
@@ -151,7 +153,7 @@ namespace klee {
     case Instruction::UDiv:
     case Instruction::SRem:
     case Instruction::URem:
-      if (op2->getLimitedValue() == 0) {
+      if (cast<ConstantExpr>(op2.getValue())->getLimitedValue() == 0) {
         std::string msg("Division/modulo by zero during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->getSourceLocation() : "[unknown]");
@@ -161,7 +163,7 @@ namespace klee {
     case Instruction::Shl:
     case Instruction::LShr:
     case Instruction::AShr:
-      if (op2->getLimitedValue() >= op1->getWidth()) {
+      if (cast<ConstantExpr>(op2.getValue())->getLimitedValue() >= op1.getWidth()) {
         std::string msg("Overshift during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->getSourceLocation() : "[unknown]");
@@ -178,40 +180,37 @@ namespace klee {
          << (ki ? ki->getSourceLocation() : "[unknown]");
       klee_error("%s", os.str().c_str());
 
-    case Instruction::Trunc: 
-      return op1->Extract(0, getWidthForLLVMType(type));
-    case Instruction::ZExt:  return op1->ZExt(getWidthForLLVMType(type));
-    case Instruction::SExt:  return op1->SExt(getWidthForLLVMType(type));
-    case Instruction::Add:   return op1->Add(op2);
-    case Instruction::Sub:   return op1->Sub(op2);
-    case Instruction::Mul:   return op1->Mul(op2);
-    case Instruction::SDiv:  return op1->SDiv(op2);
-    case Instruction::UDiv:  return op1->UDiv(op2);
-    case Instruction::SRem:  return op1->SRem(op2);
-    case Instruction::URem:  return op1->URem(op2);
-    case Instruction::And:   return op1->And(op2);
-    case Instruction::Or:    return op1->Or(op2);
-    case Instruction::Xor:   return op1->Xor(op2);
-    case Instruction::Shl:   return op1->Shl(op2);
-    case Instruction::LShr:  return op1->LShr(op2);
-    case Instruction::AShr:  return op1->AShr(op2);
+    case Instruction::Trunc:
+    case Instruction::IntToPtr:
+    case Instruction::PtrToInt:
+    case Instruction::ZExt:  return op1.ZExt(getWidthForLLVMType(type));
+    case Instruction::SExt:  return op1.SExt(getWidthForLLVMType(type));
+    case Instruction::Add:   return op1.Add(op2);
+    case Instruction::Sub:   return op1.Sub(op2);
+    case Instruction::Mul:   return op1.Mul(op2);
+    case Instruction::SDiv:  return op1.SDiv(op2);
+    case Instruction::UDiv:  return op1.UDiv(op2);
+    case Instruction::SRem:  return op1.SRem(op2);
+    case Instruction::URem:  return op1.URem(op2);
+    case Instruction::And:   return op1.And(op2);
+    case Instruction::Or:    return op1.Or(op2);
+    case Instruction::Xor:   return op1.Xor(op2);
+    case Instruction::Shl:   return op1.Shl(op2);
+    case Instruction::LShr:  return op1.LShr(op2);
+    case Instruction::AShr:  return op1.AShr(op2);
     case Instruction::BitCast:  return op1;
 
-    case Instruction::IntToPtr:
-      return op1->ZExt(getWidthForLLVMType(type));
-
-    case Instruction::PtrToInt:
-      return op1->ZExt(getWidthForLLVMType(type));
-
     case Instruction::GetElementPtr: {
-      ref<ConstantExpr> base = op1->ZExt(Context::get().getPointerWidth());
+      const Expr::Width pointerWidth = Context::get().getPointerWidth();
+      KValue base = op1.ZExt(pointerWidth);
+
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
-        ref<ConstantExpr> indexOp =
-            cast<ConstantExpr>(
-				evalConstant(cast<Constant>(ii.getOperand()), ki).getValue());
-        if (indexOp->isZero())
-          continue;
+        KValue indexOp
+            = evalConstant(cast<Constant>(ii.getOperand()), ki);
+        ref<ConstantExpr> indexValue = cast<ConstantExpr>(indexOp.getValue());
+        if (indexValue->isZero())
+			continue;
 
         // Handle a struct index, which adds its field offset to the pointer.
 #if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
@@ -219,21 +218,22 @@ namespace klee {
 #else
         if (StructType *STy = dyn_cast<StructType>(*ii)) {
 #endif
-          unsigned ElementIdx = indexOp->getZExtValue();
+          unsigned ElementIdx = indexValue->getZExtValue();
           const StructLayout *SL = kmodule->targetData->getStructLayout(STy);
-          base = base->Add(
-              ConstantExpr::alloc(APInt(Context::get().getPointerWidth(),
-                                        SL->getElementOffset(ElementIdx))));
-          continue;
+          base = base.Add(ConstantExpr::alloc(
+							APInt(Context::get().getPointerWidth(),
+						    SL->getElementOffset(ElementIdx))));
+		  continue;
         }
 
         // For array or vector indices, scale the index by the size of the type.
         // Indices can be negative
-        base = base->Add(indexOp->SExt(Context::get().getPointerWidth())
-                             ->Mul(ConstantExpr::alloc(
+
+        base = base.Add(indexOp.SExt(Context::get().getPointerWidth())
+                             .Mul(ConstantExpr::alloc(
                                  APInt(Context::get().getPointerWidth(),
                                        kmodule->targetData->getTypeAllocSize(
-                                           ii.getIndexedType())))));
+										 ii.getIndexedType())))));
       }
       return base;
     }
@@ -241,21 +241,21 @@ namespace klee {
     case Instruction::ICmp: {
       switch(ce->getPredicate()) {
       default: assert(0 && "unhandled ICmp predicate");
-      case ICmpInst::ICMP_EQ:  return op1->Eq(op2);
-      case ICmpInst::ICMP_NE:  return op1->Ne(op2);
-      case ICmpInst::ICMP_UGT: return op1->Ugt(op2);
-      case ICmpInst::ICMP_UGE: return op1->Uge(op2);
-      case ICmpInst::ICMP_ULT: return op1->Ult(op2);
-      case ICmpInst::ICMP_ULE: return op1->Ule(op2);
-      case ICmpInst::ICMP_SGT: return op1->Sgt(op2);
-      case ICmpInst::ICMP_SGE: return op1->Sge(op2);
-      case ICmpInst::ICMP_SLT: return op1->Slt(op2);
-      case ICmpInst::ICMP_SLE: return op1->Sle(op2);
+      case ICmpInst::ICMP_EQ:  return op1.Eq(op2);
+      case ICmpInst::ICMP_NE:  return op1.Ne(op2);
+      case ICmpInst::ICMP_UGT: return op1.Ugt(op2);
+      case ICmpInst::ICMP_UGE: return op1.Uge(op2);
+      case ICmpInst::ICMP_ULT: return op1.Ult(op2);
+      case ICmpInst::ICMP_ULE: return op1.Ule(op2);
+      case ICmpInst::ICMP_SGT: return op1.Sgt(op2);
+      case ICmpInst::ICMP_SGE: return op1.Sge(op2);
+      case ICmpInst::ICMP_SLT: return op1.Slt(op2);
+      case ICmpInst::ICMP_SLE: return op1.Sle(op2);
       }
     }
 
     case Instruction::Select:
-      return op1->isTrue() ? op2 : op3;
+      return op1.Select(op2, op3);
 
     case Instruction::FAdd:
     case Instruction::FSub:
