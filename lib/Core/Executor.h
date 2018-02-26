@@ -379,9 +379,6 @@ private:
   void bindLocal(KInstruction *target,
                  ExecutionState &state,
                  const KValue &value);
-  void bindLocal(KInstruction *target,
-                 ExecutionState &state,
-                 ref<Expr> value);
   void bindArgument(KFunction *kf,
                     unsigned index,
                     ExecutionState &state,
@@ -390,8 +387,8 @@ private:
   /// Evaluates an LLVM constant expression.  The optional argument ki
   /// is the instruction where this constant was encountered, or NULL
   /// if not applicable/unavailable.
-  ref<klee::ConstantExpr> evalConstantExpr(const llvm::ConstantExpr *c,
-					   const KInstruction *ki = NULL);
+  KValue evalConstantExpr(const llvm::ConstantExpr *c,
+                          const KInstruction *ki = NULL);
 
   /// Evaluates an LLVM constant.  The optional argument ki is the
   /// instruction where this constant was encountered, or NULL if

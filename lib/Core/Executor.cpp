@@ -1250,12 +1250,6 @@ void Executor::bindLocal(KInstruction *target, ExecutionState &state,
   getDestCell(state, target) = value;
 }
 
-void Executor::bindLocal(KInstruction *target, ExecutionState &state,
-                         ref<Expr> value) {
-  // TODO temporary
-  bindLocal(target, state, KValue(value));
-}
-
 void Executor::bindArgument(KFunction *kf, unsigned index,
                             ExecutionState &state, const KValue &value) {
   getArgumentCell(state, kf, index) = value;
@@ -2068,9 +2062,11 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   //    right.isPointer()
   //);
   // TODO check the constraint
-  KValue result(SelectExpr::create(Expr::createIsZero(left.getSegment()),
-                                   left.getSegment(),
-                                   right.getSegment()),
+  KValue result(exprFn == AddExpr::create || exprFn == OrExpr::create
+                ? exprFn(left.getSegment(), right.getSegment())
+                : SelectExpr::create(Expr::createIsZero(left.getSegment()),
+                                     left.getSegment(),
+                                     right.getSegment()),
                 exprFn(left.getValue(), right.getValue()));
   bindLocal(ki, state, result);
 }
