@@ -44,8 +44,7 @@ namespace klee {
     }
 
     if (const llvm::ConstantExpr *ce = dyn_cast<llvm::ConstantExpr>(c)) {
-      // TODO segment
-      return KValue(evalConstantExpr(ce, ki));
+      return evalConstantExpr(ce, ki);
     } else {
       if (const ConstantInt *ci = dyn_cast<ConstantInt>(c)) {
         return KValue(ConstantExpr::alloc(ci->getValue()));
@@ -108,16 +107,19 @@ namespace klee {
     }
   }
 
-  ref<ConstantExpr> Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
-                                               const KInstruction *ki) {
+  KValue Executor::evalConstantExpr(const llvm::ConstantExpr *ce,
+                                    const KInstruction *ki) {
     llvm::Type *type = ce->getType();
 
-    ref<ConstantExpr> op1(0), op2(0), op3(0);
+    KValue op1, op2, op3;
     int numOperands = ce->getNumOperands();
 
-    if (numOperands > 0) op1 = cast<ConstantExpr>(evalConstant(ce->getOperand(0), ki).getOffset());
-    if (numOperands > 1) op2 = cast<ConstantExpr>(evalConstant(ce->getOperand(1), ki).getOffset());
-    if (numOperands > 2) op3 = cast<ConstantExpr>(evalConstant(ce->getOperand(2), ki).getOffset());
+    if (numOperands > 0)
+      op1 = evalConstant(ce->getOperand(0), ki);
+    if (numOperands > 1)
+      op2 = evalConstant(ce->getOperand(1), ki);
+    if (numOperands > 2)
+      op3 = evalConstant(ce->getOperand(2), ki);
 
     /* Checking for possible errors during constant folding */
     switch (ce->getOpcode()) {
@@ -125,7 +127,7 @@ namespace klee {
     case Instruction::UDiv:
     case Instruction::SRem:
     case Instruction::URem:
-      if (op2->getLimitedValue() == 0) {
+      if (cast<ConstantExpr>(op2.getValue())->getLimitedValue() == 0) {
         std::string msg("Division/modulo by zero during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->printFileLine().c_str() : "[unknown]");
@@ -135,7 +137,7 @@ namespace klee {
     case Instruction::Shl:
     case Instruction::LShr:
     case Instruction::AShr:
-      if (op2->getLimitedValue() >= op1->getWidth()) {
+      if (cast<ConstantExpr>(op2.getValue())->getLimitedValue() >= op1.getWidth()) {
         std::string msg("Overshift during constant folding at location ");
         llvm::raw_string_ostream os(msg);
         os << (ki ? ki->printFileLine().c_str() : "[unknown]");
@@ -152,59 +154,52 @@ namespace klee {
          << (ki ? ki->printFileLine().c_str() : "[unknown]");
       klee_error("%s", os.str().c_str());
 
-    case Instruction::Trunc: 
-      return op1->Extract(0, getWidthForLLVMType(type));
-    case Instruction::ZExt:  return op1->ZExt(getWidthForLLVMType(type));
-    case Instruction::SExt:  return op1->SExt(getWidthForLLVMType(type));
-    case Instruction::Add:   return op1->Add(op2);
-    case Instruction::Sub:   return op1->Sub(op2);
-    case Instruction::Mul:   return op1->Mul(op2);
-    case Instruction::SDiv:  return op1->SDiv(op2);
-    case Instruction::UDiv:  return op1->UDiv(op2);
-    case Instruction::SRem:  return op1->SRem(op2);
-    case Instruction::URem:  return op1->URem(op2);
-    case Instruction::And:   return op1->And(op2);
-    case Instruction::Or:    return op1->Or(op2);
-    case Instruction::Xor:   return op1->Xor(op2);
-    case Instruction::Shl:   return op1->Shl(op2);
-    case Instruction::LShr:  return op1->LShr(op2);
-    case Instruction::AShr:  return op1->AShr(op2);
+    case Instruction::Trunc:
+    case Instruction::IntToPtr:
+    case Instruction::PtrToInt:
+    case Instruction::ZExt:  return op1.ZExt(getWidthForLLVMType(type));
+    case Instruction::SExt:  return op1.SExt(getWidthForLLVMType(type));
+    case Instruction::Add:   return op1.Add(op2);
+    case Instruction::Sub:   return op1.Sub(op2);
+    case Instruction::Mul:   return op1.Mul(op2);
+    case Instruction::SDiv:  return op1.SDiv(op2);
+    case Instruction::UDiv:  return op1.UDiv(op2);
+    case Instruction::SRem:  return op1.SRem(op2);
+    case Instruction::URem:  return op1.URem(op2);
+    case Instruction::And:   return op1.And(op2);
+    case Instruction::Or:    return op1.Or(op2);
+    case Instruction::Xor:   return op1.Xor(op2);
+    case Instruction::Shl:   return op1.Shl(op2);
+    case Instruction::LShr:  return op1.LShr(op2);
+    case Instruction::AShr:  return op1.AShr(op2);
     case Instruction::BitCast:  return op1;
 
-    case Instruction::IntToPtr:
-      return op1->ZExt(getWidthForLLVMType(type));
-
-    case Instruction::PtrToInt:
-      return op1->ZExt(getWidthForLLVMType(type));
-
     case Instruction::GetElementPtr: {
-      ref<ConstantExpr> base = op1->ZExt(Context::get().getPointerWidth());
+      const Expr::Width pointerWidth = Context::get().getPointerWidth();
+      KValue base = op1.ZExt(pointerWidth);
 
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
-        ref<ConstantExpr> addend = 
-          ConstantExpr::alloc(0, Context::get().getPointerWidth());
+        KValue addend;
 
         if (StructType *st = dyn_cast<StructType>(*ii)) {
           const StructLayout *sl = kmodule->targetData->getStructLayout(st);
           const ConstantInt *ci = cast<ConstantInt>(ii.getOperand());
 
-          addend = ConstantExpr::alloc(sl->getElementOffset((unsigned)
-                                                            ci->getZExtValue()),
-                                       Context::get().getPointerWidth());
+          addend = KValue(ConstantExpr::alloc(sl->getElementOffset((unsigned)
+                                                                   ci->getZExtValue()),
+                                              pointerWidth));
         } else {
           const SequentialType *set = cast<SequentialType>(*ii);
-          ref<ConstantExpr> index = 
-            cast<ConstantExpr>(evalConstant(cast<Constant>(ii.getOperand()), ki).getValue());
+          KValue index = evalConstant(cast<Constant>(ii.getOperand()), ki);
           unsigned elementSize = 
             kmodule->targetData->getTypeStoreSize(set->getElementType());
 
-          index = index->ZExt(Context::get().getPointerWidth());
-          addend = index->Mul(ConstantExpr::alloc(elementSize, 
-                                                  Context::get().getPointerWidth()));
+          index = index.ZExt(pointerWidth);
+          addend = index.Mul(KValue(ConstantExpr::alloc(elementSize, pointerWidth)));
         }
 
-        base = base->Add(addend);
+        base = base.Add(addend);
       }
 
       return base;
@@ -213,21 +208,21 @@ namespace klee {
     case Instruction::ICmp: {
       switch(ce->getPredicate()) {
       default: assert(0 && "unhandled ICmp predicate");
-      case ICmpInst::ICMP_EQ:  return op1->Eq(op2);
-      case ICmpInst::ICMP_NE:  return op1->Ne(op2);
-      case ICmpInst::ICMP_UGT: return op1->Ugt(op2);
-      case ICmpInst::ICMP_UGE: return op1->Uge(op2);
-      case ICmpInst::ICMP_ULT: return op1->Ult(op2);
-      case ICmpInst::ICMP_ULE: return op1->Ule(op2);
-      case ICmpInst::ICMP_SGT: return op1->Sgt(op2);
-      case ICmpInst::ICMP_SGE: return op1->Sge(op2);
-      case ICmpInst::ICMP_SLT: return op1->Slt(op2);
-      case ICmpInst::ICMP_SLE: return op1->Sle(op2);
+      case ICmpInst::ICMP_EQ:  return op1.Eq(op2);
+      case ICmpInst::ICMP_NE:  return op1.Ne(op2);
+      case ICmpInst::ICMP_UGT: return op1.Ugt(op2);
+      case ICmpInst::ICMP_UGE: return op1.Uge(op2);
+      case ICmpInst::ICMP_ULT: return op1.Ult(op2);
+      case ICmpInst::ICMP_ULE: return op1.Ule(op2);
+      case ICmpInst::ICMP_SGT: return op1.Sgt(op2);
+      case ICmpInst::ICMP_SGE: return op1.Sge(op2);
+      case ICmpInst::ICMP_SLT: return op1.Slt(op2);
+      case ICmpInst::ICMP_SLE: return op1.Sle(op2);
       }
     }
 
     case Instruction::Select:
-      return op1->isTrue() ? op2 : op3;
+      return op1.Select(op2, op3);
 
     case Instruction::FAdd:
     case Instruction::FSub:
