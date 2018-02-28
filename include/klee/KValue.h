@@ -74,6 +74,8 @@ namespace klee {
       return KValue(op##Expr::create(value, other.value)); \
     }
 
+    _op_seg_same(Concat);
+
     _op_seg_same(Add);
     _op_seg_same(Sub);
     KValue Mul(KValue other) const {
@@ -115,6 +117,11 @@ namespace klee {
     KValue Select(KValue b1, KValue b2) const {
       return KValue(SelectExpr::create(value, b1.pointerSegment, b2.pointerSegment),
                     SelectExpr::create(value, b1.value, b2.value));
+    }
+
+    KValue Extract(unsigned bitOff, Expr::Width width) const {
+      return KValue(ExtractExpr::create(pointerSegment, bitOff, width),
+                    ExtractExpr::create(value, bitOff, width));
     }
 
     template <class T>
