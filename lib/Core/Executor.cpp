@@ -2748,10 +2748,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Trunc: {
     CastInst *ci = cast<CastInst>(i);
     const Cell &cell = eval(ki, 0, state);
-    KValue result(ExtractExpr::create(cell.getSegment(), 0,
-                                      getWidthForLLVMType(ci->getType())),
-                  ExtractExpr::create(cell.getOffset(), 0,
-                                      getWidthForLLVMType(ci->getType())));
+    KValue result = cell.Extract(0, getWidthForLLVMType(ci->getType()));
     bindLocal(ki, state, result);
     break;
   }
@@ -3055,24 +3052,26 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::InsertValue: {
     KGEPInstruction *kgepi = static_cast<KGEPInstruction*>(ki);
 
-    ref<Expr> agg = eval(ki, 0, state).value;
-    ref<Expr> val = eval(ki, 1, state).value;
+    KValue agg = eval(ki, 0, state);
+    KValue val = eval(ki, 1, state);
 
-    ref<Expr> l = NULL, r = NULL;
-    unsigned lOffset = kgepi->offset*8, rOffset = kgepi->offset*8 + val->getWidth();
+    KValue l, r;
+    unsigned lOffset = kgepi->offset*8, rOffset = kgepi->offset*8 + val.getWidth();
+    bool hasL = lOffset > 0;
+    bool hasR = rOffset < agg.getWidth();
 
-    if (lOffset > 0)
-      l = ExtractExpr::create(agg, 0, lOffset);
-    if (rOffset < agg->getWidth())
-      r = ExtractExpr::create(agg, rOffset, agg->getWidth() - rOffset);
+    if (hasL)
+      l = agg.Extract(0, lOffset);
+    if (hasR)
+      r = agg.Extract(rOffset, agg.getWidth() - rOffset);
 
-    ref<Expr> result;
-    if (l && r)
-      result = ConcatExpr::create(r, ConcatExpr::create(val, l));
-    else if (l)
-      result = ConcatExpr::create(val, l);
-    else if (r)
-      result = ConcatExpr::create(r, val);
+    KValue result;
+    if (hasL && hasR)
+      result = r.Concat(val.Concat(l));
+    else if (hasL)
+      result = val.Concat(l);
+    else if (hasR)
+      result = r.Concat(val);
     else
       result = val;
 
@@ -3082,9 +3081,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::ExtractValue: {
     KGEPInstruction *kgepi = static_cast<KGEPInstruction*>(ki);
 
-    ref<Expr> agg = eval(ki, 0, state).value;
+    KValue agg = eval(ki, 0, state);
 
-    ref<Expr> result = ExtractExpr::create(agg, kgepi->offset*8, getWidthForLLVMType(i->getType()));
+    KValue result = agg.Extract(kgepi->offset*8, getWidthForLLVMType(i->getType()));
 
     bindLocal(ki, state, result);
     break;
