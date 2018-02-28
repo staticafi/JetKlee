@@ -1257,16 +1257,13 @@ void Executor::executeCall(ExecutionState &state,
         KValue address = arguments[0];
         executeMemoryWrite(state, address,
                            KValue(ConstantExpr::create(48, 32))); // gp_offset
-        address.setOffset(AddExpr::create(arguments[0].value,
-                                          ConstantExpr::create(4, 64)));
+        address = arguments[0].Add(ConstantExpr::create(4, 64));
         executeMemoryWrite(state, address,
                            KValue(ConstantExpr::create(304, 32))); // fp_offset
-        address.setOffset(AddExpr::create(arguments[0].value,
-                                          ConstantExpr::create(8, 64)));
+        address = arguments[0].Add(ConstantExpr::create(8, 64));
         executeMemoryWrite(state, address,
                            sf.varargs->getPointer()); // overflow_arg_area
-        address.setOffset(AddExpr::create(arguments[0].value,
-                                          ConstantExpr::create(16, 64)));
+        address = arguments[0].Add(ConstantExpr::create(16, 64));
         executeMemoryWrite(state, address,
                            KValue(ConstantExpr::create(0, 64))); // reg_save_area
       }
@@ -3392,11 +3389,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
   if (SimplifySymIndices) {
-    address.set(state.constraints.simplifyExpr(address.getSegment()),
-                state.constraints.simplifyExpr(address.getOffset()));
+    address = KValue(state.constraints.simplifyExpr(address.getSegment()),
+                     state.constraints.simplifyExpr(address.getOffset()));
     if (isWrite) {
-      value.set(state.constraints.simplifyExpr(value.getSegment()),
-                state.constraints.simplifyExpr(value.getOffset()));
+      value = KValue(state.constraints.simplifyExpr(value.getSegment()),
+                     state.constraints.simplifyExpr(value.getOffset()));
     }
   }
 
@@ -3405,8 +3402,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   bool success;
   solver->setTimeout(coreSolverTimeout);
   if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
-    address.set(toConstant(state, address.getSegment(), "resolveOne failure"),
-                toConstant(state, address.getOffset(), "resolveOne failure"));
+    address = KValue(toConstant(state, address.getSegment(), "resolveOne failure"),
+                     toConstant(state, address.getOffset(), "resolveOne failure"));
     success = state.addressSpace.resolveConstantAddress(address, op);
   }
   solver->setTimeout(0);
@@ -3415,8 +3412,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     const MemoryObject *mo = op.first;
 
     if (MaxSymArraySize && mo->size>=MaxSymArraySize) {
-      address.set(toConstant(state, address.getSegment(), "max-sym-array-size"),
-                  toConstant(state, address.getOffset(), "max-sym-array-size"));
+      address = KValue(toConstant(state, address.getSegment(), "max-sym-array-size"),
+                       toConstant(state, address.getOffset(), "max-sym-array-size"));
     }
     
     ref<Expr> offset = mo->getOffsetExpr(address.getOffset());
@@ -3447,8 +3444,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         KValue result = os->read(offset, type);
         
         if (interpreterOpts.MakeConcreteSymbolic) {
-          result.set(replaceReadWithSymbolic(state, result.getSegment()),
-                     replaceReadWithSymbolic(state, result.getOffset()));
+          result = KValue(replaceReadWithSymbolic(state, result.getSegment()),
+                          replaceReadWithSymbolic(state, result.getOffset()));
         }
 
         bindLocal(target, state, result);
