@@ -240,12 +240,6 @@ private:
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
 
-  void executeArithmeticInstruction(ExecutionState &state, KInstruction *ki,
-      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&));
-
-  void executeRelationalInstruction(ExecutionState &state, KInstruction *ki,
-      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&));
-
   void executeInstruction(ExecutionState &state, KInstruction *ki);
 
   void printFileLine(ExecutionState &state, KInstruction *ki,

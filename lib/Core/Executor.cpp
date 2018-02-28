@@ -1523,31 +1523,6 @@ static inline const llvm::fltSemantics * fpWidthToSemantics(unsigned width) {
   }
 }
 
-void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction *ki,
-      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&)) {
-  const Cell &left = eval(ki, 0, state);
-  const Cell &right = eval(ki, 1, state);
-  // TODO ptrdiff
-  //ref<Expr> constraint = XorExpr::create(
-  //    left.isPointer(),
-  //    right.isPointer()
-  //);
-  // TODO check the constraint
-  KValue result(AddExpr::create(left.getSegment(), right.getSegment()),
-                exprFn(left.getValue(), right.getValue()));
-  bindLocal(ki, state, result);
-}
-
-void Executor::executeRelationalInstruction(ExecutionState &state, KInstruction *ki,
-      ref<Expr>(*exprFn)(const ref<Expr>&, const ref<Expr>&)) {
-  const Cell &left = eval(ki, 0, state);
-  const Cell &right = eval(ki, 1, state);
-  // TODO must be true
-  ref<Expr> constraint = EqExpr::create(left.pointerSegment, right.pointerSegment);
-  KValue result(exprFn(left.value, right.value));
-  bindLocal(ki, state, result);
-}
-
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
   switch (i->getOpcode()) {
@@ -1967,12 +1942,10 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     // Special instructions
   case Instruction::Select: {
     // NOTE: It is not required that operands 1 and 2 be of scalar type.
-    ref<Expr> cond = eval(ki, 0, state).value;
+    KValue cond = eval(ki, 0, state);
     const Cell &tCell = eval(ki, 1, state);
     const Cell &fCell = eval(ki, 2, state);
-    KValue result(SelectExpr::create(cond, tCell.getSegment(), fCell.getSegment()),
-                  SelectExpr::create(cond, tCell.getOffset(),  fCell.getOffset()));
-    bindLocal(ki, state, result);
+    bindLocal(ki, state, cond.Select(tCell, fCell));
     break;
   }
 
@@ -1983,67 +1956,93 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     // Arithmetic / logical
 
   case Instruction::Add: {
-    executeArithmeticInstruction(state, ki, AddExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Add(right));
     break;
   }
 
   case Instruction::Sub: {
-    executeArithmeticInstruction(state, ki, SubExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Sub(right));
     break;
   }
  
   case Instruction::Mul: {
-    executeArithmeticInstruction(state, ki, MulExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Mul(right));
     break;
   }
 
   case Instruction::UDiv: {
-    executeArithmeticInstruction(state, ki, UDivExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.UDiv(right));
     break;
   }
 
   case Instruction::SDiv: {
-    executeArithmeticInstruction(state, ki, SDivExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.SDiv(right));
     break;
   }
 
   case Instruction::URem: {
-    executeArithmeticInstruction(state, ki, URemExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.URem(right));
     break;
   }
 
   case Instruction::SRem: {
-    executeArithmeticInstruction(state, ki, SRemExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.SRem(right));
     break;
   }
 
   case Instruction::And: {
-    executeArithmeticInstruction(state, ki, AndExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.And(right));
     break;
   }
 
   case Instruction::Or: {
-    executeArithmeticInstruction(state, ki, OrExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Or(right));
     break;
   }
 
   case Instruction::Xor: {
-    executeArithmeticInstruction(state, ki, XorExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Xor(right));
     break;
   }
 
   case Instruction::Shl: {
-    executeArithmeticInstruction(state, ki, ShlExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.Shl(right));
     break;
   }
 
   case Instruction::LShr: {
-    executeArithmeticInstruction(state, ki, LShrExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.LShr(right));
     break;
   }
 
   case Instruction::AShr: {
-    executeArithmeticInstruction(state, ki, AShrExpr::create);
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+    bindLocal(ki, state, left.AShr(right));
     break;
   }
 
@@ -2057,62 +2056,70 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     case ICmpInst::ICMP_EQ: {
       const Cell &left = eval(ki, 0, state);
       const Cell &right = eval(ki, 1, state);
-      ref<Expr> result = AndExpr::create(
-          EqExpr::create(left.pointerSegment, right.pointerSegment),
-          EqExpr::create(left.value, right.value)
-      );
-      bindLocal(ki, state, result);
+      bindLocal(ki, state, left.Eq(right));
       break;
     }
 
     case ICmpInst::ICMP_NE: {
       const Cell &left = eval(ki, 0, state);
       const Cell &right = eval(ki, 1, state);
-      ref<Expr> result = OrExpr::create(
-          NeExpr::create(left.pointerSegment, right.pointerSegment),
-          NeExpr::create(left.value, right.value)
-      );
-      bindLocal(ki, state, result);
+      bindLocal(ki, state, left.Ne(right));
       break;
     }
 
     case ICmpInst::ICMP_UGT: {
-      executeRelationalInstruction(state, ki, UgtExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Ugt(right));
       break;
     }
 
     case ICmpInst::ICMP_UGE: {
-      executeRelationalInstruction(state, ki, UgeExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Uge(right));
       break;
     }
 
     case ICmpInst::ICMP_ULT: {
-      executeRelationalInstruction(state, ki, UltExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Ult(right));
       break;
     }
 
     case ICmpInst::ICMP_ULE: {
-      executeRelationalInstruction(state, ki, UleExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Ule(right));
       break;
     }
 
     case ICmpInst::ICMP_SGT: {
-      executeRelationalInstruction(state, ki, SgtExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Sgt(right));
       break;
     }
 
     case ICmpInst::ICMP_SGE: {
-      executeRelationalInstruction(state, ki, SgeExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Sge(right));
       break;
     }
 
     case ICmpInst::ICMP_SLT: {
-      executeRelationalInstruction(state, ki, SltExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Slt(right));
       break;
     }
 
     case ICmpInst::ICMP_SLE: {
-      executeRelationalInstruction(state, ki, SleExpr::create);
+      const Cell &left = eval(ki, 0, state);
+      const Cell &right = eval(ki, 1, state);
+      bindLocal(ki, state, left.Sle(right));
       break;
     }
 
@@ -2182,35 +2189,20 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     bindLocal(ki, state, result);
     break;
   }
-  case Instruction::ZExt: {
-    CastInst *ci = cast<CastInst>(i);
-    const Cell &cell = eval(ki, 0, state);
-    KValue result(ZExtExpr::create(cell.getSegment(),
-                                   getWidthForLLVMType(ci->getType())),
-                  ZExtExpr::create(cell.getOffset(),
-                                   getWidthForLLVMType(ci->getType())));
-    bindLocal(ki, state, result);
-    break;
-  }
+
   case Instruction::SExt: {
     CastInst *ci = cast<CastInst>(i);
     const Cell &cell = eval(ki, 0, state);
-    KValue result(SExtExpr::create(cell.getSegment(),
-                                   getWidthForLLVMType(ci->getType())),
-                  SExtExpr::create(cell.getOffset(),
-                                   getWidthForLLVMType(ci->getType())));
-    bindLocal(ki, state, result);
+    bindLocal(ki, state, cell.SExt(getWidthForLLVMType(ci->getType())));
     break;
   }
 
+  case Instruction::ZExt:
   case Instruction::IntToPtr:
   case Instruction::PtrToInt: {
     CastInst *ci = cast<CastInst>(i);
-    Expr::Width width = getWidthForLLVMType(ci->getType());
     const Cell &cell = eval(ki, 0, state);
-    KValue result(ZExtExpr::create(cell.getSegment(), width),
-                  ZExtExpr::create(cell.getOffset(), width));
-    bindLocal(ki, state, result);
+    bindLocal(ki, state, cell.ZExt(getWidthForLLVMType(ci->getType())));
     break;
   }
 
