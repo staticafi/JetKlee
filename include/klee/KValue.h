@@ -48,17 +48,71 @@ namespace klee {
       return isa<ConstantExpr>(value) && isa<ConstantExpr>(pointerSegment);
     }
 
-    ref<Expr> isPointer() const {
-      return Expr::createIsZero(pointerSegment);
-    }
-
     Expr::Width getWidth() const {
       return getValue()->getWidth();
     }
     
-    void ZExt(Expr::Width w) {
-      pointerSegment = ZExtExpr::create(pointerSegment, w);
-      value = ZExtExpr::create(value, w);
+    KValue ZExt(Expr::Width w) const {
+      return KValue(ZExtExpr::create(pointerSegment, w),
+                    ZExtExpr::create(value, w));
+    }
+
+    KValue SExt(Expr::Width w) const {
+      return KValue(SExtExpr::create(pointerSegment, w),
+                    SExtExpr::create(value, w));
+    }
+
+#define _op_seg_same(op) \
+    KValue op(KValue other) const { \
+      return KValue(op##Expr::create(pointerSegment, other.pointerSegment), \
+                    op##Expr::create(value, other.value)); \
+    }
+#define _op_seg_zero(op) \
+    KValue op(KValue other) const { \
+      return KValue(op##Expr::create(value, other.value)); \
+    }
+
+    _op_seg_same(Add);
+    _op_seg_same(Sub);
+    KValue Mul(KValue other) const {
+      // multiplying pointers doesn't make sense, but we must ensure that identity 1*x==x works
+      return KValue(AddExpr::create(pointerSegment, other.pointerSegment),
+                    MulExpr::create(value, other.value));
+    }
+    _op_seg_zero(UDiv);
+    _op_seg_zero(SDiv);
+    _op_seg_zero(URem);
+    _op_seg_zero(SRem);
+    _op_seg_zero(And);
+    _op_seg_zero(Or);
+    _op_seg_zero(Xor);
+    _op_seg_zero(Shl);
+    _op_seg_zero(LShr);
+    _op_seg_zero(AShr);
+    _op_seg_zero(Ugt);
+    _op_seg_zero(Uge);
+    _op_seg_zero(Ult);
+    _op_seg_zero(Ule);
+    _op_seg_zero(Sgt);
+    _op_seg_zero(Sge);
+    _op_seg_zero(Slt);
+    _op_seg_zero(Sle);
+
+    KValue Eq(KValue other) const {
+      return KValue(AndExpr::create(
+                      EqExpr::create(pointerSegment, other.pointerSegment),
+                      EqExpr::create(value, other.value)));
+    }
+
+    KValue Ne(KValue other) const {
+      return KValue(OrExpr::create(
+                      NeExpr::create(pointerSegment, other.pointerSegment),
+                      NeExpr::create(value, other.value)));
+    }
+
+    KValue Select(KValue b1, KValue b2) const {
+      return KValue(SelectExpr::create(value, b1.pointerSegment, b2.pointerSegment),
+                    SelectExpr::create(value, b1.value, b2.value));
     }
 
     template <class T>
