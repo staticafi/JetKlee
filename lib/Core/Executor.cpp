@@ -475,7 +475,7 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
     // Extend the constant if necessary;
     assert(StoreBits >= C.getWidth() && "Invalid store size!");
     if (StoreBits > C.getWidth())
-      C.ZExt(StoreBits);
+      C = C.ZExt(StoreBits);
 
     os->write(offset, C);
   }
