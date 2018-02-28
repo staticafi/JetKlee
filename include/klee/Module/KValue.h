@@ -39,20 +39,6 @@ namespace klee {
                              Expr::createIsZero(getOffset()));
     }
 
-    void set(const ref<Expr>& value) {
-      this->value = value;
-      this->pointerSegment = ConstantExpr::alloc(0, value->getWidth());
-    }
-
-    void set(const ref<Expr>& segment, const ref<Expr>& offset) {
-      this->pointerSegment = segment;
-      this->value = offset;
-    }
-
-    void setOffset(ref<Expr> offset) {
-      this->value = offset;
-    }
-
     bool isConstant() const {
       return isa<ConstantExpr>(value) && isa<ConstantExpr>(pointerSegment);
     }
