@@ -508,7 +508,7 @@ void Executor::initializeGlobalObject(ExecutionState &state, ObjectState *os,
     // Extend the constant if necessary;
     assert(StoreBits >= C.getWidth() && "Invalid store size!");
     if (StoreBits > C.getWidth())
-      C.ZExt(StoreBits);
+      C = C.ZExt(StoreBits);
 
     os->write(offset, C);
   }
@@ -1539,9 +1539,7 @@ void Executor::executeArithmeticInstruction(ExecutionState &state, KInstruction 
   //    right.isPointer()
   //);
   // TODO check the constraint
-  KValue result(SelectExpr::create(left.isPointer(),
-                                   left.getSegment(),
-                                   right.getSegment()),
+  KValue result(AddExpr::create(left.getSegment(), right.getSegment()),
                 exprFn(left.getValue(), right.getValue()));
   bindLocal(ki, state, result);
 }
