@@ -65,12 +65,12 @@ namespace klee {
     }
 
 #define _op_seg_same(op) \
-    KValue op(KValue other) const { \
+    KValue op(const KValue &other) const { \
       return KValue(op##Expr::create(pointerSegment, other.pointerSegment), \
                     op##Expr::create(value, other.value)); \
     }
 #define _op_seg_zero(op) \
-    KValue op(KValue other) const { \
+    KValue op(const KValue &other) const { \
       return KValue(op##Expr::create(value, other.value)); \
     }
 
@@ -78,7 +78,7 @@ namespace klee {
 
     _op_seg_same(Add);
     _op_seg_same(Sub);
-    KValue Mul(KValue other) const {
+    KValue Mul(const KValue &other) const {
       // multiplying pointers doesn't make sense, but we must ensure that identity 1*x==x works
       return KValue(AddExpr::create(pointerSegment, other.pointerSegment),
                     MulExpr::create(value, other.value));
@@ -102,19 +102,19 @@ namespace klee {
     _op_seg_zero(Slt);
     _op_seg_zero(Sle);
 
-    KValue Eq(KValue other) const {
+    KValue Eq(const KValue &other) const {
       return KValue(AndExpr::create(
                       EqExpr::create(pointerSegment, other.pointerSegment),
                       EqExpr::create(value, other.value)));
     }
 
-    KValue Ne(KValue other) const {
+    KValue Ne(const KValue &other) const {
       return KValue(OrExpr::create(
                       NeExpr::create(pointerSegment, other.pointerSegment),
                       NeExpr::create(value, other.value)));
     }
 
-    KValue Select(KValue b1, KValue b2) const {
+    KValue Select(const KValue &b1, const KValue &b2) const {
       return KValue(SelectExpr::create(value, b1.pointerSegment, b2.pointerSegment),
                     SelectExpr::create(value, b1.value, b2.value));
     }
