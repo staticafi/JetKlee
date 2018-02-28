@@ -1532,8 +1532,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     KInstIterator kcaller = state.stack.back().caller;
     Instruction *caller = kcaller ? kcaller->inst : 0;
     bool isVoidReturn = (ri->getNumOperands() == 0);
-    KValue result(ConstantExpr::alloc(0, Expr::Bool),
-                  ConstantExpr::alloc(0, Expr::Bool));
+    KValue result(ConstantExpr::alloc(0, Expr::Bool));
     
     if (!isVoidReturn) {
       result = eval(ki, 0, state);
@@ -1573,11 +1572,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
             bool isSExt = cs.paramHasAttr(0, llvm::Attribute::SExt);
 #endif
             if (isSExt) {
-              result.set(SExtExpr::create(result.getSegment(), to),
-                         SExtExpr::create(result.getOffset(), to));
+              result = result.SExt(to);
             } else {
-              result.set(ZExtExpr::create(result.getSegment(), to),
-                         ZExtExpr::create(result.getOffset(), to));
+              result = result.ZExt(to);
             }
           }
 
@@ -1877,11 +1874,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
               bool isSExt = cs.paramHasAttr(i+1, llvm::Attribute::SExt);
 #endif
               if (isSExt) {
-                arguments[i].value = SExtExpr::create(arguments[i].value, to);
-                arguments[i].pointerSegment = SExtExpr::create(arguments[i].pointerSegment, to);
+                arguments[i] = arguments[i].SExt(to);
               } else {
-                arguments[i].value = ZExtExpr::create(arguments[i].value, to);
-                arguments[i].pointerSegment = ZExtExpr::create(arguments[i].pointerSegment, to);
+                arguments[i] = arguments[i].ZExt(to);
               }
             }
           }
