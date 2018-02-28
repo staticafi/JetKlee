@@ -2341,8 +2341,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   }
   case Instruction::InsertElement: {
     InsertElementInst *iei = cast<InsertElementInst>(i);
-    ref<Expr> vec = eval(ki, 0, state).value;
-    ref<Expr> newElt = eval(ki, 1, state).value;
+    KValue vec = eval(ki, 0, state);
+    KValue newElt = eval(ki, 1, state);
     ref<Expr> idx = eval(ki, 2, state).value;
 
     ConstantExpr *cIdx = dyn_cast<ConstantExpr>(idx);
@@ -2364,7 +2364,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     const unsigned elementCount = vt->getNumElements();
-    llvm::SmallVector<ref<Expr>, 8> elems;
+    llvm::SmallVector<KValue, 8> elems;
     elems.reserve(elementCount);
     for (unsigned i = elementCount; i != 0; --i) {
       auto of = i - 1;
@@ -2374,13 +2374,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
 
     assert(Context::get().isLittleEndian() && "FIXME:Broken for big endian");
-    ref<Expr> Result = ConcatExpr::createN(elementCount, elems.data());
+    KValue Result = KValue::concatValues(elems);
     bindLocal(ki, state, Result);
     break;
   }
   case Instruction::ExtractElement: {
     ExtractElementInst *eei = cast<ExtractElementInst>(i);
-    ref<Expr> vec = eval(ki, 0, state).value;
+    KValue vec = eval(ki, 0, state);
     ref<Expr> idx = eval(ki, 1, state).value;
 
     ConstantExpr *cIdx = dyn_cast<ConstantExpr>(idx);
@@ -2401,8 +2401,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       return;
     }
 
-    unsigned bitOffset = EltBits * iIdx;
-    ref<Expr> Result = ExtractExpr::create(vec, bitOffset, EltBits);
+    // evalConstant() will use ConcatExpr to build vectors with the
+    // zero-th element left most (most significant bits), followed
+    // by the next element (second left most) and so on. This means
+    // that we have to adjust the index so we read left to right
+    // rather than right to left.
+    unsigned bitOffset = EltBits*(vt->getNumElements() - iIdx -1);
+    KValue Result = vec.Extract(bitOffset, EltBits);
     bindLocal(ki, state, Result);
     break;
   }
