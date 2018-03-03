@@ -557,7 +557,7 @@ void ObjectStatePlane::write64(unsigned offset, uint64_t value) {
   }
 }
 
-void ObjectStatePlane::print() {
+void ObjectStatePlane::print() const {
   llvm::errs() << "-- ObjectState --\n";
   llvm::errs() << "\tMemoryObject ID: " << object->id << "\n";
   llvm::errs() << "\tRoot Object: " << updates.root << "\n";

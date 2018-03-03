@@ -19,18 +19,22 @@
 #include "klee/Internal/Module/KModule.h"
 
 #include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/util/GetElementPtrTypeIterator.h"
 
-#include "llvm/IR/Function.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Operator.h"
+#if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
+#include "llvm/Support/GetElementPtrTypeIterator.h"
+#else
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#endif
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
 
-using namespace klee;
 using namespace llvm;
 
 namespace klee {
@@ -58,10 +62,14 @@ namespace klee {
         return KValue(ConstantExpr::create(0, getWidthForLLVMType(c->getType())));
       } else if (const ConstantDataSequential *cds =
                  dyn_cast<ConstantDataSequential>(c)) {
+        // Handle a vector or array: first element has the smallest address,
+        // the last element the highest
         std::vector<KValue> kids;
-        for (unsigned i = 0, e = cds->getNumElements(); i != e; ++i) {
-          kids.push_back(evalConstant(cds->getElementAsConstant(i), ki));
+        for (unsigned i = cds->getNumElements(); i != 0; --i) {
+          kids.push_back(evalConstant(cds->getElementAsConstant(i - 1), ki));
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         return KValue::concatValues(kids);
       } else if (const ConstantStruct *cs = dyn_cast<ConstantStruct>(c)) {
         const StructLayout *sl = kmodule->targetData->getStructLayout(cs->getType());
@@ -81,6 +89,8 @@ namespace klee {
 
           kids.push_back(kid);
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         return KValue::concatValues(kids);
       } else if (const ConstantArray *ca = dyn_cast<ConstantArray>(c)){
         llvm::SmallVector<KValue, 4> kids;
@@ -88,14 +98,18 @@ namespace klee {
           unsigned op = i-1;
           kids.push_back(evalConstant(ca->getOperand(op), ki));
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         return KValue::concatValues(kids);
       } else if (const ConstantVector *cv = dyn_cast<ConstantVector>(c)) {
         llvm::SmallVector<KValue, 8> kids;
         const size_t numOperands = cv->getNumOperands();
         kids.reserve(numOperands);
-        for (unsigned i = 0; i < numOperands; ++i) {
-          kids.push_back(evalConstant(cv->getOperand(i), ki));
+        for (unsigned i = numOperands; i != 0; --i) {
+          kids.push_back(evalConstant(cv->getOperand(i - 1), ki));
         }
+        assert(Context::get().isLittleEndian() &&
+               "FIXME:Broken for big endian");
         return KValue::concatValues(kids);
       } else {
         std::string msg("Cannot handle constant ");
@@ -175,33 +189,33 @@ namespace klee {
     case Instruction::BitCast:  return op1;
 
     case Instruction::GetElementPtr: {
-      const Expr::Width pointerWidth = Context::get().getPointerWidth();
-      KValue base = op1.ZExt(pointerWidth);
-
+      KValue base = op1.ZExt(Context::get().getPointerWidth());
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
-        KValue addend;
+        KValue indexOp =
+            evalConstant(cast<Constant>(ii.getOperand()), ki);
+        ref<ConstantExpr> indexValue = cast<ConstantExpr>(indexOp.getValue());
+        if (indexValue->isZero())
+          continue;
 
-        if (StructType *st = dyn_cast<StructType>(*ii)) {
-          const StructLayout *sl = kmodule->targetData->getStructLayout(st);
-          const ConstantInt *ci = cast<ConstantInt>(ii.getOperand());
-
-          addend = KValue(ConstantExpr::alloc(sl->getElementOffset((unsigned)
-                                                                   ci->getZExtValue()),
-                                              pointerWidth));
-        } else {
-          const SequentialType *set = cast<SequentialType>(*ii);
-          KValue index = evalConstant(cast<Constant>(ii.getOperand()), ki);
-          unsigned elementSize = 
-            kmodule->targetData->getTypeStoreSize(set->getElementType());
-
-          index = index.ZExt(pointerWidth);
-          addend = index.Mul(KValue(ConstantExpr::alloc(elementSize, pointerWidth)));
+        // Handle a struct index, which adds its field offset to the pointer.
+        if (StructType *STy = dyn_cast<StructType>(*ii)) {
+          unsigned ElementIdx = indexValue->getZExtValue();
+          const StructLayout *SL = kmodule->targetData->getStructLayout(STy);
+          base = base.Add(
+              ConstantExpr::alloc(APInt(Context::get().getPointerWidth(),
+                                        SL->getElementOffset(ElementIdx))));
+          continue;
         }
 
-        base = base.Add(addend);
+        // For array or vector indices, scale the index by the size of the type.
+        // Indices can be negative
+        base = base.Add(indexOp.SExt(Context::get().getPointerWidth())
+                             .Mul(ConstantExpr::alloc(
+                                 APInt(Context::get().getPointerWidth(),
+                                       kmodule->targetData->getTypeAllocSize(
+                                           ii.getIndexedType())))));
       }
-
       return base;
     }
       

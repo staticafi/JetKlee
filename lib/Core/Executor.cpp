@@ -2363,17 +2363,14 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     const unsigned elementCount = vt->getNumElements();
     llvm::SmallVector<KValue, 8> elems;
     elems.reserve(elementCount);
-    for (unsigned i = 0; i < elementCount; ++i) {
-      // evalConstant() will use ConcatExpr to build vectors with the
-      // zero-th element leftmost (most significant bits), followed
-      // by the next element (second leftmost) and so on. This means
-      // that we have to adjust the index so we read left to right
-      // rather than right to left.
-      unsigned bitOffset = EltBits * (elementCount - i - 1);
-      elems.push_back(i == iIdx ? newElt
-                                : vec.Extract(bitOffset, EltBits));
+    for (unsigned i = elementCount; i != 0; --i) {
+      auto of = i - 1;
+      unsigned bitOffset = EltBits * of;
+      elems.push_back(
+          of == iIdx ? newElt : vec.Extract(bitOffset, EltBits));
     }
 
+    assert(Context::get().isLittleEndian() && "FIXME:Broken for big endian");
     KValue Result = KValue::concatValues(elems);
     bindLocal(ki, state, Result);
     break;
@@ -2401,12 +2398,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       return;
     }
 
-    // evalConstant() will use ConcatExpr to build vectors with the
-    // zero-th element left most (most significant bits), followed
-    // by the next element (second left most) and so on. This means
-    // that we have to adjust the index so we read left to right
-    // rather than right to left.
-    unsigned bitOffset = EltBits*(vt->getNumElements() - iIdx -1);
+    unsigned bitOffset = EltBits * iIdx;
     KValue Result = vec.Extract(bitOffset, EltBits);
     bindLocal(ki, state, Result);
     break;
