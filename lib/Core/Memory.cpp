@@ -80,8 +80,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
     knownSymbolics(nullptr),
     unflushedMask(nullptr),
     updates(nullptr, nullptr),
-    size(parent->size),
-    readOnly(false) {
+    size(parent->size) {
   if (!UseConstantArrays) {
     static unsigned id = 0;
     const Array *array =
@@ -99,8 +98,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array
     knownSymbolics(nullptr),
     unflushedMask(nullptr),
     updates(array, nullptr),
-    size(parent->size),
-    readOnly(false) {
+    size(parent->size) {
   makeSymbolic();
   memset(concreteStore, 0, size);
 }
@@ -112,9 +110,8 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStateP
     knownSymbolics(nullptr),
     unflushedMask(os.unflushedMask ? new BitArray(*os.unflushedMask, os.size) : nullptr),
     updates(os.updates),
-    size(os.size),
-    readOnly(false) {
-  assert(!os.readOnly && "no need to copy read only object?");
+    size(os.size) {
+  assert(!os.parent->readOnly && "no need to copy read only object?");
   if (os.knownSymbolics) {
     knownSymbolics = new ref<Expr>[size];
     for (unsigned i=0; i<size; i++)
@@ -582,8 +579,8 @@ ObjectState::ObjectState(const MemoryObject *mo)
     object(mo),
     size(mo->size),
     readOnly(false),
-    segmentPlane(this),
-    offsetPlane(this) {
+    segmentPlane(nullptr),
+    offsetPlane(new ObjectStatePlane(this)) {
 }
 
 
@@ -592,9 +589,8 @@ ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
     object(mo),
     size(mo->size),
     readOnly(false),
-    segmentPlane(this),
-    offsetPlane(this, array) {
-  segmentPlane.initializeToZero();
+    segmentPlane(nullptr),
+    offsetPlane(new ObjectStatePlane(this, array)) {
 }
 
 ObjectState::ObjectState(const ObjectState &os)
@@ -602,61 +598,110 @@ ObjectState::ObjectState(const ObjectState &os)
     object(os.object),
     size(os.size),
     readOnly(false),
-    segmentPlane(this, os.segmentPlane),
-    offsetPlane(this, os.offsetPlane) {
+    segmentPlane(nullptr),
+    offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
+  if (os.segmentPlane)
+    segmentPlane = new ObjectStatePlane(this, *os.segmentPlane);
+}
+
+ObjectState::~ObjectState() {
+  if (segmentPlane)
+    delete segmentPlane;
+  delete offsetPlane;
 }
 
 KValue ObjectState::read8(unsigned offset) const {
-  return KValue(segmentPlane.read8(offset), offsetPlane.read8(offset));
+  ref<Expr> segment;
+  if (segmentPlane) {
+    segment = segmentPlane->read8(offset);
+  } else {
+    segment = ConstantExpr::alloc(0, Expr::Int8);
+  }
+  ref<Expr> value = offsetPlane->read8(offset);
+  return KValue(segment, value);
 }
 
 KValue ObjectState::read(unsigned offset, Expr::Width width) const {
-  return KValue(segmentPlane.read(offset, width), offsetPlane.read(offset, width));
+  ref<Expr> segment;
+  if (segmentPlane) {
+    segment = segmentPlane->read(offset, width);
+  } else {
+    segment = ConstantExpr::alloc(0, width);
+  }
+  ref<Expr> value = offsetPlane->read(offset, width);
+  return KValue(segment, value);
 }
 
 KValue ObjectState::read(ref<Expr> offset, Expr::Width width) const {
-  return KValue(segmentPlane.read(offset, width), offsetPlane.read(offset, width));
+  ref<Expr> segment;
+  if (segmentPlane) {
+    segment = segmentPlane->read(offset, width);
+  } else {
+    segment = ConstantExpr::alloc(0, width);
+  }
+  ref<Expr> value = offsetPlane->read(offset, width);
+  return KValue(segment, value);
+}
+
+bool ObjectState::prepareSegmentPlane(bool nonzero) {
+  if (!segmentPlane) {
+    if (nonzero) {
+      segmentPlane = new ObjectStatePlane(this);
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+bool ObjectState::prepareSegmentPlane(ref<Expr> segment) {
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(segment))
+    return prepareSegmentPlane(!CE->isZero());
+  return prepareSegmentPlane(true);
 }
 
 void ObjectState::write8(unsigned offset, uint8_t segment, uint8_t value) {
-  segmentPlane.write8(offset, segment);
-  offsetPlane.write8(offset, value);
+  if (prepareSegmentPlane(segment))
+    segmentPlane->write8(offset, segment);
+  offsetPlane->write8(offset, value);
 }
 
 void ObjectState::write16(unsigned offset, uint16_t segment, uint16_t value) {
-  segmentPlane.write16(offset, segment);
-  offsetPlane.write16(offset, value);
+  if (prepareSegmentPlane(segment))
+    segmentPlane->write16(offset, segment);
+  offsetPlane->write16(offset, value);
 }
 
 void ObjectState::write32(unsigned offset, uint32_t segment, uint32_t value) {
-  segmentPlane.write32(offset, segment);
-  offsetPlane.write32(offset, value);
+  if (prepareSegmentPlane(segment))
+    segmentPlane->write32(offset, segment);
+  offsetPlane->write32(offset, value);
 }
 
 void ObjectState::write64(unsigned offset, uint64_t segment, uint64_t value) {
-  segmentPlane.write64(offset, segment);
-  offsetPlane.write64(offset, value);
+  if (prepareSegmentPlane(segment))
+    segmentPlane->write64(offset, segment);
+  offsetPlane->write64(offset, value);
 }
 
 void ObjectState::write(unsigned offset, const KValue& value) {
-  segmentPlane.write(offset, value.getSegment());
-  offsetPlane.write(offset, value.getOffset());
+  if (prepareSegmentPlane(value.getSegment()))
+    segmentPlane->write(offset, value.getSegment());
+  offsetPlane->write(offset, value.getOffset());
 }
 
 void ObjectState::write(ref<Expr> offset, const KValue& value) {
-  segmentPlane.write(offset, value.getSegment());
-  offsetPlane.write(offset, value.getOffset());
+  if (prepareSegmentPlane(value.getSegment()))
+    segmentPlane->write(offset, value.getSegment());
+  offsetPlane->write(offset, value.getOffset());
 }
 
 void ObjectState::initializeToZero() {
-  segmentPlane.initializeToZero();
-  offsetPlane.initializeToZero();
+  offsetPlane->initializeToZero();
 }
 
 void ObjectState::initializeToRandom() {
-  // TODO should be random as well?
-  segmentPlane.initializeToZero();
-  offsetPlane.initializeToRandom();
+  offsetPlane->initializeToRandom();
 }
 
 ArrayCache* ObjectState::getArrayCache() const {

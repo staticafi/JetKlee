@@ -241,8 +241,6 @@ private:
 public:
   unsigned size;
 
-  bool readOnly;
-
 public:
   /// Create a new object state for the given memory object with concrete
   /// contents. The initial contents are undefined, it is the callers
@@ -255,8 +253,6 @@ public:
 
   ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os);
   ~ObjectStatePlane();
-
-  void setReadOnly(bool ro) { readOnly = ro; }
 
   /// Make contents all concrete and zero
   void initializeToZero();
@@ -337,8 +333,8 @@ public:
   bool readOnly;
 
 private:
-  ObjectStatePlane segmentPlane;
-  ObjectStatePlane offsetPlane;
+  ObjectStatePlane *segmentPlane;
+  ObjectStatePlane *offsetPlane;
 
 public:
   /// Create a new object state for the given memory object with concrete
@@ -351,14 +347,12 @@ public:
   ObjectState(const MemoryObject *mo, const Array *array);
 
   ObjectState(const ObjectState &os);
-  ~ObjectState() = default;
+  ~ObjectState();
 
   const MemoryObject *getObject() const { return object.get(); }
 
   void setReadOnly(bool ro) {
     readOnly = ro;
-    segmentPlane.readOnly = ro;
-    offsetPlane.readOnly = ro;
   }
 
   // make contents all concrete and zero
@@ -368,7 +362,7 @@ public:
 
   void flushToConcreteStore(TimingSolver *solver,
                             const ExecutionState &state) const {
-    offsetPlane.flushToConcreteStore(solver, state);
+    offsetPlane->flushToConcreteStore(solver, state);
   }
 
   KValue read(ref<Expr> offset, Expr::Width width) const;
@@ -385,6 +379,10 @@ public:
   void write64(unsigned offset, uint64_t segment, uint64_t value);
 
   ArrayCache *getArrayCache() const;
+
+private:
+  bool prepareSegmentPlane(bool nonzero);
+  bool prepareSegmentPlane(ref<Expr> value);
 };
   
 } // End klee namespace
