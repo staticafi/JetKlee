@@ -366,7 +366,7 @@ void AddressSpace::copyOutConcretes() {
 
       if (!os->readOnly)
         // TODO segment
-        memcpy(address, os->offsetPlane.concreteStore, mo->size);
+        memcpy(address, os->offsetPlane->concreteStore, mo->size);
     }
   }
 }
