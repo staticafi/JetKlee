@@ -362,7 +362,7 @@ void AddressSpace::copyOutConcretes() {
 
       if (!os->readOnly)
         // TODO segment
-        memcpy(address, os->offsetPlane.concreteStore, mo->size);
+        memcpy(address, os->offsetPlane->concreteStore, mo->size);
     }
   }
 }
@@ -377,12 +377,12 @@ bool AddressSpace::copyInConcretes() {
       uint8_t *address = (uint8_t*) (unsigned long) mo->address;
 
       // TODO segment
-      if (memcmp(address, os->offsetPlane.concreteStore, mo->size)!=0) {
+      if (memcmp(address, os->offsetPlane->concreteStore, mo->size)!=0) {
         if (os->readOnly) {
           return false;
         } else {
           ObjectState *wos = getWriteable(mo, os);
-          memcpy(wos->offsetPlane.concreteStore, address, mo->size);
+          memcpy(wos->offsetPlane->concreteStore, address, mo->size);
         }
       }
     }
