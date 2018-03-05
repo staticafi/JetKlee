@@ -219,7 +219,7 @@ private:
   /// @brief Required by klee::ref-managed objects
   class ReferenceCounter _refCount;
 
-  ref<const MemoryObject> object;
+  ref<const ObjectState> parent;
 
   /// @brief Holds all known concrete bytes
   uint8_t *concreteStore;
@@ -247,16 +247,14 @@ public:
   /// Create a new object state for the given memory object with concrete
   /// contents. The initial contents are undefined, it is the callers
   /// responsibility to initialize the object contents appropriately.
-  ObjectStatePlane(const MemoryObject *mo);
+  ObjectStatePlane(const ObjectState *parent);
 
   /// Create a new object state for the given memory object with symbolic
   /// contents.
-  ObjectStatePlane(const MemoryObject *mo, const Array *array);
+  ObjectStatePlane(const ObjectState *parent, const Array *array);
 
-  ObjectStatePlane(const ObjectStatePlane &os);
+  ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os);
   ~ObjectStatePlane();
-
-  const MemoryObject *getObject() const { return object.get(); }
 
   void setReadOnly(bool ro) { readOnly = ro; }
 
@@ -316,8 +314,6 @@ private:
   void markByteFlushed(unsigned offset);
   void markByteUnflushed(unsigned offset);
   void setKnownSymbolic(unsigned offset, Expr *value);
-
-  ArrayCache *getArrayCache() const;
 };
 
 class ObjectState {
@@ -334,13 +330,15 @@ private:
 
   ref<const MemoryObject> object;
 
-  ObjectStatePlane segmentPlane;
-  ObjectStatePlane offsetPlane;
 
 public:
   unsigned size;
 
   bool readOnly;
+
+private:
+  ObjectStatePlane segmentPlane;
+  ObjectStatePlane offsetPlane;
 
 public:
   /// Create a new object state for the given memory object with concrete
@@ -385,6 +383,8 @@ public:
   void write16(unsigned offset, uint16_t segment, uint16_t value);
   void write32(unsigned offset, uint32_t segment, uint32_t value);
   void write64(unsigned offset, uint64_t segment, uint64_t value);
+
+  ArrayCache *getArrayCache() const;
 };
   
 } // End klee namespace

@@ -73,40 +73,40 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 
 /***/
 
-ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo)
-  : object(mo),
-    concreteStore(new uint8_t[mo->size]),
+ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
+  : parent(parent),
+    concreteStore(new uint8_t[parent->size]),
     concreteMask(nullptr),
     knownSymbolics(nullptr),
     unflushedMask(nullptr),
     updates(nullptr, nullptr),
-    size(mo->size),
+    size(parent->size),
     readOnly(false) {
   if (!UseConstantArrays) {
     static unsigned id = 0;
     const Array *array =
-        getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), size);
+        parent->getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), size);
     updates = UpdateList(array, 0);
   }
   memset(concreteStore, 0, size);
 }
 
 
-ObjectStatePlane::ObjectStatePlane(const MemoryObject *mo, const Array *array)
-  : object(mo),
-    concreteStore(new uint8_t[mo->size]),
+ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
+  : parent(parent),
+    concreteStore(new uint8_t[parent->size]),
     concreteMask(nullptr),
     knownSymbolics(nullptr),
     unflushedMask(nullptr),
     updates(array, nullptr),
-    size(mo->size),
+    size(parent->size),
     readOnly(false) {
   makeSymbolic();
   memset(concreteStore, 0, size);
 }
 
-ObjectStatePlane::ObjectStatePlane(const ObjectStatePlane &os)
-  : object(os.object),
+ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os)
+  : parent(parent),
     concreteStore(new uint8_t[os.size]),
     concreteMask(os.concreteMask ? new BitArray(*os.concreteMask, os.size) : nullptr),
     knownSymbolics(nullptr),
@@ -129,11 +129,6 @@ ObjectStatePlane::~ObjectStatePlane() {
   delete unflushedMask;
   delete[] knownSymbolics;
   delete[] concreteStore;
-}
-
-ArrayCache *ObjectStatePlane::getArrayCache() const {
-  assert(object && "object was NULL");
-  return object->parent->getArrayCache();
 }
 
 /***/
@@ -176,7 +171,7 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
     }
 
     static unsigned id = 0;
-    const Array *array = getArrayCache()->CreateArray(
+    const Array *array = parent->getArrayCache()->CreateArray(
         "const_arr" + llvm::utostr(++id), size, &Contents[0],
         &Contents[0] + Contents.size());
     updates = UpdateList(array, 0);
@@ -199,7 +194,7 @@ void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
       if (!success)
         klee_warning("Solver timed out when getting a value for external call, "
                      "byte %p+%u will have random value",
-                     (void *)object->address, i);
+                     (void *)parent->getObject()->address, i);
       else
         ce->toMemory(concreteStore + i);
     }
@@ -380,7 +375,7 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
 
   if (size>4096) {
     std::string allocInfo;
-    object->getAllocInfo(allocInfo);
+    parent->getObject()->getAllocInfo(allocInfo);
     klee_warning_once(0, "flushing %d bytes on read, may be slow and/or crash: %s", 
                       size,
                       allocInfo.c_str());
@@ -418,7 +413,7 @@ void ObjectStatePlane::write8(ref<Expr> offset, ref<Expr> value) {
 
   if (size>4096) {
     std::string allocInfo;
-    object->getAllocInfo(allocInfo);
+    parent->getObject()->getAllocInfo(allocInfo);
     klee_warning_once(0, "flushing %d bytes on read, may be slow and/or crash: %s", 
                       size,
                       allocInfo.c_str());
@@ -560,7 +555,7 @@ void ObjectStatePlane::write64(unsigned offset, uint64_t value) {
 
 void ObjectStatePlane::print() const {
   llvm::errs() << "-- ObjectState --\n";
-  llvm::errs() << "\tMemoryObject ID: " << object->id << "\n";
+  llvm::errs() << "\tMemoryObject ID: " << parent->getObject()->id << "\n";
   llvm::errs() << "\tRoot Object: " << updates.root << "\n";
   llvm::errs() << "\tSize: " << size << "\n";
 
@@ -585,30 +580,30 @@ void ObjectStatePlane::print() const {
 ObjectState::ObjectState(const MemoryObject *mo)
   : copyOnWriteOwner(0),
     object(mo),
-    segmentPlane(mo),
-    offsetPlane(mo),
     size(mo->size),
-    readOnly(false) {
+    readOnly(false),
+    segmentPlane(this),
+    offsetPlane(this) {
 }
 
 
 ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
   : copyOnWriteOwner(0),
     object(mo),
-    segmentPlane(mo),
-    offsetPlane(mo, array),
     size(mo->size),
-    readOnly(false) {
+    readOnly(false),
+    segmentPlane(this),
+    offsetPlane(this, array) {
   segmentPlane.initializeToZero();
 }
 
 ObjectState::ObjectState(const ObjectState &os)
   : copyOnWriteOwner(0),
     object(os.object),
-    segmentPlane(os.segmentPlane),
-    offsetPlane(os.offsetPlane),
     size(os.size),
-    readOnly(false) {
+    readOnly(false),
+    segmentPlane(this, os.segmentPlane),
+    offsetPlane(this, os.offsetPlane) {
 }
 
 KValue ObjectState::read8(unsigned offset) const {
@@ -662,4 +657,9 @@ void ObjectState::initializeToRandom() {
   // TODO should be random as well?
   segmentPlane.initializeToZero();
   offsetPlane.initializeToRandom();
+}
+
+ArrayCache* ObjectState::getArrayCache() const {
+  assert(object && "object was NULL");
+  return object->parent->getArrayCache();
 }
