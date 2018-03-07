@@ -106,9 +106,9 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os)
   : parent(parent),
     concreteStore(new uint8_t[os.size]),
-    concreteMask(os.concreteMask ? new BitArray(*os.concreteMask, os.size) : nullptr),
+    concreteMask(os.concreteMask ? new BitArray(*os.concreteMask) : nullptr),
     knownSymbolics(nullptr),
-    unflushedMask(os.unflushedMask ? new BitArray(*os.unflushedMask, os.size) : nullptr),
+    unflushedMask(os.unflushedMask ? new BitArray(*os.unflushedMask) : nullptr),
     updates(os.updates),
     size(os.size) {
   assert(!os.parent->readOnly && "no need to copy read only object?");
