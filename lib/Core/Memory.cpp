@@ -125,8 +125,8 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os)
   : parent(parent),
     concreteStore(new uint8_t[os.size]),
-    concreteMask(os.concreteMask ? new BitArray(*os.concreteMask, os.size) : 0),
-    flushMask(os.flushMask ? new BitArray(*os.flushMask, os.size) : 0),
+    concreteMask(os.concreteMask ? new BitArray(*os.concreteMask) : 0),
+    flushMask(os.flushMask ? new BitArray(*os.flushMask) : 0),
     knownSymbolics(0),
     updates(os.updates),
     size(os.size) {
