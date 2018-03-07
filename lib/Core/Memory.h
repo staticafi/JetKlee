@@ -13,6 +13,7 @@
 #include "Context.h"
 #include "klee/Expr.h"
 #include "klee/KValue.h"
+#include "klee/util/BitArray.h"
 
 #include "llvm/ADT/StringExtras.h"
 
@@ -202,20 +203,24 @@ private:
 
   const ObjectState *parent;
 
-  uint8_t *concreteStore;
+  std::vector<uint8_t> concreteStore;
   // XXX cleanup name of flushMask (its backwards or something)
-  BitArray *concreteMask;
+  BitArray concreteMask;
 
   // mutable because may need flushed during read of const
-  mutable BitArray *flushMask;
+  mutable BitArray flushMask;
 
-  ref<Expr> *knownSymbolics;
+  std::vector<ref<Expr> > knownSymbolics;
 
   // mutable because we may need flush during read of const
   mutable UpdateList updates;
 
 public:
   unsigned size;
+
+  bool symbolic;
+
+  uint8_t initialValue;
 
 public:
   /// Create a new object state for the given memory object with concrete
@@ -255,16 +260,12 @@ private:
 
   void makeConcrete();
 
-  void makeSymbolic();
-
   ref<Expr> read8(ref<Expr> offset) const;
   void write8(unsigned offset, ref<Expr> value);
   void write8(ref<Expr> offset, ref<Expr> value);
 
-  void fastRangeCheckOffset(ref<Expr> offset, unsigned *base_r, 
-                            unsigned *size_r) const;
-  void flushRangeForRead(unsigned rangeBase, unsigned rangeSize) const;
-  void flushRangeForWrite(unsigned rangeBase, unsigned rangeSize);
+  void flushForRead() const;
+  void flushForWrite();
 
   bool isByteConcrete(unsigned offset) const;
   bool isByteFlushed(unsigned offset) const;
@@ -272,9 +273,10 @@ private:
 
   void markByteConcrete(unsigned offset);
   void markByteSymbolic(unsigned offset);
-  void markByteFlushed(unsigned offset);
-  void markByteUnflushed(unsigned offset);
+  void markByteFlushed(unsigned offset) const;
+  void markByteUnflushed(unsigned offset) const;
   void setKnownSymbolic(unsigned offset, Expr *value);
+  uint8_t getConcreteValue(unsigned offset) const;
 };
 
 class ObjectState {
