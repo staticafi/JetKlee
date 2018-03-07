@@ -13,6 +13,7 @@
 #include "Context.h"
 #include "TimingSolver.h"
 
+#include "klee/ADT/BitArray.h"
 #include "klee/Module/KValue.h"
 
 #include "llvm/ADT/StringExtras.h"
@@ -27,7 +28,6 @@ namespace llvm {
 namespace klee {
 
 class ArrayCache;
-class BitArray;
 class ExecutionState;
 class MemoryManager;
 class Solver;
@@ -222,24 +222,28 @@ private:
   ref<const ObjectState> parent;
 
   /// @brief Holds all known concrete bytes
-  uint8_t *concreteStore;
+  std::vector<uint8_t> concreteStore;
 
   /// @brief concreteMask[byte] is set if byte is known to be concrete
-  BitArray *concreteMask;
+  BitArray concreteMask;
 
   /// knownSymbolics[byte] holds the symbolic expression for byte,
   /// if byte is known to be symbolic
-  ref<Expr> *knownSymbolics;
+  std::vector<ref<Expr>> knownSymbolics;
 
   /// unflushedMask[byte] is set if byte is unflushed
   /// mutable because may need flushed during read of const
-  mutable BitArray *unflushedMask;
+  mutable BitArray unflushedMask;
 
   // mutable because we may need flush during read of const
   mutable UpdateList updates;
 
 public:
   unsigned size;
+
+  bool symbolic;
+
+  uint8_t initialValue;
 
 public:
   /// Create a new object state for the given memory object with concrete
@@ -252,7 +256,7 @@ public:
   ObjectStatePlane(const ObjectState *parent, const Array *array);
 
   ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os);
-  ~ObjectStatePlane();
+  ~ObjectStatePlane() = default;
 
   /// Make contents all concrete and zero
   void initializeToZero();
@@ -278,23 +282,19 @@ public:
     from the solver and puts them in the concreteStore.
   */
   void flushToConcreteStore(TimingSolver *solver,
-                            const ExecutionState &state) const;
+                            const ExecutionState &state);
 
 private:
   const UpdateList &getUpdates() const;
 
   void makeConcrete();
 
-  void makeSymbolic();
-
   ref<Expr> read8(ref<Expr> offset) const;
   void write8(unsigned offset, ref<Expr> value);
   void write8(ref<Expr> offset, ref<Expr> value);
 
-  void fastRangeCheckOffset(ref<Expr> offset, unsigned *base_r, 
-                            unsigned *size_r) const;
-  void flushRangeForRead(unsigned rangeBase, unsigned rangeSize) const;
-  void flushRangeForWrite(unsigned rangeBase, unsigned rangeSize);
+  void flushForRead() const;
+  void flushForWrite();
 
   /// isByteConcrete ==> !isByteKnownSymbolic
   bool isByteConcrete(unsigned offset) const;
@@ -307,9 +307,10 @@ private:
 
   void markByteConcrete(unsigned offset);
   void markByteSymbolic(unsigned offset);
-  void markByteFlushed(unsigned offset);
-  void markByteUnflushed(unsigned offset);
+  void markByteFlushed(unsigned offset) const;
+  void markByteUnflushed(unsigned offset) const;
   void setKnownSymbolic(unsigned offset, Expr *value);
+  uint8_t getConcreteValue(unsigned offset) const;
 };
 
 class ObjectState {
