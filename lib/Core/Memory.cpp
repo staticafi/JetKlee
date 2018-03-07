@@ -94,58 +94,41 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
-    concreteStore(new uint8_t[parent->size]),
-    concreteMask(0),
-    flushMask(0),
-    knownSymbolics(0),
     updates(0, 0),
-    size(parent->size) {
+    size(parent->size),
+    symbolic(false),
+    initialValue(0) {
   if (!UseConstantArrays) {
     static unsigned id = 0;
     const Array *array =
         parent->getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), size);
     updates = UpdateList(array, 0);
   }
-  memset(concreteStore, 0, size);
 }
 
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
-    concreteStore(new uint8_t[parent->size]),
-    concreteMask(0),
-    flushMask(0),
-    knownSymbolics(0),
     updates(array, 0),
-    size(parent->size) {
-  makeSymbolic();
-  memset(concreteStore, 0, size);
+    size(parent->size),
+    symbolic(true),
+    initialValue(0) {
 }
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os)
   : parent(parent),
-    concreteStore(new uint8_t[os.size]),
-    concreteMask(os.concreteMask ? new BitArray(*os.concreteMask) : 0),
-    flushMask(os.flushMask ? new BitArray(*os.flushMask) : 0),
-    knownSymbolics(0),
+    concreteStore(os.concreteStore),
+    concreteMask(os.concreteMask),
+    flushMask(os.flushMask),
+    knownSymbolics(os.knownSymbolics),
     updates(os.updates),
-    size(os.size) {
+    size(os.size),
+    symbolic(os.symbolic),
+    initialValue(os.initialValue) {
   assert(!os.parent->readOnly && "no need to copy read only object?");
-
-  if (os.knownSymbolics) {
-    knownSymbolics = new ref<Expr>[size];
-    for (unsigned i=0; i<size; i++)
-      knownSymbolics[i] = os.knownSymbolics[i];
-  }
-
-  memcpy(concreteStore, os.concreteStore, size*sizeof(*concreteStore));
 }
 
 ObjectStatePlane::~ObjectStatePlane() {
-  delete concreteMask;
-  delete flushMask;
-  delete[] knownSymbolics;
-  delete[] concreteStore;
 }
 
 /***/
@@ -202,53 +185,39 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
 }
 
 void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
-                                       const ExecutionState &state) const {
+                                       const ExecutionState &state) {
   for (unsigned i = 0; i < size; i++) {
     if (isByteKnownSymbolic(i)) {
       ref<ConstantExpr> ce;
       bool success = solver->getValue(state, read8(i), ce);
-      if (!success)
+      if (!success) {
         klee_warning("Solver timed out when getting a value for external call, "
                      "byte %p+%u will have random value",
                      (void *)parent->getObject()->address, i);
-      else
-        ce->toMemory(concreteStore + i);
+      } else {
+        uint8_t value;
+        ce->toMemory(&value);
+        concreteStore[i] = value;
+      }
     }
   }
 }
 
 void ObjectStatePlane::makeConcrete() {
-  delete concreteMask;
-  delete flushMask;
-  delete[] knownSymbolics;
-  concreteMask = 0;
-  flushMask = 0;
-  knownSymbolics = 0;
-}
-
-void ObjectStatePlane::makeSymbolic() {
-  assert(!updates.head &&
-         "XXX makeSymbolic of objects with symbolic values is unsupported");
-
-  // XXX simplify this, can just delete various arrays I guess
-  for (unsigned i=0; i<size; i++) {
-    markByteSymbolic(i);
-    setKnownSymbolic(i, 0);
-    markByteFlushed(i);
-  }
+  concreteMask.resize(0);
+  flushMask.resize(0);
+  knownSymbolics.resize(0);
 }
 
 void ObjectStatePlane::initializeToZero() {
   makeConcrete();
-  memset(concreteStore, 0, size);
+  initialValue = 0;
 }
 
 void ObjectStatePlane::initializeToRandom() {
   makeConcrete();
-  for (unsigned i=0; i<size; i++) {
-    // randomly selected by 256 sided die
-    concreteStore[i] = 0xAB;
-  }
+  // randomly selected by 256 sided die
+  initialValue = 0xAB;
 }
 
 /*
@@ -259,42 +228,29 @@ isByteConcrete(i) => !isByteKnownSymbolic(i)
 !isByteFlushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
  */
 
-void ObjectStatePlane::fastRangeCheckOffset(ref<Expr> offset,
-                                            unsigned *base_r,
-                                            unsigned *size_r) const {
-  *base_r = 0;
-  *size_r = size;
-}
-
-void ObjectStatePlane::flushRangeForRead(unsigned rangeBase,
-                                         unsigned rangeSize) const {
-  if (!flushMask) flushMask = new BitArray(size, true);
- 
-  for (unsigned offset=rangeBase; offset<rangeBase+rangeSize; offset++) {
+void ObjectStatePlane::flushForRead() const {
+  for (unsigned offset = 0; offset < size; offset++) {
     if (!isByteFlushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
-                       ConstantExpr::create(concreteStore[offset], Expr::Int8));
+                       ConstantExpr::create(getConcreteValue(offset), Expr::Int8));
       } else {
         assert(isByteKnownSymbolic(offset) && "invalid bit set in flushMask");
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
                        knownSymbolics[offset]);
       }
 
-      flushMask->unset(offset);
+      markByteFlushed(offset);
     }
   } 
 }
 
-void ObjectStatePlane::flushRangeForWrite(unsigned rangeBase,
-                                          unsigned rangeSize) {
-  if (!flushMask) flushMask = new BitArray(size, true);
-
-  for (unsigned offset=rangeBase; offset<rangeBase+rangeSize; offset++) {
+void ObjectStatePlane::flushForWrite() {
+  for (unsigned offset = 0; offset < size; offset++) {
     if (!isByteFlushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
-                       ConstantExpr::create(concreteStore[offset], Expr::Int8));
+                       ConstantExpr::create(getConcreteValue(offset), Expr::Int8));
         markByteSymbolic(offset);
       } else {
         assert(isByteKnownSymbolic(offset) && "invalid bit set in flushMask");
@@ -303,72 +259,77 @@ void ObjectStatePlane::flushRangeForWrite(unsigned rangeBase,
         setKnownSymbolic(offset, 0);
       }
 
-      flushMask->unset(offset);
+      markByteFlushed(offset);
     } else {
-      // flushed bytes that are written over still need
-      // to be marked out
-      if (isByteConcrete(offset)) {
-        markByteSymbolic(offset);
-      } else if (isByteKnownSymbolic(offset)) {
-        setKnownSymbolic(offset, 0);
-      }
+      // flushed bytes that are written over still need to be marked out
+      markByteSymbolic(offset);
+      setKnownSymbolic(offset, 0);
     }
   } 
 }
 
 bool ObjectStatePlane::isByteConcrete(unsigned offset) const {
-  return !concreteMask || concreteMask->get(offset);
+  if (offset < concreteMask.size())
+    return concreteMask.get(offset);
+  return !symbolic;
 }
 
 bool ObjectStatePlane::isByteFlushed(unsigned offset) const {
-  return flushMask && !flushMask->get(offset);
+  if (offset < flushMask.size())
+    return !flushMask.get(offset);
+  return true;
 }
 
 bool ObjectStatePlane::isByteKnownSymbolic(unsigned offset) const {
-  return knownSymbolics && knownSymbolics[offset].get();
+  return offset < knownSymbolics.size() && knownSymbolics[offset].get();
 }
 
 void ObjectStatePlane::markByteConcrete(unsigned offset) {
-  if (concreteMask)
-    concreteMask->set(offset);
+  if (offset >= concreteMask.size())
+    concreteMask.resize(size, !symbolic);
+  concreteMask.set(offset);
 }
 
 void ObjectStatePlane::markByteSymbolic(unsigned offset) {
-  if (!concreteMask)
-    concreteMask = new BitArray(size, true);
-  concreteMask->unset(offset);
+  if (offset >= concreteMask.size())
+    concreteMask.resize(size, !symbolic);
+  concreteMask.unset(offset);
 }
 
-void ObjectStatePlane::markByteUnflushed(unsigned offset) {
-  if (flushMask)
-    flushMask->set(offset);
+void ObjectStatePlane::markByteUnflushed(unsigned offset) const {
+  if (flushMask.size() <= offset)
+    flushMask.resize(size, !symbolic);
+  flushMask.set(offset);
 }
 
-void ObjectStatePlane::markByteFlushed(unsigned offset) {
-  if (!flushMask) {
-    flushMask = new BitArray(size, false);
-  } else {
-    flushMask->unset(offset);
-  }
+void ObjectStatePlane::markByteFlushed(unsigned offset) const {
+  if (flushMask.size() <= offset)
+    flushMask.resize(size, !symbolic);
+  flushMask.unset(offset);
 }
 
 void ObjectStatePlane::setKnownSymbolic(unsigned offset,
-                                   Expr *value /* can be null */) {
-  if (knownSymbolics) {
-    knownSymbolics[offset] = value;
-  } else {
-    if (value) {
-      knownSymbolics = new ref<Expr>[size];
-      knownSymbolics[offset] = value;
-    }
+                                        Expr *value /* can be null */) {
+  if (knownSymbolics.size() <= offset) {
+    if (!value)
+      return;
+    knownSymbolics.resize(size);
   }
+  knownSymbolics[offset] = value;
+}
+
+uint8_t ObjectStatePlane::getConcreteValue(unsigned offset) const {
+  if (offset < concreteStore.size())
+    return concreteStore[offset];
+  return initialValue;
 }
 
 /***/
 
 ref<Expr> ObjectStatePlane::read8(unsigned offset) const {
+  assert(offset < size && "Read after size bound");
   if (isByteConcrete(offset)) {
-    return ConstantExpr::create(concreteStore[offset], Expr::Int8);
+    return ConstantExpr::create(getConcreteValue(offset), Expr::Int8);
   } else if (isByteKnownSymbolic(offset)) {
     return knownSymbolics[offset];
   } else {
@@ -381,9 +342,7 @@ ref<Expr> ObjectStatePlane::read8(unsigned offset) const {
 
 ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
   assert(!isa<ConstantExpr>(offset) && "constant offset passed to symbolic read8");
-  unsigned base, size;
-  fastRangeCheckOffset(offset, &base, &size);
-  flushRangeForRead(base, size);
+  flushForRead();
 
   if (size>4096) {
     std::string allocInfo;
@@ -398,6 +357,8 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
 
 void ObjectStatePlane::write8(unsigned offset, uint8_t value) {
   //assert(read_only == false && "writing to read-only object!");
+  if (concreteStore.size() <= offset)
+    concreteStore.resize(size);
   concreteStore[offset] = value;
   setKnownSymbolic(offset, 0);
 
@@ -419,9 +380,7 @@ void ObjectStatePlane::write8(unsigned offset, ref<Expr> value) {
 
 void ObjectStatePlane::write8(ref<Expr> offset, ref<Expr> value) {
   assert(!isa<ConstantExpr>(offset) && "constant offset passed to symbolic write8");
-  unsigned base, size;
-  fastRangeCheckOffset(offset, &base, &size);
-  flushRangeForWrite(base, size);
+  flushForWrite();
 
   if (size>4096) {
     std::string allocInfo;
