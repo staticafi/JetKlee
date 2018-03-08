@@ -75,13 +75,13 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
     updates(nullptr, nullptr),
-    size(parent->size),
+    sizeBound(parent->size),
     symbolic(false),
     initialValue(0) {
   if (!UseConstantArrays) {
     static unsigned id = 0;
     const Array *array =
-        parent->getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), size);
+        parent->getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), sizeBound);
     updates = UpdateList(array, 0);
   }
 }
@@ -90,7 +90,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
     updates(array, nullptr),
-    size(parent->size),
+    sizeBound(parent->size),
     symbolic(true),
     initialValue(0) {
 }
@@ -102,7 +102,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStateP
     knownSymbolics(os.knownSymbolics),
     unflushedMask(os.unflushedMask),
     updates(os.updates),
-    size(os.size),
+    sizeBound(os.sizeBound),
     symbolic(os.symbolic),
     initialValue(os.initialValue) {
   assert(!os.parent->readOnly && "no need to copy read only object?");
@@ -126,10 +126,10 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
       Writes[i] = std::make_pair(un->index, un->value);
     }
 
-    std::vector< ref<ConstantExpr> > Contents(size);
+    std::vector< ref<ConstantExpr> > Contents(sizeBound);
 
     // Initialize to zeros.
-    for (unsigned i = 0, e = size; i != e; ++i)
+    for (unsigned i = 0, e = sizeBound; i != e; ++i)
       Contents[i] = ConstantExpr::create(0, Expr::Int8);
 
     // Pull off as many concrete writes as we can.
@@ -149,7 +149,7 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
 
     static unsigned id = 0;
     const Array *array = parent->getArrayCache()->CreateArray(
-        "const_arr" + llvm::utostr(++id), size, &Contents[0],
+        "const_arr" + llvm::utostr(++id), sizeBound, &Contents[0],
         &Contents[0] + Contents.size());
     updates = UpdateList(array, 0);
 
@@ -207,7 +207,7 @@ isByteUnflushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
  */
 
 void ObjectStatePlane::flushForRead() const {
-  for (unsigned offset = 0; offset < size; offset++) {
+  for (unsigned offset = 0; offset < sizeBound; offset++) {
     if (isByteUnflushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
@@ -225,7 +225,7 @@ void ObjectStatePlane::flushForRead() const {
 }
 
 void ObjectStatePlane::flushForWrite() {
-  for (unsigned offset = 0; offset < size; offset++) {
+  for (unsigned offset = 0; offset < sizeBound; offset++) {
     if (isByteUnflushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
@@ -268,7 +268,7 @@ void ObjectStatePlane::markByteConcrete(unsigned offset) {
   if (offset >= concreteMask.size()) {
     if (!symbolic)
       return;
-    concreteMask.resize(size, !symbolic);
+    concreteMask.resize(sizeBound, !symbolic);
   }
   concreteMask.set(offset);
 }
@@ -277,7 +277,7 @@ void ObjectStatePlane::markByteSymbolic(unsigned offset) {
   if (offset >= concreteMask.size()) {
     if (symbolic)
       return;
-    concreteMask.resize(size, !symbolic);
+    concreteMask.resize(sizeBound, !symbolic);
   }
   concreteMask.unset(offset);
 }
@@ -286,7 +286,7 @@ void ObjectStatePlane::markByteUnflushed(unsigned offset) const {
   if (offset >= unflushedMask.size()) {
     if (!symbolic)
       return;
-    unflushedMask.resize(size, !symbolic);
+    unflushedMask.resize(sizeBound, !symbolic);
   }
   unflushedMask.set(offset);
 }
@@ -295,7 +295,7 @@ void ObjectStatePlane::markByteFlushed(unsigned offset) const {
   if (offset >= unflushedMask.size()) {
     if (symbolic)
       return;
-    unflushedMask.resize(size, !symbolic);
+    unflushedMask.resize(sizeBound, !symbolic);
   }
   unflushedMask.unset(offset);
 }
@@ -305,7 +305,7 @@ void ObjectStatePlane::setKnownSymbolic(unsigned offset,
   if (knownSymbolics.size() <= offset) {
     if (!value)
       return;
-    knownSymbolics.resize(size);
+    knownSymbolics.resize(sizeBound);
   }
   knownSymbolics[offset] = value;
 }
@@ -319,7 +319,6 @@ uint8_t ObjectStatePlane::getConcreteValue(unsigned offset) const {
 /***/
 
 ref<Expr> ObjectStatePlane::read8(unsigned offset) const {
-  assert(offset < size && "Read after size bound");
   if (isByteConcrete(offset)) {
     return ConstantExpr::create(getConcreteValue(offset), Expr::Int8);
   } else if (isByteKnownSymbolic(offset)) {
@@ -336,11 +335,11 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
   assert(!isa<ConstantExpr>(offset) && "constant offset passed to symbolic read8");
   flushForRead();
 
-  if (size>4096) {
+  if (sizeBound>4096) {
     std::string allocInfo;
     parent->getObject()->getAllocInfo(allocInfo);
     klee_warning_once(0, "flushing %d bytes on read, may be slow and/or crash: %s", 
-                      size,
+                      sizeBound,
                       allocInfo.c_str());
   }
   
@@ -349,8 +348,10 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
 
 void ObjectStatePlane::write8(unsigned offset, uint8_t value) {
   //assert(read_only == false && "writing to read-only object!");
+  if (offset >= sizeBound)
+    sizeBound = offset + 1;
   if (concreteStore.size() <= offset)
-    concreteStore.resize(size);
+    concreteStore.resize(sizeBound);
   concreteStore[offset] = value;
   setKnownSymbolic(offset, 0);
 
@@ -363,6 +364,8 @@ void ObjectStatePlane::write8(unsigned offset, ref<Expr> value) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(value)) {
     write8(offset, (uint8_t) CE->getZExtValue(8));
   } else {
+    if (offset >= sizeBound)
+      sizeBound = offset + 1;
     setKnownSymbolic(offset, value.get());
       
     markByteSymbolic(offset);
@@ -374,11 +377,11 @@ void ObjectStatePlane::write8(ref<Expr> offset, ref<Expr> value) {
   assert(!isa<ConstantExpr>(offset) && "constant offset passed to symbolic write8");
   flushForWrite();
 
-  if (size>4096) {
+  if (sizeBound>4096) {
     std::string allocInfo;
     parent->getObject()->getAllocInfo(allocInfo);
     klee_warning_once(0, "flushing %d bytes on read, may be slow and/or crash: %s", 
-                      size,
+                      sizeBound,
                       allocInfo.c_str());
   }
   
@@ -520,10 +523,10 @@ void ObjectStatePlane::print() const {
   llvm::errs() << "-- ObjectState --\n";
   llvm::errs() << "\tMemoryObject ID: " << parent->getObject()->id << "\n";
   llvm::errs() << "\tRoot Object: " << updates.root << "\n";
-  llvm::errs() << "\tSize: " << size << "\n";
+  llvm::errs() << "\tSize: " << sizeBound << "\n";
 
   llvm::errs() << "\tBytes:\n";
-  for (unsigned i=0; i<size; i++) {
+  for (unsigned i=0; i<sizeBound; i++) {
     llvm::errs() << "\t\t["<<i<<"]"
                << " concrete? " << isByteConcrete(i)
                << " known-sym? " << isByteKnownSymbolic(i)

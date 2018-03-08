@@ -239,7 +239,7 @@ private:
   mutable UpdateList updates;
 
 public:
-  unsigned size;
+  unsigned sizeBound;
 
   bool symbolic;
 
