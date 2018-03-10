@@ -95,7 +95,7 @@ bool ValidatingSolver::computeInitialValues(
     for (unsigned i = 0; i != values.size(); ++i) {
       const Array *array = objects[i];
       assert(array);
-      for (unsigned j = 0; j < sizes[i]; j++) {
+      for (unsigned j = 0; j < array->size; j++) {
         unsigned char value = values[i][j];
         bindings.push_back(EqExpr::create(
             ReadExpr::create(UpdateList(array, 0),
