@@ -201,12 +201,14 @@ bool QueryLoggingSolver::computeInitialValues(
       std::vector<std::vector<unsigned char> >::iterator values_it =
           values.begin();
 
-      for (unsigned int i = 0; i < objects.size(); i++) {
-        const Array *array = objects[i];
+      for (std::vector<const Array *>::const_iterator i = objects.begin(),
+                                                      e = objects.end();
+           i != e; ++i, ++values_it) {
+        const Array *array = *i;
         std::vector<unsigned char> &data = *values_it;
         logBuffer << queryCommentSign << "     " << array->name << " = [";
 
-        for (unsigned j = 0; j < sizes[i]; j++) {
+        for (unsigned j = 0; j < array->size; j++) {
           logBuffer << (int)data[j];
 
           if (j + 1 < sizes[i]) {
