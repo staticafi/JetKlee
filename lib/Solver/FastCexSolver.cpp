@@ -1109,9 +1109,9 @@ FastCexSolver::computeInitialValues(const Query& query,
     const Array *array = objects[i];
     assert(array);
     std::vector<unsigned char> data;
-    data.reserve(sizes[i]);
+    data.reserve(array->size);
 
-    for (unsigned i=0; i < sizes[i]; i++) {
+    for (unsigned i=0; i < array->size; i++) {
       ref<Expr> read = 
         ReadExpr::create(UpdateList(array, 0),
                          ConstantExpr::create(i, array->getDomain()));
