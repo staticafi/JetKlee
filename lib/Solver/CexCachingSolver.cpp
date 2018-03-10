@@ -354,7 +354,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
     Assignment::bindings_ty::iterator it = a->bindings.find(os);
     
     if (it == a->bindings.end()) {
-      values[i] = std::vector<unsigned char>(sizes[i], 0);
+      values[i] = std::vector<unsigned char>(os->size, 0);
     } else {
       values[i] = it->second;
     }
