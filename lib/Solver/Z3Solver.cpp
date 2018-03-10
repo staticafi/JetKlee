@@ -41,7 +41,6 @@ llvm::cl::opt<unsigned>
 }
 
 #include "llvm/Support/ErrorHandling.h"
-#include "klee/util/ArrayCache.h"
 
 namespace klee {
 
@@ -216,22 +215,17 @@ bool Z3SolverImpl::computeValue(const Query &query, ref<Expr> &result) {
   std::vector<uint64_t> sizes;
   std::vector<std::vector<unsigned char> > values;
   bool hasSolution;
-  ArrayCache ac;
-  Expr::Width width = query.expr->getWidth();
-  // Create a temporary array and make it equal the expression
-  const Array *var = ac.CreateArray("tmp", width/8);
-  ref<Expr> read = ReadExpr::createTempRead(var, width);
-  ref<Expr> eq = EqExpr::create(read, query.expr);
-  ref<Expr> q = NotExpr::create(eq);
-  objects.push_back(var);
-  sizes.push_back(width/8);
-  if (!computeInitialValues(query.withExpr(q), objects, sizes, values, hasSolution))
-    return false;
 
+  // Find the object used in the expression, and compute an assignment
+  // for them.
+  findSymbolicObjects(query.expr, objects);
+  if (!computeInitialValues(query.withFalse(), objects, values, hasSolution))
+    return false;
   assert(hasSolution && "state has invalid constraint set");
-  // Evaluate the expression
-  Assignment a1(objects, values);
-  result = a1.evaluate(read);
+
+  // Evaluate the expression with the computed assignment.
+  Assignment a(objects, values);
+  result = a.evaluate(query.expr);
 
   return true;
 }
