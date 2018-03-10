@@ -186,12 +186,11 @@ bool QueryLoggingSolver::computeValue(const Query &query, ref<Expr> &result) {
 
 bool QueryLoggingSolver::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
-    const std::vector<uint64_t> &sizes,
     std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
   startQuery(query, "InitialValues", 0, &objects);
 
   bool success =
-      solver->impl->computeInitialValues(query, objects, sizes, values, hasSolution);
+      solver->impl->computeInitialValues(query, objects, values, hasSolution);
 
   finishQuery(success);
 

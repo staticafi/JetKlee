@@ -56,7 +56,6 @@ private:
 
   bool internalRunSolver(const Query &,
                          const std::vector<const Array *> *objects,
-                         const std::vector<uint64_t> * sizes,
                          std::vector<std::vector<unsigned char> > *values,
                          bool &hasSolution);
 bool validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel);
@@ -81,13 +80,11 @@ public:
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
                             const std::vector<const Array *> &objects,
-                            const std::vector<uint64_t> &sizes,
                             std::vector<std::vector<unsigned char> > &values,
                             bool &hasSolution);
   SolverRunStatus
   handleSolverResponse(::Z3_solver theSolver, ::Z3_lbool satisfiable,
                        const std::vector<const Array *> *objects,
-                       const std::vector<uint64_t> * sizes,
                        std::vector<std::vector<unsigned char> > *values,
                        bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -205,14 +202,13 @@ char *Z3SolverImpl::getConstraintLog(const Query &query) {
 bool Z3SolverImpl::computeTruth(const Query &query, bool &isValid) {
   bool hasSolution;
   bool status =
-      internalRunSolver(query, /*objects=*/NULL, /*sizes=*/NULL, /*values=*/NULL, hasSolution);
+      internalRunSolver(query, /*objects=*/NULL, /*values=*/NULL, hasSolution);
   isValid = !hasSolution;
   return status;
 }
 
 bool Z3SolverImpl::computeValue(const Query &query, ref<Expr> &result) {
   std::vector<const Array *> objects;
-  std::vector<uint64_t> sizes;
   std::vector<std::vector<unsigned char> > values;
   bool hasSolution;
 
@@ -232,13 +228,12 @@ bool Z3SolverImpl::computeValue(const Query &query, ref<Expr> &result) {
 
 bool Z3SolverImpl::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
-    const std::vector<uint64_t> &sizes,
     std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
-  return internalRunSolver(query, &objects, &sizes, &values, hasSolution);
+  return internalRunSolver(query, &objects, &values, hasSolution);
 }
 
-bool Z3SolverImpl::internalRunSolver(const Query &query, const std::vector<const Array *> *objects,
-    const std::vector<uint64_t> *sizes,
+bool Z3SolverImpl::internalRunSolver(
+    const Query &query, const std::vector<const Array *> *objects,
     std::vector<std::vector<unsigned char> > *values, bool &hasSolution) {
 
   TimerStatIncrementer t(stats::queryTime);
@@ -285,7 +280,7 @@ bool Z3SolverImpl::internalRunSolver(const Query &query, const std::vector<const
   }
 
   ::Z3_lbool satisfiable = Z3_solver_check(builder->ctx, theSolver);
-  runStatusCode = handleSolverResponse(theSolver, satisfiable, objects, sizes, values,
+  runStatusCode = handleSolverResponse(theSolver, satisfiable, objects, values,
                                        hasSolution);
 
   Z3_solver_dec_ref(builder->ctx, theSolver);
@@ -308,8 +303,9 @@ bool Z3SolverImpl::internalRunSolver(const Query &query, const std::vector<const
   return false; // failed
 }
 
-SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(::Z3_solver theSolver, ::Z3_lbool satisfiable,
-    const std::vector<const Array *> *objects, const std::vector<uint64_t> *sizes,
+SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
+    ::Z3_solver theSolver, ::Z3_lbool satisfiable,
+    const std::vector<const Array *> *objects,
     std::vector<std::vector<unsigned char> > *values, bool &hasSolution) {
   switch (satisfiable) {
   case Z3_L_TRUE: {
