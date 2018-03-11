@@ -16,6 +16,7 @@
 #include "klee/util/Assignment.h"
 #include "klee/util/ExprUtil.h"
 #include "klee/util/ExprVisitor.h"
+#include "klee/util/SizeVisitor.h"
 #include "klee/Internal/ADT/MapOfSets.h"
 
 #include "klee/SolverStats.h"
@@ -330,29 +331,6 @@ bool CexCachingSolver::computeValue(const Query& query,
   return true;
 }
 
-class SizeVisitor : public ExprVisitor {
-public:
-  std::map<const Array *, uint64_t> sizes;
-  const Assignment &assignment;
-
-  SizeVisitor(const Assignment &assignment) : assignment(assignment) {}
-
-  ExprVisitor::Action visitRead(const ReadExpr &expr) {
-    ref<Expr> index = assignment.evaluate(expr.index);
-    assert(isa<ConstantExpr>(index) && "index didn't evaluate to a constant");
-    uint64_t &size = sizes[expr.updates.root];
-    size = std::max(size, cast<ConstantExpr>(index)->getZExtValue() + 1);
-    return Action::doChildren();
-  }
-
-  void visitQuery(const Query &query) {
-    for(ConstraintManager::constraint_iterator it = query.constraints.begin();
-      it != query.constraints.end(); ++it){
-      visit(*it);
-    }
-  }
-};
-
 bool 
 CexCachingSolver::computeInitialValues(const Query& query,
                                        const std::vector<const Array*> 
@@ -369,7 +347,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
   if (!a)
     return true;
 
-  SizeVisitor sizeVisitor(*a);
+  AssignmentSizeVisitor sizeVisitor(*a);
   sizeVisitor.visitQuery(query);
 
   // FIXME: We should use smarter assignment for result so we don't
