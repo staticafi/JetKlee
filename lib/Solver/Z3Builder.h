@@ -16,6 +16,8 @@
 
 #include <unordered_map>
 #include <z3.h>
+#include <vector>
+#include <map>
 
 namespace klee {
 
@@ -104,6 +106,7 @@ public:
 class Z3Builder {
   ExprHashMap<std::pair<Z3ASTHandle, unsigned> > constructed;
   Z3ArrayExprHash _arr_hash;
+  std::map<const Array *, std::vector<Z3ASTHandle> > readIndices;
 
 private:
   Z3ASTHandle bvOne(unsigned width);
@@ -179,6 +182,7 @@ public:
   Z3ASTHandle getTrue();
   Z3ASTHandle getFalse();
   Z3ASTHandle getInitialRead(const Array *os, unsigned index);
+  std::vector<Z3ASTHandle> getArrayReadIndices(const Array *root);
 
   Z3ASTHandle construct(ref<Expr> e) {
     Z3ASTHandle res = construct(e, 0);

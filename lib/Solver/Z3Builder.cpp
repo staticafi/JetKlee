@@ -103,6 +103,7 @@ Z3Builder::~Z3Builder() {
   clearConstructCache();
   _arr_hash.clear();
   constant_array_assertions.clear();
+  readIndices.clear();
   Z3_del_context(ctx);
   if (z3LogInteractionFile.length() > 0) {
     Z3_close_log();
@@ -422,7 +423,9 @@ Z3ASTHandle Z3Builder::getInitialArray(const Array *root) {
 }
 
 Z3ASTHandle Z3Builder::getInitialRead(const Array *root, unsigned index) {
-  return readExpr(getInitialArray(root), bvConst32(32, index));
+  Z3ASTHandle indexExpr = bvConst32(32, index);
+  readIndices[root].push_back(indexExpr);
+  return readExpr(getInitialArray(root), indexExpr);
 }
 
 Z3ASTHandle Z3Builder::getArrayForUpdate(const Array *root,
@@ -443,7 +446,11 @@ Z3ASTHandle Z3Builder::getArrayForUpdate(const Array *root,
 
     return (un_expr);
   }
-}
+  }
+
+  std::vector<Z3ASTHandle> Z3Builder::getArrayReadIndices(const Array* root) {
+    return readIndices[root];
+  }
 
 /** if *width_out!=1 then result is a bitvector,
     otherwise it is a bool */
@@ -518,8 +525,10 @@ Z3ASTHandle Z3Builder::constructActual(ref<Expr> e, int *width_out) {
     ReadExpr *re = cast<ReadExpr>(e);
     assert(re && re->updates.root);
     *width_out = re->updates.root->getRange();
+    Z3ASTHandle indexExpr = construct(re->index, 0);
+    readIndices[re->updates.root].push_back(indexExpr);
     return readExpr(getArrayForUpdate(re->updates.root, re->updates.head.get()),
-                    construct(re->index, 0));
+                    indexExpr);
   }
 
   case Expr::Select: {
