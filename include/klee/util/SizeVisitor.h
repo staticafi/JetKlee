@@ -35,6 +35,7 @@ namespace klee {
         it != query.constraints.end(); ++it){
         visit(*it);
       }
+      visit(Expr::createIsZero(query.expr));
     }
 
   protected:
