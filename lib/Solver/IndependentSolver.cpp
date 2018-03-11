@@ -513,12 +513,12 @@ bool IndependentSolver::computeInitialValues(const Query& query,
           // so we need to place the answers to the new query into the right
           // spot while avoiding the undetermined values also in the array
           std::vector<unsigned char> * tempPtr = &retMap[arraysInFactor[i]];
-          assert(tempPtr->size() == tempValues[i].size() &&
-                 "we're talking about the same array here");
           ::DenseSet<unsigned> * ds = &(it->elements[arraysInFactor[i]]);
+          if (tempPtr->size() < tempValues[i].size())
+            tempPtr->resize(tempValues[i].size());
           for (std::set<unsigned>::iterator it2 = ds->begin(); it2 != ds->end(); it2++){
             unsigned index = * it2;
-            (* tempPtr)[index] = tempValues[i][index];
+            (* tempPtr)[index] = index < tempValues[i].size() ? tempValues[i][index] : 0;
           }
         } else {
           // Dump all the new values into the array

@@ -336,6 +336,28 @@ bool CexCachingSolver::computeValue(const Query& query,
   return true;
 }
 
+class SizeVisitor : public ExprVisitor {
+public:
+  std::map<const Array *, uint64_t> sizes;
+  const Assignment &assignment;
+
+  SizeVisitor(const Assignment &assignment) : assignment(assignment) {}
+
+  ExprVisitor::Action visitRead(const ReadExpr &expr) {
+    ref<Expr> index = assignment.evaluate(expr.index);
+    assert(isa<ConstantExpr>(index) && "index didn't evaluate to a constant");
+    uint64_t &size = sizes[expr.updates.root];
+    size = std::max(size, cast<ConstantExpr>(index)->getZExtValue() + 1);
+    return Action::doChildren();
+  }
+
+  void visitQuery(const Query &query) {
+    for (const auto &constraint : query.constraints) {
+      visit(constraint);
+    }
+  }
+};
+
 bool 
 CexCachingSolver::computeInitialValues(const Query& query,
                                        const std::vector<const Array*> 
@@ -352,6 +374,9 @@ CexCachingSolver::computeInitialValues(const Query& query,
   if (!a)
     return true;
 
+  SizeVisitor sizeVisitor(*a);
+  sizeVisitor.visitQuery(query);
+
   // FIXME: We should use smarter assignment for result so we don't
   // need redundant copy.
   values = std::vector< std::vector<unsigned char> >(objects.size());
@@ -360,9 +385,10 @@ CexCachingSolver::computeInitialValues(const Query& query,
     Assignment::bindings_ty::iterator it = a->bindings.find(os);
     
     if (it == a->bindings.end()) {
-      values[i] = std::vector<unsigned char>(os->size, 0);
+      values[i] = std::vector<unsigned char>(sizeVisitor.sizes[os], 0);
     } else {
       values[i] = it->second;
+      values[i].resize(sizeVisitor.sizes[os], 0);
     }
   }
   
