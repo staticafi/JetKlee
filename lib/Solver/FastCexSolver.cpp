@@ -319,34 +319,49 @@ class CexObjectData {
   void operator=(const CexObjectData&); // DO NOT IMPLEMENT
 
 public:
-  CexObjectData(uint64_t size) : possibleContents(size), exactContents(size) {
-    for (uint64_t i = 0; i != size; ++i) {
-      possibleContents[i] = ValueRange(0, 255);
-      exactContents[i] = ValueRange(0, 255);
-    }
-  }
+  CexObjectData() {}
 
   const CexValueData getPossibleValues(size_t index) const { 
+    if (index >= possibleContents.size())
+      return ValueRange(0, 255);
     return possibleContents[index];
   }
   void setPossibleValues(size_t index, CexValueData values) {
+    if (index >= possibleContents.size())
+      resize(index + 1);
     possibleContents[index] = values;
   }
   void setPossibleValue(size_t index, unsigned char value) {
+    if (index >= possibleContents.size())
+      resize(index + 1);
     possibleContents[index] = CexValueData(value);
   }
 
   const CexValueData getExactValues(size_t index) const { 
+    if (index >= exactContents.size())
+      return ValueRange(0, 255);
     return exactContents[index];
   }
   void setExactValues(size_t index, CexValueData values) {
+    if (index >= exactContents.size())
+      resize(index + 1);
     exactContents[index] = values;
   }
 
   /// getPossibleValue - Return some possible value.
   unsigned char getPossibleValue(size_t index) const {
-    const CexValueData &cvd = possibleContents[index];
+    const CexValueData &cvd = getPossibleValues(index);
     return cvd.min() + (cvd.max() - cvd.min()) / 2;
+  }
+
+  size_t size() const {
+    return possibleContents.size();
+  }
+
+private:
+  void resize(size_t size) {
+    possibleContents.resize(size, ValueRange(0, 255));
+    exactContents.resize(size, ValueRange(0, 255));
   }
 };
 
@@ -370,12 +385,6 @@ public:
 class CexPossibleEvaluator : public ExprEvaluator {
 protected:
   ref<Expr> getInitialValue(const Array& array, unsigned index) {
-    // If the index is out of range, we cannot assign it a value, since that
-    // value cannot be part of the assignment.
-    if (index >= array.size)
-      return ReadExpr::create(UpdateList(&array, 0), 
-                              ConstantExpr::alloc(index, array.getDomain()));
-      
     std::map<const Array*, CexObjectData*>::iterator it = objects.find(&array);
     return ConstantExpr::alloc((it == objects.end() ? 127 : 
                                 it->second->getPossibleValue(index)),
@@ -391,12 +400,6 @@ public:
 class CexExactEvaluator : public ExprEvaluator {
 protected:
   ref<Expr> getInitialValue(const Array& array, unsigned index) {
-    // If the index is out of range, we cannot assign it a value, since that
-    // value cannot be part of the assignment.
-    if (index >= array.size)
-      return ReadExpr::create(UpdateList(&array, 0), 
-                              ConstantExpr::alloc(index, array.getDomain()));
-      
     std::map<const Array*, CexObjectData*>::iterator it = objects.find(&array);
     if (it == objects.end())
       return ReadExpr::create(UpdateList(&array, 0), 
@@ -435,7 +438,7 @@ public:
     CexObjectData *&Entry = objects[A];
 
     if (!Entry)
-      Entry = new CexObjectData(A->size);
+      Entry = new CexObjectData();
 
     return *Entry;
   }
@@ -472,18 +475,16 @@ public:
       if (ConstantExpr *CE = dyn_cast<ConstantExpr>(re->index)) {
         uint64_t index = CE->getZExtValue();
 
-        if (index < array->size) {
-          // If the range is fixed, just set that; even if it conflicts with the
-          // previous range it should be a better guess.
-          if (range.isFixed()) {
-            cod.setPossibleValue(index, range.min());
-          } else {
-            CexValueData cvd = cod.getPossibleValues(index);
-            CexValueData tmp = cvd.set_intersection(range);
+        // If the range is fixed, just set that; even if it conflicts with the
+        // previous range it should be a better guess.
+        if (range.isFixed()) {
+          cod.setPossibleValue(index, range.min());
+        } else {
+          CexValueData cvd = cod.getPossibleValues(index);
+          CexValueData tmp = cvd.set_intersection(range);
 
-            if (!tmp.isEmpty())
-              cod.setPossibleValues(index, tmp);
-          }
+          if (!tmp.isEmpty())
+            cod.setPossibleValues(index, tmp);
         }
       } else {
         // XXX        fatal("XXX not implemented");
@@ -954,14 +955,14 @@ public:
 
       llvm::errs() << A->name << "\n";
       llvm::errs() << "possible: [";
-      for (unsigned i = 0; i < A->size; ++i) {
+      for (unsigned i = 0; i < COD->size(); ++i) {
         if (i)
           llvm::errs() << ", ";
         llvm::errs() << COD->getPossibleValues(i);
       }
       llvm::errs() << "]\n";
       llvm::errs() << "exact   : [";
-      for (unsigned i = 0; i < A->size; ++i) {
+      for (unsigned i = 0; i < COD->size(); ++i) {
         if (i)
           llvm::errs() << ", ";
         llvm::errs() << COD->getExactValues(i);
