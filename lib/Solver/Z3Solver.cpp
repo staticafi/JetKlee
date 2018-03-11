@@ -372,7 +372,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
         Z3_dec_ref(builder->ctx, indexExpr);
       }
 
-      data.resize(array->size);
+      data.resize(size);
       for (unsigned offset = 0; offset < size; offset++) {
         // We can't use Z3ASTHandle here so have to do ref counting manually
         ::Z3_ast arrayElementExpr;
