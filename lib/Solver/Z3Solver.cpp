@@ -338,9 +338,28 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
          it != ie; ++it) {
       const Array *array = *it;
       std::vector<unsigned char> data;
+      unsigned size = 0;
 
-      data.reserve(array->size);
-      for (unsigned offset = 0; offset < array->size; offset++) {
+      for (Z3ASTHandle index : builder->getArrayReadIndices(array)) {
+        ::Z3_ast indexExpr;
+        bool successfulEval =
+            Z3_model_eval(builder->ctx, theModel, index,
+                          /*model_completion=*/Z3_FALSE, &indexExpr);
+        assert(successfulEval && "Failed to evaluate index model");
+        Z3_inc_ref(builder->ctx, indexExpr);
+        assert(Z3_get_ast_kind(builder->ctx, indexExpr) ==
+                   Z3_NUMERAL_AST &&
+               "Index evaluation didn't result in a numeral");
+        unsigned indexValue = 0;
+        bool successGet = Z3_get_numeral_uint(builder->ctx, indexExpr,
+                                              &indexValue);
+        assert(successGet && "failed to get value back");
+        size = std::max(size, indexValue + 1);
+        Z3_dec_ref(builder->ctx, indexExpr);
+      }
+
+      data.resize(array->size);
+      for (unsigned offset = 0; offset < size; offset++) {
         // We can't use Z3ASTHandle here so have to do ref counting manually
         ::Z3_ast arrayElementExpr;
         Z3ASTHandle initial_read = builder->getInitialRead(array, offset);
@@ -362,7 +381,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
         assert(successGet && "failed to get value back");
         assert(arrayElementValue >= 0 && arrayElementValue <= 255 &&
                "Integer from model is out of range");
-        data.push_back(arrayElementValue);
+        data[offset] = arrayElementValue;
         Z3_dec_ref(builder->ctx, arrayElementExpr);
       }
       values->push_back(data);
