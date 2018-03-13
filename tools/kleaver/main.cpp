@@ -269,7 +269,7 @@ static bool EvaluateInputAST(const char *Filename,
         
         if (S->getInitialValues(Query(ConstraintManager(QC->Constraints), 
                                       QC->Query),
-                                QC->Objects, result)) {
+                                result)) {
           llvm::outs() << "INVALID\n";
 
           for (unsigned i = 0, e = QC->Objects.size(); i != e; ++i) {

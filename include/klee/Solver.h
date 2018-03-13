@@ -14,6 +14,9 @@
 #include "klee/SolverCmdLine.h"
 #include "klee/Internal/System/Time.h"
 #include "klee/util/Assignment.h"
+// FIXME
+#include "klee/util/ExprUtil.h"
+#include "klee/Constraints.h"
 
 #include <vector>
 
@@ -180,7 +183,6 @@ namespace klee {
     /// NOTE: This function returns failure if there is no satisfying
     /// assignment.
     bool getInitialValues(const Query&, 
-                          const std::vector<const Array*> &objects,
                           std::shared_ptr<const Assignment> &result);
 
     /// getRange - Compute a tight range of possible values for a given

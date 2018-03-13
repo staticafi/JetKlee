@@ -160,12 +160,15 @@ bool QueryLoggingSolver::computeValue(const Query &query, ref<Expr> &result) {
 }
 
 bool QueryLoggingSolver::computeInitialValues(
-    const Query &query, const std::vector<const Array *> &objects,
+    const Query &query,
     std::shared_ptr<const Assignment> &result, bool &hasSolution) {
+  std::vector<const Array*> objects;
+  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
+  findSymbolicObjects(query.expr, objects);
   startQuery(query, "InitialValues", 0, &objects);
 
   bool success =
-      solver->impl->computeInitialValues(query, objects, result, hasSolution);
+      solver->impl->computeInitialValues(query, result, hasSolution);
 
   finishQuery(success);
 

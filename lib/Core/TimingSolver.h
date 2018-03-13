@@ -65,7 +65,6 @@ namespace klee {
                   ref<ConstantExpr> &segmentResult, ref<ConstantExpr> &offsetResult);
 
     bool getInitialValues(const ExecutionState&,
-                          const std::vector<const Array*> &objects,
                           std::shared_ptr<const Assignment> &result);
 
     std::pair< ref<Expr>, ref<Expr> >

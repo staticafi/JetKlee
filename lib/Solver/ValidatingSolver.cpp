@@ -26,7 +26,6 @@ public:
   bool computeTruth(const Query &, bool &isValid);
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
-                            const std::vector<const Array *> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -81,13 +80,16 @@ bool ValidatingSolver::computeValue(const Query &query, ref<Expr> &result) {
 }
 
 bool ValidatingSolver::computeInitialValues(
-    const Query &query, const std::vector<const Array *> &objects,
+    const Query &query,
     std::shared_ptr<const Assignment> &result, bool &hasSolution) {
   bool answer;
 
-  if (!solver->impl->computeInitialValues(query, objects, result, hasSolution))
+  if (!solver->impl->computeInitialValues(query, result, hasSolution))
     return false;
 
+  std::vector<const Array*> objects;
+  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
+  findSymbolicObjects(query.expr, objects);
   if (hasSolution) {
     // Assert the bindings as constraints, and verify that the
     // conjunction of the actual constraints is satisfiable.

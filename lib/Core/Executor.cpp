@@ -3850,12 +3850,9 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   }
 
   std::vector< std::vector<unsigned char> > values;
-  std::vector<const Array*> objects;
-  for (unsigned i = 0; i != state.symbolics.size(); ++i)
-    objects.push_back(state.symbolics[i].second);
   std::shared_ptr<const Assignment> assignment(0);
   if (!state.symbolics.empty()) {
-    bool success = solver->getInitialValues(tmp, objects, assignment);
+    bool success = solver->getInitialValues(tmp, assignment);
     solver->setTimeout(0);
     if (!success) {
       klee_warning("unable to compute initial values (invalid constraints?)!");
