@@ -28,7 +28,7 @@ public:
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
                             const std::vector<const Array *> &objects,
-                            std::vector<std::vector<unsigned char> > &values,
+                            std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query &);
@@ -51,50 +51,47 @@ bool AssignmentValidatingSolver::computeValue(const Query &query,
 
 bool AssignmentValidatingSolver::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
-    std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
+    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
   bool success =
-      solver->impl->computeInitialValues(query, objects, values, hasSolution);
+      solver->impl->computeInitialValues(query, objects, result, hasSolution);
   if (!hasSolution)
     return success;
 
-  // Use `_allowFreeValues` so that if we are missing an assignment
-  // we can't compute a constant and flag this as a problem.
-  Assignment assignment(objects, values, /*_allowFreeValues=*/true);
   // Check computed assignment satisfies query
   for (ConstraintManager::const_iterator it = query.constraints.begin(),
                                          ie = query.constraints.end();
        it != ie; ++it) {
     ref<Expr> constraint = *it;
-    ref<Expr> constraintEvaluated = assignment.evaluate(constraint);
+    ref<Expr> constraintEvaluated = result->evaluate(constraint);
     ConstantExpr *CE = dyn_cast<ConstantExpr>(constraintEvaluated);
     if (CE == NULL) {
       llvm::errs() << "Constraint did not evalaute to a constant:\n";
       llvm::errs() << "Constraint:\n" << constraint << "\n";
       llvm::errs() << "Evaluated Constraint:\n" << constraintEvaluated << "\n";
       llvm::errs() << "Assignment:\n";
-      assignment.dump();
-      dumpAssignmentQuery(query, assignment);
+      result->dump();
+      dumpAssignmentQuery(query, *result);
       abort();
     }
     if (CE->isFalse()) {
       llvm::errs() << "Constraint evaluated to false when using assignment\n";
       llvm::errs() << "Constraint:\n" << constraint << "\n";
       llvm::errs() << "Assignment:\n";
-      assignment.dump();
-      dumpAssignmentQuery(query, assignment);
+      result->dump();
+      dumpAssignmentQuery(query, *result);
       abort();
     }
   }
 
-  ref<Expr> queryExprEvaluated = assignment.evaluate(query.expr);
+  ref<Expr> queryExprEvaluated = result->evaluate(query.expr);
   ConstantExpr *CE = dyn_cast<ConstantExpr>(queryExprEvaluated);
   if (CE == NULL) {
     llvm::errs() << "Query expression did not evalaute to a constant:\n";
     llvm::errs() << "Expression:\n" << query.expr << "\n";
     llvm::errs() << "Evaluated expression:\n" << queryExprEvaluated << "\n";
     llvm::errs() << "Assignment:\n";
-    assignment.dump();
-    dumpAssignmentQuery(query, assignment);
+    result->dump();
+    dumpAssignmentQuery(query, *result);
     abort();
   }
   // KLEE queries are validity queries. A counter example to
@@ -110,8 +107,8 @@ bool AssignmentValidatingSolver::computeInitialValues(
         << "Query Expression evaluated to true when using assignment\n";
     llvm::errs() << "Expression:\n" << query.expr << "\n";
     llvm::errs() << "Assignment:\n";
-    assignment.dump();
-    dumpAssignmentQuery(query, assignment);
+    result->dump();
+    dumpAssignmentQuery(query, *result);
     abort();
   }
 

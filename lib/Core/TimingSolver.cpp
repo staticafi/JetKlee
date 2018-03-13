@@ -129,13 +129,13 @@ bool TimingSolver::getValue(const ExecutionState& state, KValue value,
 
   Query query(state.constraints, ConstantExpr::alloc(0, Expr::Bool));
   std::vector<const Array *> objects;
-  std::vector< std::vector<unsigned char> > values;
-  findSymbolicObjects(query.expr, objects);
-  bool success = solver->getInitialValues(query, objects, values);
+  std::shared_ptr<const Assignment> assignment;
+  findSymbolicObjects(segment, objects);
+  findSymbolicObjects(offset, objects);
+  bool success = solver->getInitialValues(query, objects, assignment);
   if (success) {
-    Assignment a(objects, values);
-    segmentResult = cast<ConstantExpr>(a.evaluate(segment));
-    offsetResult = cast<ConstantExpr>(a.evaluate(offset));
+    segmentResult = cast<ConstantExpr>(assignment->evaluate(segment));
+    offsetResult = cast<ConstantExpr>(assignment->evaluate(offset));
   }
 
   state.queryCost += timer.check() / 1e6;
@@ -144,11 +144,9 @@ bool TimingSolver::getValue(const ExecutionState& state, KValue value,
 }
 
 bool 
-TimingSolver::getInitialValues(const ExecutionState& state, 
-                               const std::vector<const Array*>
-                                 &objects,
-                               std::vector< std::vector<unsigned char> >
-                                 &result) {
+TimingSolver::getInitialValues(const ExecutionState& state,
+                               const std::vector<const Array*> &objects,
+                               std::shared_ptr<const Assignment> &result) {
   if (objects.empty())
     return true;
 
@@ -157,9 +155,9 @@ TimingSolver::getInitialValues(const ExecutionState& state,
   bool success = solver->getInitialValues(Query(state.constraints,
                                                 ConstantExpr::alloc(0, Expr::Bool)), 
                                           objects, result);
-  
+
   state.queryCost += timer.check();
-  
+
   return success;
 }
 
