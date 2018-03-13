@@ -13,6 +13,7 @@
 #include "klee/Expr.h"
 #include "klee/Solver.h"
 #include "klee/KValue.h"
+#include "klee/util/Assignment.h"
 
 #include <vector>
 
@@ -62,9 +63,9 @@ namespace klee {
     bool getValue(const ExecutionState &, KValue value,
                   ref<ConstantExpr> &segmentResult, ref<ConstantExpr> &offsetResult);
 
-    bool getInitialValues(const ExecutionState&, 
+    bool getInitialValues(const ExecutionState&,
                           const std::vector<const Array*> &objects,
-                          std::vector< std::vector<unsigned char> > &result);
+                          std::shared_ptr<const Assignment> &result);
 
     std::pair< ref<Expr>, ref<Expr> >
     getRange(const ExecutionState&, ref<Expr> query);
