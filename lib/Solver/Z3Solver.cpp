@@ -66,9 +66,9 @@ private:
   ::Z3_symbol timeoutParamStrSymbol;
 
   bool internalRunSolver(const Query &,
-                         const std::vector<const Array *> *objects,
                          std::shared_ptr<const Assignment> &result,
-                         bool &hasSolution);
+                         bool &hasSolution,
+                         bool needsModel);
   bool validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel);
 
 public:
@@ -89,14 +89,12 @@ public:
   bool computeTruth(const Query &, bool &isValid);
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
-                            const std::vector<const Array *> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus
   handleSolverResponse(::Z3_solver theSolver, ::Z3_lbool satisfiable,
-                       const std::vector<const Array *> *objects,
                        std::shared_ptr<const Assignment> &result,
-                       bool &hasSolution);
+                       bool &hasSolution, bool needsModel);
   SolverRunStatus getOperationStatusCode();
 };
 
@@ -217,20 +215,16 @@ bool Z3SolverImpl::computeTruth(const Query &query, bool &isValid) {
   bool hasSolution = false; // to remove compiler warning
   std::shared_ptr<const Assignment> result(0);
   bool status =
-      internalRunSolver(query, /*objects=*/NULL, result, hasSolution);
+      internalRunSolver(query, result, hasSolution, false);
   isValid = !hasSolution;
   return status;
 }
 
 bool Z3SolverImpl::computeValue(const Query &query, ref<Expr> &result) {
-  std::vector<const Array *> objects;
   std::shared_ptr<const Assignment> assignment;
   bool hasSolution;
 
-  // Find the object used in the expression, and compute an assignment
-  // for them.
-  findSymbolicObjects(query.expr, objects);
-  if (!computeInitialValues(query.withFalse(), objects, assignment, hasSolution))
+  if (!computeInitialValues(query.withFalse(), assignment, hasSolution))
     return false;
   assert(hasSolution && "state has invalid constraint set");
 
@@ -241,14 +235,17 @@ bool Z3SolverImpl::computeValue(const Query &query, ref<Expr> &result) {
 }
 
 bool Z3SolverImpl::computeInitialValues(
-    const Query &query, const std::vector<const Array *> &objects,
-    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
-  return internalRunSolver(query, &objects, result, hasSolution);
+    const Query &query,
+    std::shared_ptr<const Assignment> &result,
+    bool &hasSolution) {
+  return internalRunSolver(query, result, hasSolution, true);
 }
 
 bool Z3SolverImpl::internalRunSolver(
-    const Query &query, const std::vector<const Array *> *objects,
-    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
+    const Query &query,
+    std::shared_ptr<const Assignment> &result,
+    bool &hasSolution,
+    bool needsModel) {
 
   TimerStatIncrementer t(stats::queryTime);
   // NOTE: Z3 will switch to using a slower solver internally if push/pop are
@@ -269,7 +266,7 @@ bool Z3SolverImpl::internalRunSolver(
     constant_arrays_in_query.visit(constraint);
   }
   ++stats::queries;
-  if (objects)
+  if (needsModel)
     ++stats::queryCounterexamples;
 
   Z3ASTHandle z3QueryExpr =
@@ -304,8 +301,8 @@ bool Z3SolverImpl::internalRunSolver(
   }
 
   ::Z3_lbool satisfiable = Z3_solver_check(builder->ctx, theSolver);
-  runStatusCode = handleSolverResponse(theSolver, satisfiable, objects, result,
-                                       hasSolution);
+  runStatusCode = handleSolverResponse(theSolver, satisfiable, result,
+                                       hasSolution, needsModel);
 
   Z3_solver_dec_ref(builder->ctx, theSolver);
   // Clear the builder's cache to prevent memory usage exploding.
@@ -333,28 +330,29 @@ bool Z3SolverImpl::internalRunSolver(
 
 SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
     ::Z3_solver theSolver, ::Z3_lbool satisfiable,
-    const std::vector<const Array *> *objects,
-    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
+    std::shared_ptr<const Assignment> &result, bool &hasSolution,
+    bool needsModel) {
   switch (satisfiable) {
   case Z3_L_TRUE: {
     hasSolution = true;
-    if (!objects) {
+    if (!needsModel) {
       // No assignment is needed
       return SolverImpl::SOLVER_RUN_STATUS_SUCCESS_SOLVABLE;
     }
     ::Z3_model theModel = Z3_solver_get_model(builder->ctx, theSolver);
     assert(theModel && "Failed to retrieve model");
     Z3_model_inc_ref(builder->ctx, theModel);
+    std::vector<const Array*> objects;
     std::vector<std::vector<unsigned char> > values;
-    values.reserve(objects->size());
-    for (std::vector<const Array *>::const_iterator it = objects->begin(),
-                                                    ie = objects->end();
-         it != ie; ++it) {
-      const Array *array = *it;
+    values.reserve(builder->readIndices.size());
+    objects.reserve(builder->readIndices.size());
+    for (const auto &pair : builder->readIndices) {
+      const Array *array = pair.first;
+      const std::vector<Z3ASTHandle> &reads = pair.second;
       std::vector<unsigned char> data;
       unsigned size = 0;
 
-      for (Z3ASTHandle index : builder->readIndices[array]) {
+      for (Z3ASTHandle index : reads) {
         ::Z3_ast indexExpr;
         bool successfulEval =
             Z3_model_eval(builder->ctx, theModel, index,
@@ -398,6 +396,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
         data[offset] = arrayElementValue;
         Z3_dec_ref(builder->ctx, arrayElementExpr);
       }
+      objects.push_back(array);
       values.push_back(data);
     }
 
@@ -408,7 +407,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
         abort();
     }
 
-    result = std::make_shared<Assignment>(*objects, values);
+    result = std::make_shared<Assignment>(objects, values);
 
     Z3_model_dec_ref(builder->ctx, theModel);
     return SolverImpl::SOLVER_RUN_STATUS_SUCCESS_SOLVABLE;

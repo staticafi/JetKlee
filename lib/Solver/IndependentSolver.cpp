@@ -399,7 +399,6 @@ public:
   bool computeValidity(const Query&, Solver::Validity &result);
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query& query,
-                            const std::vector<const Array*> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -471,7 +470,6 @@ bool assertCreatedPointEvaluatesToTrue(
 }
 
 bool IndependentSolver::computeInitialValues(const Query& query,
-                                             const std::vector<const Array*> &objects,
                                              std::shared_ptr<const Assignment> &result,
                                              bool &hasSolution){
   std::vector<std::vector<unsigned char> > values;
@@ -497,7 +495,7 @@ bool IndependentSolver::computeInitialValues(const Query& query,
     ConstraintSet tmp(it->exprs);
     std::shared_ptr<const Assignment> tempAssignment;
     if (!solver->impl->computeInitialValues(Query(tmp, ConstantExpr::alloc(0, Expr::Bool)),
-                                            arraysInFactor, tempAssignment, hasSolution)){
+                                            tempAssignment, hasSolution)){
       values.clear();
       delete factors;
       return false;
@@ -537,6 +535,9 @@ bool IndependentSolver::computeInitialValues(const Query& query,
       }
     }
   }
+  std::vector<const Array*> objects;
+  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
+  findSymbolicObjects(query.expr, objects);
   for (std::vector<const Array *>::const_iterator it = objects.begin();
        it != objects.end(); it++){
     const Array * arr = * it;

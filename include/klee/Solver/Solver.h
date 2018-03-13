@@ -187,8 +187,7 @@ namespace klee {
     ///
     /// NOTE: This function returns failure if there is no satisfying
     /// assignment.
-    bool getInitialValues(const Query&, 
-                          const std::vector<const Array*> &objects,
+    bool getInitialValues(const Query&,
                           std::shared_ptr<const Assignment> &result);
 
     /// getRange - Compute a tight range of possible values for a given

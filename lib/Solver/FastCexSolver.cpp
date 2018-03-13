@@ -14,6 +14,7 @@
 #include "klee/Expr/Expr.h"
 #include "klee/Expr/ExprEvaluator.h"
 #include "klee/Expr/ExprRangeEvaluator.h"
+#include "klee/Expr/ExprUtil.h"
 #include "klee/Expr/ExprVisitor.h"
 #include "klee/Expr/SizeVisitor.h"
 #include "klee/Solver/IncompleteSolver.h"
@@ -984,7 +985,6 @@ public:
   IncompleteSolver::PartialValidity computeTruth(const Query&);  
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query&,
-                            const std::vector<const Array*> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
 };
@@ -1104,8 +1104,6 @@ public:
 
 bool
 FastCexSolver::computeInitialValues(const Query& query,
-                                    const std::vector<const Array*>
-                                      &objects,
                                     std::shared_ptr<const Assignment>
                                       &result,
                                     bool &hasSolution) {
@@ -1128,6 +1126,9 @@ FastCexSolver::computeInitialValues(const Query& query,
   std::vector< std::vector<unsigned char> > values;
 
   // Propogation found a satisfying assignment, compute the initial values.
+  std::vector<const Array*> objects;
+  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
+  findSymbolicObjects(query.expr, objects);
   for (unsigned i = 0; i != objects.size(); ++i) {
     const Array *array = objects[i];
     assert(array);

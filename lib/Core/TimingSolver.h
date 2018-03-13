@@ -70,7 +70,6 @@ public:
                 SolverQueryMetaData &metaData);
 
   bool getInitialValues(const ConstraintSet&,
-                          const std::vector<const Array*> &objects,
                           std::shared_ptr<const Assignment> &result,
                         SolverQueryMetaData &metaData);
 

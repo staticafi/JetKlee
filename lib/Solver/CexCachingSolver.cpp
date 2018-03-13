@@ -90,7 +90,6 @@ public:
   bool computeValidity(const Query&, Solver::Validity &result);
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query&,
-                            const std::vector<const Array*> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -224,11 +223,8 @@ bool CexCachingSolver::getAssignment(const Query& query,
   if (lookupAssignment(query, key, result))
     return true;
 
-  std::vector<const Array*> objects;
-  findSymbolicObjects(key.begin(), key.end(), objects);
-
   bool hasSolution;
-  if (!solver->impl->computeInitialValues(query, objects, result,
+  if (!solver->impl->computeInitialValues(query, result,
                                           hasSolution))
     return false;
 
@@ -318,8 +314,6 @@ bool CexCachingSolver::computeValue(const Query& query,
 
 bool 
 CexCachingSolver::computeInitialValues(const Query& query,
-                                       const std::vector<const Array*> 
-                                         &objects,
                                        std::shared_ptr<const Assignment>
                                          &result,
                                        bool &hasSolution) {
@@ -337,6 +331,10 @@ CexCachingSolver::computeInitialValues(const Query& query,
 
   // FIXME: We should use smarter assignment for result so we don't
   // need redundant copy.
+  std::vector<const Array*> objects;
+  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
+  findSymbolicObjects(query.expr, objects);
+
   std::vector< std::vector<unsigned char> > values(objects.size());
   for (unsigned i=0; i < objects.size(); ++i) {
     const Array *os = objects[i];

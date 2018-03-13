@@ -254,7 +254,9 @@ static bool EvaluateInputAST(const char *Filename,
         std::shared_ptr<const Assignment> result;
 
         if (S->getInitialValues(
-                Query(ConstraintSet(QC->Constraints), QC->Query), QC->Objects,
+                Query(ConstraintSet(QC->Constraints),
+                                      QC->Query),
+
                 result)) {
           llvm::outs() << "INVALID\n";
 

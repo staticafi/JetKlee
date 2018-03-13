@@ -4523,13 +4523,9 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   }
 
   std::vector< std::vector<unsigned char> > values;
-  std::vector<const Array*> objects;
-  for (unsigned i = 0; i != state.symbolics.size(); ++i)
-    objects.push_back(state.symbolics[i].second);
   std::shared_ptr<const Assignment> assignment(nullptr);
   if (!state.symbolics.empty()) {
-    bool success = solver->getInitialValues(extendedConstraints, objects,
-                                            assignment, state.queryMetaData);
+    bool success = solver->getInitialValues(extendedConstraints, assignment, state.queryMetaData);
     solver->setTimeout(time::Span());
     if (!success) {
       klee_warning("unable to compute initial values (invalid constraints?)!");
