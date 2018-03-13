@@ -21,7 +21,6 @@ public:
   bool computeTruth(const Query &, bool &isValid);
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
-                            const std::vector<const Array *> &objects,
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
@@ -48,7 +47,7 @@ bool DummySolverImpl::computeValue(const Query &, ref<Expr> &result) {
 }
 
 bool DummySolverImpl::computeInitialValues(
-    const Query &, const std::vector<const Array *> &objects,
+    const Query &,
     std::shared_ptr<const Assignment> &result, bool &hasSolution) {
   ++stats::queries;
   ++stats::queryCounterexamples;
