@@ -449,11 +449,7 @@ Z3ASTHandle Z3Builder::getArrayForUpdate(const Array *root,
 
     return (un_expr);
   }
-  }
-
-  std::vector<Z3ASTHandle> Z3Builder::getArrayReadIndices(const Array* root) {
-    return readIndices[root];
-  }
+}
 
 /** if *width_out!=1 then result is a bitvector,
     otherwise it is a bool */
