@@ -123,16 +123,13 @@ bool StagedSolverImpl::computeValue(const Query& query,
 
 bool 
 StagedSolverImpl::computeInitialValues(const Query& query,
-                                       const std::vector<const Array*> 
-                                         &objects,
                                        std::shared_ptr<const Assignment>
                                          &result,
                                        bool &hasSolution) {
-  if (primary->computeInitialValues(query, objects, result, hasSolution))
+  if (primary->computeInitialValues(query, result, hasSolution))
     return true;
   
-  return secondary->impl->computeInitialValues(query, objects, result,
-                                               hasSolution);
+  return secondary->impl->computeInitialValues(query, result, hasSolution);
 }
 
 SolverImpl::SolverRunStatus StagedSolverImpl::getOperationStatusCode() {
