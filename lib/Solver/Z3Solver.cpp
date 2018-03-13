@@ -346,9 +346,9 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
                           /*model_completion=*/Z3_FALSE, &indexExpr);
         assert(successfulEval && "Failed to evaluate index model");
         Z3_inc_ref(builder->ctx, indexExpr);
-        assert(Z3_get_ast_kind(builder->ctx, indexExpr) ==
-                   Z3_NUMERAL_AST &&
-               "Index evaluation didn't result in a numeral");
+        if (Z3_get_ast_kind(builder->ctx, indexExpr) != Z3_NUMERAL_AST)
+          // this means that the index is a "don't care" value
+          continue;
         unsigned indexValue = 0;
         bool successGet = Z3_get_numeral_uint(builder->ctx, indexExpr,
                                               &indexValue);
