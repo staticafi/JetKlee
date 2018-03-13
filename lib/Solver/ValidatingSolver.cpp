@@ -27,7 +27,7 @@ public:
   bool computeValue(const Query &, ref<Expr> &result);
   bool computeInitialValues(const Query &,
                             const std::vector<const Array *> &objects,
-                            std::vector<std::vector<unsigned char> > &values,
+                            std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query &);
@@ -82,21 +82,21 @@ bool ValidatingSolver::computeValue(const Query &query, ref<Expr> &result) {
 
 bool ValidatingSolver::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
-    std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
+    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
   bool answer;
 
-  if (!solver->impl->computeInitialValues(query, objects, values, hasSolution))
+  if (!solver->impl->computeInitialValues(query, objects, result, hasSolution))
     return false;
 
   if (hasSolution) {
     // Assert the bindings as constraints, and verify that the
     // conjunction of the actual constraints is satisfiable.
     std::vector<ref<Expr> > bindings;
-    for (unsigned i = 0; i != values.size(); ++i) {
+    for (unsigned i = 0; i != objects.size(); ++i) {
       const Array *array = objects[i];
       assert(array);
       for (unsigned j = 0; j < array->size; j++) {
-        unsigned char value = values[i][j];
+        unsigned char value = result->getValue(array, j);
         bindings.push_back(EqExpr::create(
             ReadExpr::create(UpdateList(array, 0),
                              ConstantExpr::alloc(j, array->getDomain())),
