@@ -90,8 +90,8 @@ namespace klee {
     virtual bool computeInitialValues(const Query& query,
                                       const std::vector<const Array*> 
                                         &objects,
-                                      std::vector< std::vector<unsigned char> > 
-                                        &values,
+                                      std::shared_ptr<const Assignment>
+                                        &result,
                                       bool &hasSolution) = 0;
     
     /// getOperationStatusCode - get the status of the last solver operation

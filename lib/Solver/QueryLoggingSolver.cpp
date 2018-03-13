@@ -165,11 +165,11 @@ bool QueryLoggingSolver::computeValue(const Query &query, ref<Expr> &result) {
 
 bool QueryLoggingSolver::computeInitialValues(
     const Query &query, const std::vector<const Array *> &objects,
-    std::vector<std::vector<unsigned char> > &values, bool &hasSolution) {
+    std::shared_ptr<const Assignment> &result, bool &hasSolution) {
   startQuery(query, "InitialValues", 0, &objects);
 
   bool success =
-      solver->impl->computeInitialValues(query, objects, values, hasSolution);
+      solver->impl->computeInitialValues(query, objects, result, hasSolution);
 
   finishQuery(success);
 
@@ -177,20 +177,16 @@ bool QueryLoggingSolver::computeInitialValues(
     logBuffer << queryCommentSign
               << "   Solvable: " << (hasSolution ? "true" : "false") << "\n";
     if (hasSolution) {
-      std::vector<std::vector<unsigned char> >::iterator values_it =
-          values.begin();
-
       for (std::vector<const Array *>::const_iterator i = objects.begin(),
                                                       e = objects.end();
-           i != e; ++i, ++values_it) {
+           i != e; ++i) {
         const Array *array = *i;
-        std::vector<unsigned char> &data = *values_it;
         logBuffer << queryCommentSign << "     " << array->name << " = [";
 
-        for (unsigned j = 0; j < data.size(); j++) {
-          logBuffer << (int)data[j];
+        for (unsigned j = 0; j < array->size; j++) {
+          logBuffer << (int)result->getValue(array, j);
 
-          if (j + 1 < data.size()) {
+          if (j + 1 < array->size) {
             logBuffer << ",";
           }
         }

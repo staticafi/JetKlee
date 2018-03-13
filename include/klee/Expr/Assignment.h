@@ -42,7 +42,8 @@ namespace klee {
         ++valIt;
       }
     }
-    
+
+    uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(ref<Expr> e) const;
     ConstraintSet createConstraintsFromAssignment() const;
@@ -85,6 +86,14 @@ namespace klee {
   inline ref<Expr> Assignment::evaluate(ref<Expr> e) const {
     AssignmentEvaluator v(*this);
     return v.visit(e); 
+  }
+
+  inline uint8_t Assignment::getValue(const Array* array, unsigned index) const {
+    bindings_ty::const_iterator it = bindings.find(array);
+    if (it!=bindings.end() && index<it->second.size()) {
+      return it->second[index];
+    }
+    return 0;
   }
 
   template<typename InputIterator>

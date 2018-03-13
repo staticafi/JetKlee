@@ -10,6 +10,7 @@
 #ifndef KLEE_SOLVER_H
 #define KLEE_SOLVER_H
 
+#include "klee/Expr/Assignment.h"
 #include "klee/Expr/Expr.h"
 #include "klee/System/Time.h"
 #include "klee/Solver/SolverCmdLine.h"
@@ -179,22 +180,16 @@ namespace klee {
 
     /// getInitialValues - Compute the initial values for a list of objects.
     ///
-    /// \param [out] result - On success, this vector will be filled in with an
-    /// array of bytes for each given object (with length matching the object
-    /// size). The bytes correspond to the initial values for the objects for
-    /// some satisfying assignment.
+    /// \param [out] result - satisfying assigment of initial values of given
+    /// arrays
     ///
     /// \return True on success.
     ///
     /// NOTE: This function returns failure if there is no satisfying
     /// assignment.
-    //
-    // FIXME: This API is lame. We should probably just provide an API which
-    // returns an Assignment object, then clients can get out whatever values
-    // they want. This also allows us to optimize the representation.
     bool getInitialValues(const Query&, 
                           const std::vector<const Array*> &objects,
-                          std::vector< std::vector<unsigned char> > &result);
+                          std::shared_ptr<const Assignment> &result);
 
     /// getRange - Compute a tight range of possible values for a given
     /// expression.

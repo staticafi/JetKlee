@@ -400,7 +400,7 @@ public:
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query& query,
                             const std::vector<const Array*> &objects,
-                            std::vector< std::vector<unsigned char> > &values,
+                            std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query&);
@@ -472,8 +472,9 @@ bool assertCreatedPointEvaluatesToTrue(
 
 bool IndependentSolver::computeInitialValues(const Query& query,
                                              const std::vector<const Array*> &objects,
-                                             std::vector< std::vector<unsigned char> > &values,
+                                             std::shared_ptr<const Assignment> &result,
                                              bool &hasSolution){
+  std::vector<std::vector<unsigned char> > values;
   // We assume the query has a solution except proven differently
   // This is important in case we don't have any constraints but
   // we need initial values for requested array objects.
@@ -494,9 +495,9 @@ bool IndependentSolver::computeInitialValues(const Query& query,
       continue;
     }
     ConstraintSet tmp(it->exprs);
-    std::vector<std::vector<unsigned char> > tempValues;
+    std::shared_ptr<const Assignment> tempAssignment;
     if (!solver->impl->computeInitialValues(Query(tmp, ConstantExpr::alloc(0, Expr::Bool)),
-                                            arraysInFactor, tempValues, hasSolution)){
+                                            arraysInFactor, tempAssignment, hasSolution)){
       values.clear();
       delete factors;
       return false;
@@ -505,6 +506,15 @@ bool IndependentSolver::computeInitialValues(const Query& query,
       delete factors;
       return true;
     } else {
+      std::vector<std::vector<unsigned char> > tempValues;
+      for (const Array *array : arraysInFactor) {
+        auto val = tempAssignment->bindings.find(array);
+        if (val != tempAssignment->bindings.end()) {
+          tempValues.push_back(val->second);
+        } else {
+          tempValues.push_back(std::vector<unsigned char>(array->size));
+        }
+      }
       assert(tempValues.size() == arraysInFactor.size() &&
              "Should be equal number arrays and answers");
       for (unsigned i = 0; i < tempValues.size(); i++){
@@ -542,6 +552,8 @@ bool IndependentSolver::computeInitialValues(const Query& query,
   }
   assert(assertCreatedPointEvaluatesToTrue(query, objects, values, retMap) && "should satisfy the equation");
   delete factors;
+
+  result = std::make_shared<Assignment>(objects, values);
   return true;
 }
 

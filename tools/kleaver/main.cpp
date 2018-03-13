@@ -251,20 +251,20 @@ static bool EvaluateInputAST(const char *Filename,
                     << ")";
         }
       } else {
-        std::vector< std::vector<unsigned char> > result;
+        std::shared_ptr<const Assignment> result;
 
         if (S->getInitialValues(
                 Query(ConstraintSet(QC->Constraints), QC->Query), QC->Objects,
                 result)) {
           llvm::outs() << "INVALID\n";
 
-          for (unsigned i = 0, e = result.size(); i != e; ++i) {
+          for (unsigned i = 0, e = QC->Objects.size(); i != e; ++i) {
             llvm::outs() << "\tArray " << i << ":\t"
                        << QC->Objects[i]->name
                        << "[";
-            for (unsigned j = 0; j != result[i].size(); ++j) {
-              llvm::outs() << (unsigned) result[i][j];
-              if (j + 1 != result[i].size())
+            for (unsigned j = 0; j != QC->Objects[i]->size; ++j) {
+              llvm::outs() << (unsigned) result->getValue(QC->Objects[i], j);
+              if (j + 1 != QC->Objects[i]->size)
                 llvm::outs() << ", ";
             }
             llvm::outs() << "]";

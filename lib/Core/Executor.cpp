@@ -4526,7 +4526,8 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   std::vector<const Array*> objects;
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
     objects.push_back(state.symbolics[i].second);
-  bool success = solver->getInitialValues(extendedConstraints, objects, values,
+  std::shared_ptr<const Assignment> assignment;
+  bool success = solver->getInitialValues(extendedConstraints, objects, assignment,
                                           state.queryMetaData);
   solver->setTimeout(time::Span());
   if (!success) {
@@ -4536,8 +4537,15 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     return false;
   }
   
-  for (unsigned i = 0; i != state.symbolics.size(); ++i)
-    res.push_back(std::make_pair(state.symbolics[i].first->name, values[i]));
+  for (const auto &pair : state.symbolics) {
+    const Array *array = pair.second;
+    std::vector<uint8_t> values;
+    size_t size = array->size;
+    values.reserve(size);
+    for (unsigned i = 0; i < size; i++)
+      values.push_back(assignment->getValue(array, i));
+    res.push_back(std::make_pair(pair.first->name, values));
+  }
   return true;
 }
 

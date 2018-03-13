@@ -77,7 +77,7 @@ public:
   virtual bool computeInitialValues(const Query&,
                                     const std::vector<const Array*> 
                                       &objects,
-                                    std::vector< std::vector<unsigned char> > 
+                                    std::shared_ptr<const Assignment>
                                       &values,
                                     bool &hasSolution) = 0;
 };
@@ -99,7 +99,7 @@ public:
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query&,
                             const std::vector<const Array*> &objects,
-                            std::vector< std::vector<unsigned char> > &values,
+                            std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query&);

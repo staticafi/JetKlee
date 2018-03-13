@@ -99,7 +99,7 @@ public:
   bool computeValue(const Query&, ref<Expr> &result);
   bool computeInitialValues(const Query&,
                             const std::vector<const Array*> &objects,
-                            std::vector< std::vector<unsigned char> > &values,
+                            std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus getOperationStatusCode();
   char *getConstraintLog(const Query& query);
@@ -235,35 +235,20 @@ bool CexCachingSolver::getAssignment(const Query& query,
   std::vector<const Array*> objects;
   findSymbolicObjects(key.begin(), key.end(), objects);
 
-  std::vector< std::vector<unsigned char> > values;
   bool hasSolution;
-  if (!solver->impl->computeInitialValues(query, objects, values, 
+  if (!solver->impl->computeInitialValues(query, objects, result,
                                           hasSolution))
     return false;
-    
-  std::shared_ptr<const Assignment> binding;
-  if (hasSolution) {
-    binding = std::make_shared<Assignment>(objects, values);
 
-    // Memoize the result.
-    std::pair<assignmentsTable_ty::iterator, bool>
-      res = assignmentsTable.insert(binding);
-    if (!res.second) {
-      binding = *res.first;
-    }
     
-    if (DebugCexCacheCheckBinding)
-      if (!binding->satisfies(key.begin(), key.end())) {
-        query.dump();
-        binding->dump();
-        klee_error("Generated assignment doesn't match query");
-      }
+  if (hasSolution) {
+    // Memoize the result.
+    assignmentsTable.insert(result);
   } else {
-    binding = 0;
+    result = 0;
   }
   
-  result = binding;
-  cache.insert(key, binding);
+  cache.insert(key, result);
 
   return true;
 }
@@ -343,8 +328,8 @@ bool
 CexCachingSolver::computeInitialValues(const Query& query,
                                        const std::vector<const Array*> 
                                          &objects,
-                                       std::vector< std::vector<unsigned char> >
-                                         &values,
+                                       std::shared_ptr<const Assignment>
+                                         &result,
                                        bool &hasSolution) {
   TimerStatIncrementer t(stats::cexCacheTime);
   std::shared_ptr<const Assignment> a;
@@ -360,7 +345,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
 
   // FIXME: We should use smarter assignment for result so we don't
   // need redundant copy.
-  values = std::vector< std::vector<unsigned char> >(objects.size());
+  std::vector< std::vector<unsigned char> > values(objects.size());
   for (unsigned i=0; i < objects.size(); ++i) {
     const Array *os = objects[i];
     Assignment::bindings_ty::const_iterator it = a->bindings.find(os);
@@ -372,6 +357,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
       values[i].resize(sizeVisitor.sizes[os], 0);
     }
   }
+  result = std::make_shared<Assignment>(objects, values);
   
   return true;
 }

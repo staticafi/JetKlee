@@ -10,6 +10,7 @@
 #ifndef KLEE_TIMINGSOLVER_H
 #define KLEE_TIMINGSOLVER_H
 
+#include "klee/Expr/Assignment.h"
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Expr.h"
 #include "klee/Module/KValue.h"
@@ -68,9 +69,9 @@ public:
                 ref<ConstantExpr> &offsetResult,
                 SolverQueryMetaData &metaData);
 
-  bool getInitialValues(const ConstraintSet &,
-                        const std::vector<const Array *> &objects,
-                        std::vector<std::vector<unsigned char>> &result,
+  bool getInitialValues(const ConstraintSet&,
+                          const std::vector<const Array*> &objects,
+                          std::shared_ptr<const Assignment> &result,
                         SolverQueryMetaData &metaData);
 
   std::pair<ref<Expr>, ref<Expr>> getRange(const ConstraintSet &,
