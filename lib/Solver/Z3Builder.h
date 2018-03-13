@@ -106,7 +106,6 @@ public:
 class Z3Builder {
   ExprHashMap<std::pair<Z3ASTHandle, unsigned> > constructed;
   Z3ArrayExprHash _arr_hash;
-  std::map<const Array *, std::vector<Z3ASTHandle> > readIndices;
 
 private:
   Z3ASTHandle bvOne(unsigned width);
@@ -176,13 +175,13 @@ public:
   Z3_context ctx;
   std::unordered_map<const Array *, std::vector<Z3ASTHandle> >
       constant_array_assertions;
+  std::map<const Array *, std::vector<Z3ASTHandle> > readIndices;
   Z3Builder(bool autoClearConstructCache, const char *z3LogInteractionFile);
   ~Z3Builder();
 
   Z3ASTHandle getTrue();
   Z3ASTHandle getFalse();
   Z3ASTHandle getInitialRead(const Array *os, unsigned index);
-  std::vector<Z3ASTHandle> getArrayReadIndices(const Array *root);
 
   Z3ASTHandle construct(ref<Expr> e) {
     Z3ASTHandle res = construct(e, 0);

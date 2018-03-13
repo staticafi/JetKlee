@@ -314,6 +314,7 @@ bool Z3SolverImpl::internalRunSolver(
   // ``Query`` rather than only sharing within a single call to
   // ``builder->construct()``.
   builder->clearConstructCache();
+  builder->readIndices.clear();
 
   if (runStatusCode == SolverImpl::SOLVER_RUN_STATUS_SUCCESS_SOLVABLE ||
       runStatusCode == SolverImpl::SOLVER_RUN_STATUS_SUCCESS_UNSOLVABLE) {
@@ -353,7 +354,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       std::vector<unsigned char> data;
       unsigned size = 0;
 
-      for (Z3ASTHandle index : builder->getArrayReadIndices(array)) {
+      for (Z3ASTHandle index : builder->readIndices[array]) {
         ::Z3_ast indexExpr;
         bool successfulEval =
             Z3_model_eval(builder->ctx, theModel, index,
