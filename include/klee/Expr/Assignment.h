@@ -48,8 +48,8 @@ namespace klee {
     ConstraintSet createConstraintsFromAssignment() const;
 
     template<typename InputIterator>
-    bool satisfies(InputIterator begin, InputIterator end);
-    void dump();
+    bool satisfies(InputIterator begin, InputIterator end) const;
+    void dump() const;
   };
   
   class AssignmentEvaluator : public ExprEvaluator {
@@ -88,7 +88,7 @@ namespace klee {
   }
 
   template<typename InputIterator>
-  inline bool Assignment::satisfies(InputIterator begin, InputIterator end) {
+  inline bool Assignment::satisfies(InputIterator begin, InputIterator end) const {
     AssignmentEvaluator v(*this);
     for (; begin!=end; ++begin)
       if (!v.visit(*begin)->isTrue())

@@ -58,32 +58,37 @@ cl::opt<bool> CexCacheExperimental(
 typedef std::set< ref<Expr> > KeyType;
 
 struct AssignmentLessThan {
-  bool operator()(std::shared_ptr<const Assignment> a, const std::shared_ptr<const Assignment> b) {
+  bool operator()(std::shared_ptr<const Assignment> a,
+                  std::shared_ptr<const Assignment> b) {
     return a->bindings < b->bindings;
   }
 };
 
 
 class CexCachingSolver : public SolverImpl {
-  typedef std::set<std::shared_ptr<Assignment>, AssignmentLessThan> assignmentsTable_ty;
+  typedef std::set<std::shared_ptr<const Assignment>, AssignmentLessThan>
+          assignmentsTable_ty;
 
   Solver *solver;
   
-  MapOfSets<ref<Expr>, std::shared_ptr<Assignment>> cache;
+  MapOfSets<ref<Expr>, std::shared_ptr<const Assignment>> cache;
   // memo table
   assignmentsTable_ty assignmentsTable;
 
   bool searchForAssignment(KeyType &key, 
-                           std::shared_ptr<Assignment> &result);
+                           std::shared_ptr<const Assignment> &result);
   
-  bool lookupAssignment(const Query& query, KeyType &key, std::shared_ptr<Assignment> &result);
+  bool lookupAssignment(const Query& query, KeyType &key,
+                        std::shared_ptr<const Assignment> &result);
 
-  bool lookupAssignment(const Query& query, std::shared_ptr<Assignment> &result) {
+  bool lookupAssignment(const Query& query,
+                        std::shared_ptr<const Assignment> &result) {
     KeyType key;
     return lookupAssignment(query, key, result);
   }
 
-  bool getAssignment(const Query& query, std::shared_ptr<Assignment> &result);
+  bool getAssignment(const Query& query,
+                     std::shared_ptr<const Assignment> &result);
   
 public:
   CexCachingSolver(Solver *_solver) : solver(_solver) {}
@@ -104,11 +109,11 @@ public:
 ///
 
 struct NullAssignment {
-  bool operator()(std::shared_ptr<Assignment> a) const { return !a; }
+  bool operator()(std::shared_ptr<const Assignment> a) const { return !a; }
 };
 
 struct NonNullAssignment {
-  bool operator()(std::shared_ptr<Assignment> a) const { return a!=0; }
+  bool operator()(std::shared_ptr<const Assignment> a) const { return a!=0; }
 };
 
 struct NullOrSatisfyingAssignment {
@@ -116,7 +121,7 @@ struct NullOrSatisfyingAssignment {
   
   NullOrSatisfyingAssignment(KeyType &_key) : key(_key) {}
 
-  bool operator()(std::shared_ptr<Assignment> a) const {
+  bool operator()(std::shared_ptr<const Assignment> a) const {
     return !a || a->satisfies(key.begin(), key.end()); 
   }
 };
@@ -128,8 +133,9 @@ struct NullOrSatisfyingAssignment {
 /// either a satisfying assignment (for a satisfiable query), or 0 (for an
 /// unsatisfiable query).
 /// \return - True if a cached result was found.
-bool CexCachingSolver::searchForAssignment(KeyType &key, std::shared_ptr<Assignment> &result) {
-  std::shared_ptr<Assignment> *lookup = cache.lookup(key);
+bool CexCachingSolver::searchForAssignment(KeyType &key,
+                                           std::shared_ptr<const Assignment> &result) {
+  std::shared_ptr<const Assignment> *lookup = cache.lookup(key);
   if (lookup) {
     result = *lookup;
     return true;
@@ -138,7 +144,7 @@ bool CexCachingSolver::searchForAssignment(KeyType &key, std::shared_ptr<Assignm
   if (CexCacheTryAll) {
     // Look for a satisfying assignment for a superset, which is trivially an
     // assignment for any subset.
-    std::shared_ptr<Assignment> *lookup = 0;
+    std::shared_ptr<const Assignment> *lookup = 0;
     if (CexCacheSuperSet)
       lookup = cache.findSuperset(key, NonNullAssignment());
 
@@ -156,7 +162,7 @@ bool CexCachingSolver::searchForAssignment(KeyType &key, std::shared_ptr<Assignm
     // of them satisfies the query.
     for (assignmentsTable_ty::iterator it = assignmentsTable.begin(), 
            ie = assignmentsTable.end(); it != ie; ++it) {
-      std::shared_ptr<Assignment> a = *it;
+      std::shared_ptr<const Assignment> a = *it;
       if (a->satisfies(key.begin(), key.end())) {
         result = a;
         return true;
@@ -167,7 +173,7 @@ bool CexCachingSolver::searchForAssignment(KeyType &key, std::shared_ptr<Assignm
 
     // Look for a satisfying assignment for a superset, which is trivially an
     // assignment for any subset.
-    std::shared_ptr<Assignment> *lookup = 0;
+    std::shared_ptr<const Assignment> *lookup = 0;
     if (CexCacheSuperSet)
       lookup = cache.findSuperset(key, NonNullAssignment());
 
@@ -199,7 +205,7 @@ bool CexCachingSolver::searchForAssignment(KeyType &key, std::shared_ptr<Assignm
 /// \return True if a cached result was found.
 bool CexCachingSolver::lookupAssignment(const Query &query, 
                                         KeyType &key,
-                                        std::shared_ptr<Assignment> &result) {
+                                        std::shared_ptr<const Assignment> &result) {
   key = KeyType(query.constraints.begin(), query.constraints.end());
   ref<Expr> neg = Expr::createIsZero(query.expr);
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(neg)) {
@@ -220,7 +226,8 @@ bool CexCachingSolver::lookupAssignment(const Query &query,
   return found;
 }
 
-bool CexCachingSolver::getAssignment(const Query& query, std::shared_ptr<Assignment> &result) {
+bool CexCachingSolver::getAssignment(const Query& query,
+                                     std::shared_ptr<const Assignment> &result) {
   KeyType key;
   if (lookupAssignment(query, key, result))
     return true;
@@ -234,7 +241,7 @@ bool CexCachingSolver::getAssignment(const Query& query, std::shared_ptr<Assignm
                                           hasSolution))
     return false;
     
-  std::shared_ptr<Assignment> binding;
+  std::shared_ptr<const Assignment> binding;
   if (hasSolution) {
     binding = std::make_shared<Assignment>(objects, values);
 
@@ -270,7 +277,7 @@ CexCachingSolver::~CexCachingSolver() {
 bool CexCachingSolver::computeValidity(const Query& query,
                                        Solver::Validity &result) {
   TimerStatIncrementer t(stats::cexCacheTime);
-  std::shared_ptr<Assignment> a;
+  std::shared_ptr<const Assignment> a;
   if (!getAssignment(query.withFalse(), a))
     return false;
   assert(a && "computeValidity() must have assignment");
@@ -304,12 +311,12 @@ bool CexCachingSolver::computeTruth(const Query& query,
   // really seem to be worth the overhead.
 
   if (CexCacheExperimental) {
-    std::shared_ptr<Assignment> a;
+    std::shared_ptr<const Assignment> a;
     if (lookupAssignment(query.negateExpr(), a) && !a)
       return false;
   }
 
-  std::shared_ptr<Assignment> a;
+  std::shared_ptr<const Assignment> a;
   if (!getAssignment(query, a))
     return false;
 
@@ -322,7 +329,7 @@ bool CexCachingSolver::computeValue(const Query& query,
                                     ref<Expr> &result) {
   TimerStatIncrementer t(stats::cexCacheTime);
 
-  std::shared_ptr<Assignment> a;
+  std::shared_ptr<const Assignment> a;
   if (!getAssignment(query.withFalse(), a))
     return false;
   assert(a && "computeValue() must have assignment");
@@ -340,7 +347,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
                                          &values,
                                        bool &hasSolution) {
   TimerStatIncrementer t(stats::cexCacheTime);
-  std::shared_ptr<Assignment> a;
+  std::shared_ptr<const Assignment> a;
   if (!getAssignment(query, a))
     return false;
   hasSolution = !!a;
@@ -356,7 +363,7 @@ CexCachingSolver::computeInitialValues(const Query& query,
   values = std::vector< std::vector<unsigned char> >(objects.size());
   for (unsigned i=0; i < objects.size(); ++i) {
     const Array *os = objects[i];
-    Assignment::bindings_ty::iterator it = a->bindings.find(os);
+    Assignment::bindings_ty::const_iterator it = a->bindings.find(os);
     
     if (it == a->bindings.end()) {
       values[i] = std::vector<unsigned char>(sizeVisitor.sizes[os], 0);
