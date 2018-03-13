@@ -3853,24 +3853,27 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   std::vector<const Array*> objects;
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
     objects.push_back(state.symbolics[i].second);
-  std::shared_ptr<const Assignment> assignment;j
-  bool success = solver->getInitialValues(tmp, objects, assignment);
-  solver->setTimeout(time::Span());
-  if (!success) {
-    klee_warning("unable to compute initial values (invalid constraints?)!");
-    ExprPPrinter::printQuery(llvm::errs(), state.constraints,
-                             ConstantExpr::alloc(0, Expr::Bool));
-    return false;
+  std::shared_ptr<const Assignment> assignment(0);
+  if (!state.symbolics.empty()) {
+    bool success = solver->getInitialValues(tmp, objects, assignment);
+    solver->setTimeout(0);
+    if (!success) {
+      klee_warning("unable to compute initial values (invalid constraints?)!");
+      ExprPPrinter::printQuery(llvm::errs(), state.constraints,
+                               ConstantExpr::alloc(0, Expr::Bool));
+      return false;
+    }
   }
-  
   for (std::pair<const MemoryObject *, const Array *> pair : state.symbolics) {
     const MemoryObject *mo = pair.first;
     const Array *array = pair.second;
     std::vector<uint8_t> values;
     size_t size = array->size;
     values.reserve(size);
-    for (unsigned i = 0; i < size; i++)
-      values.push_back(assignment->getValue(array, i));
+    if (assignment) {
+      for (unsigned i = 0; i < size; i++)
+        values.push_back(assignment->getValue(array, i));
+    }
     res.push_back(std::make_pair(mo->name, values));
   }
   return true;
