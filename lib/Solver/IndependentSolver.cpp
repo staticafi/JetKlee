@@ -520,23 +520,7 @@ bool IndependentSolver::computeInitialValues(const Query& query,
       }
     }
   }
-  std::vector<const Array*> objects;
-  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
-  findSymbolicObjects(query.expr, objects);
-  for (std::vector<const Array *>::const_iterator it = objects.begin();
-       it != objects.end(); it++){
-    const Array * arr = * it;
-    if (!retMap.count(arr)){
-      // this means we have an array that is somehow related to the
-      // constraint, but whose values aren't actually required to
-      // satisfy the query.
-      std::vector<unsigned char> ret(arr->size);
-      values.push_back(ret);
-    } else {
-      values.push_back(retMap[arr]);
-    }
-  }
-  result = std::make_shared<Assignment>(objects, values);
+  result = std::make_shared<Assignment>(retMap);
   assert(assertCreatedPointEvaluatesToTrue(query, result) && "should satisfy the equation");
   delete factors;
 
