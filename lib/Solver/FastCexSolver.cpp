@@ -17,6 +17,7 @@
 #include "klee/util/ExprRangeEvaluator.h"
 #include "klee/util/ExprVisitor.h"
 #include "klee/util/SizeVisitor.h"
+#include "klee/util/ExprUtil.h"
 // FIXME: Use APInt.
 #include "klee/Internal/Support/Debug.h"
 #include "klee/Internal/Support/IntEvaluation.h"
