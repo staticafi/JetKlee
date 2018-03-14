@@ -1982,7 +1982,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
             state.addressSpace.resolveConstantAddress(arguments[k], op);
             const ObjectState *osarg = op.second;
             assert(osarg);
-            for (unsigned i = 0; i < osarg->size; i++)
+            for (unsigned i = 0; i < osarg->getObject()->size; i++)
               os->write(offsets[k] + i, osarg->read8(i));
           }
         }
