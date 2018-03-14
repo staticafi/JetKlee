@@ -526,6 +526,7 @@ public:
 
   const std::string getName() const { return name; }
   unsigned getSize() const { return size; }
+
   Expr::Width getDomain() const { return domain; }
   Expr::Width getRange() const { return range; }
 
