@@ -14,9 +14,6 @@
 #include "klee/SolverCmdLine.h"
 #include "klee/Internal/System/Time.h"
 #include "klee/util/Assignment.h"
-// FIXME
-#include "klee/util/ExprUtil.h"
-#include "klee/Constraints.h"
 
 #include <vector>
 

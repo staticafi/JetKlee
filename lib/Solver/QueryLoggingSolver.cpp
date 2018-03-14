@@ -9,6 +9,8 @@
 #include "QueryLoggingSolver.h"
 #include "klee/Statistics.h"
 #include "klee/Config/config.h"
+#include "klee/Constraints.h"
+#include "klee/util/ExprUtil.h"
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "klee/Internal/Support/FileHandling.h"
 #include "klee/Internal/System/Time.h"
@@ -19,6 +21,7 @@ llvm::cl::opt<bool> DumpPartialQueryiesEarly(
     llvm::cl::desc("Log queries before calling the solver (default=off)"));
 
 #ifdef HAVE_ZLIB_H
+#include "klee/Internal/Support/CompressionStream.h"
 llvm::cl::opt<bool> CreateCompressedQueryLog(
     "compress-query-log", llvm::cl::init(false),
     llvm::cl::desc("Compress query log files (default=off)"));
