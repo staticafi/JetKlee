@@ -523,7 +523,6 @@ public:
   bool isConstantArray() const { return !isSymbolicArray(); }
 
   const std::string getName() const { return name; }
-  ref<Expr> getSize() const;
   Expr::Width getDomain() const { return domain; }
   Expr::Width getRange() const { return range; }
 
