@@ -318,36 +318,9 @@ CexCachingSolver::computeInitialValues(const Query& query,
                                          &result,
                                        bool &hasSolution) {
   TimerStatIncrementer t(stats::cexCacheTime);
-  std::shared_ptr<const Assignment> a;
-  if (!getAssignment(query, a))
+  if (!getAssignment(query, result))
     return false;
-  hasSolution = !!a;
-  
-  if (!a)
-    return true;
-
-  AssignmentSizeVisitor sizeVisitor(*a);
-  sizeVisitor.visitQuery(query);
-
-  // FIXME: We should use smarter assignment for result so we don't
-  // need redundant copy.
-  std::vector<const Array*> objects;
-  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
-  findSymbolicObjects(query.expr, objects);
-
-  std::vector< std::vector<unsigned char> > values(objects.size());
-  for (unsigned i=0; i < objects.size(); ++i) {
-    const Array *os = objects[i];
-    Assignment::bindings_ty::const_iterator it = a->bindings.find(os);
-    
-    if (it == a->bindings.end()) {
-      values[i] = std::vector<unsigned char>(sizeVisitor.sizes[os], 0);
-    } else {
-      values[i] = it->second;
-      values[i].resize(sizeVisitor.sizes[os], 0);
-    }
-  }
-  result = std::make_shared<Assignment>(objects, values);
+  hasSolution = !!result;
   
   return true;
 }
