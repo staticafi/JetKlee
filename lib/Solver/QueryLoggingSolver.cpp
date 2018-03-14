@@ -10,6 +10,8 @@
 #include "klee/Config/config.h"
 #include "klee/Internal/System/Time.h"
 #include "klee/Statistics.h"
+#include "klee/Constraints.h"
+#include "klee/util/ExprUtil.h"
 #ifdef HAVE_ZLIB_H
 #include "klee/Internal/Support/CompressionStream.h"
 #include "klee/Internal/Support/ErrorHandling.h"
