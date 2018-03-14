@@ -549,8 +549,7 @@ ref<Expr> ReadExpr::create(const UpdateList &ul, ref<Expr> index) {
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(index)) {
       assert(CE->getWidth() <= 64 && "Index too large");
       uint64_t concreteIndex = CE->getZExtValue();
-      uint64_t size = ul.root->size;
-      if (concreteIndex < size) {
+      if (concreteIndex < ul.root->constantValues.size()) {
         return ul.root->constantValues[concreteIndex];
       }
     }
