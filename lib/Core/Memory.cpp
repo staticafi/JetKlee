@@ -51,7 +51,7 @@ MemoryObject::~MemoryObject() {
 void MemoryObject::getAllocInfo(std::string &result) const {
   llvm::raw_string_ostream info(result);
 
-  info << "MO" << id << "[" << size << "]";
+  info << "MO" << id << "[" << getSizeString() << "]";
 
   if (allocSite) {
     info << " allocated at ";
@@ -75,7 +75,7 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
     updates(nullptr, nullptr),
-    sizeBound(parent->getObject()->size),
+    sizeBound(0),
     symbolic(false),
     initialValue(0) {
   if (!UseConstantArrays) {
@@ -84,15 +84,21 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
         parent->getArrayCache()->CreateArray("tmp_arr" + llvm::utostr(++id), sizeBound);
     updates = UpdateList(array, 0);
   }
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(parent->getObject()->size)) {
+    sizeBound = CE->getZExtValue();
+  }
 }
 
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
     updates(array, nullptr),
-    sizeBound(parent->getObject()->size),
+    sizeBound(0),
     symbolic(true),
     initialValue(0) {
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(parent->getObject()->size)) {
+    sizeBound = CE->getZExtValue();
+  }
 }
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os)

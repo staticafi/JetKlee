@@ -248,6 +248,13 @@ bool ExecutionState::merge(const ExecutionState &b) {
         llvm::errs() << "\t\tmutated: " << ai->first->id << "\n";
       mutated.insert(ai->first);
     }
+    if (!isa<ConstantExpr>(ai->first->size)) {
+      if (DebugLogStateMerge) {
+        llvm::errs() << "\t\tobject with symbolic size preventing merge: "
+            << ai->first->id << "\n";
+      }
+      return false;
+    }
   }
   if (ai!=ae || bi!=be) {
     if (DebugLogStateMerge)
@@ -297,7 +304,7 @@ bool ExecutionState::merge(const ExecutionState &b) {
     assert(otherOS);
 
     ObjectState *wos = addressSpace.getWriteable(mo, os);
-    for (unsigned i=0; i<mo->size; i++) {
+    for (unsigned i = 0; i < cast<ConstantExpr>(mo->size)->getZExtValue(); i++) {
       KValue av = wos->read8(i);
       KValue bv = otherOS->read8(i);
       wos->write(i, KValue(SelectExpr::create(inA, av.getSegment(), bv.getSegment()),

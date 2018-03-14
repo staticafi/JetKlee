@@ -267,13 +267,16 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
   const MemoryObject *mo = op.first;
   const ObjectState *os = op.second;
 
+  assert(isa<ConstantExpr>(mo->size) && "string must not be symbolic size");
+  unsigned size = cast<ConstantExpr>(mo->size)->getZExtValue();
+
   auto relativeOffset = mo->getOffsetExpr(address.getOffset());
   // the relativeOffset must be concrete as the address is concrete
   size_t offset = cast<ConstantExpr>(relativeOffset)->getZExtValue();
 
   std::ostringstream buf;
   char c = 0;
-  for (size_t i = offset; i < mo->size; ++i) {
+  for (size_t i = offset; i < size; ++i) {
     ref<Expr> cur = os->read8(i).getValue();
     cur = executor.toUnique(state, cur);
     assert(isa<ConstantExpr>(cur) && 
@@ -663,9 +666,8 @@ void SpecialFunctionHandler::handleGetObjSize(ExecutionState &state,
          ie = rl.end(); it != ie; ++it) {
     executor.bindLocal(
         target, *it->second,
-        KValue(ConstantExpr::create(it->first.first->size,
-                                    executor.kmodule->targetData->getTypeSizeInBits(
-                                      target->inst->getType()))));
+        KValue(it->first.first->size).ZExt(
+          executor.kmodule->targetData->getTypeSizeInBits(target->inst->getType())));
   }
 }
 
