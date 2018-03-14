@@ -75,7 +75,7 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
     updates(nullptr, nullptr),
-    sizeBound(parent->size),
+    sizeBound(parent->getObject()->size),
     symbolic(false),
     initialValue(0) {
   if (!UseConstantArrays) {
@@ -90,7 +90,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
     updates(array, nullptr),
-    sizeBound(parent->size),
+    sizeBound(parent->getObject()->size),
     symbolic(true),
     initialValue(0) {
 }
@@ -571,6 +571,11 @@ ObjectState::ObjectState(const ObjectState &os)
     offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
   if (os.segmentPlane)
     segmentPlane = new ObjectStatePlane(this, *os.segmentPlane);
+}
+
+ObjectState::ObjectState(const ObjectState &os, const MemoryObject *mo)
+  : ObjectState(os) {
+    object = mo;
 }
 
 ObjectState::~ObjectState() {
