@@ -495,23 +495,23 @@ bool IndependentSolver::computeInitialValues(const Query& query,
         if (val != tempAssignment->bindings.end()) {
           tempValues.push_back(val->second);
         } else {
-          tempValues.push_back(std::vector<unsigned char>(array->size));
+          tempValues.push_back(std::vector<unsigned char>());
         }
       }
       assert(tempValues.size() == arraysInFactor.size() &&
              "Should be equal number arrays and answers");
       for (unsigned i = 0; i < tempValues.size(); i++){
         if (retMap.count(arraysInFactor[i])){
+          const Array *array = arraysInFactor[i];
           // We already have an array with some partially correct answers,
           // so we need to place the answers to the new query into the right
           // spot while avoiding the undetermined values also in the array
-          std::vector<unsigned char> * tempPtr = &retMap[arraysInFactor[i]];
-          ::DenseSet<unsigned> * ds = &(it->elements[arraysInFactor[i]]);
-          if (tempPtr->size() < tempValues[i].size())
-            tempPtr->resize(tempValues[i].size());
-          for (std::set<unsigned>::iterator it2 = ds->begin(); it2 != ds->end(); it2++){
-            unsigned index = * it2;
-            (* tempPtr)[index] = index < tempValues[i].size() ? tempValues[i][index] : 0;
+          for (unsigned index : it->elements[array]){
+            unsigned char value = tempAssignment->getValue(array, index);
+            std::vector<unsigned char> &tempPtr = retMap[array];
+            if (index >= tempPtr.size())
+              tempPtr.resize(index + 1);
+            tempPtr[index] = value;
           }
         } else {
           // Dump all the new values into the array
