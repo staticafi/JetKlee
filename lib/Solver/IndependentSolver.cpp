@@ -457,7 +457,6 @@ bool assertCreatedPointEvaluatesToTrue(const Query &query,
 bool IndependentSolver::computeInitialValues(const Query& query,
                                              std::shared_ptr<const Assignment> &result,
                                              bool &hasSolution){
-  std::vector<std::vector<unsigned char> > values;
   // We assume the query has a solution except proven differently
   // This is important in case we don't have any constraints but
   // we need initial values for requested array objects.
@@ -481,28 +480,14 @@ bool IndependentSolver::computeInitialValues(const Query& query,
     std::shared_ptr<const Assignment> tempAssignment;
     if (!solver->impl->computeInitialValues(Query(tmp, ConstantExpr::alloc(0, Expr::Bool)),
                                             tempAssignment, hasSolution)){
-      values.clear();
       delete factors;
       return false;
     } else if (!hasSolution){
-      values.clear();
       delete factors;
       return true;
     } else {
-      std::vector<std::vector<unsigned char> > tempValues;
-      for (const Array *array : arraysInFactor) {
-        auto val = tempAssignment->bindings.find(array);
-        if (val != tempAssignment->bindings.end()) {
-          tempValues.push_back(val->second);
-        } else {
-          tempValues.push_back(std::vector<unsigned char>());
-        }
-      }
-      assert(tempValues.size() == arraysInFactor.size() &&
-             "Should be equal number arrays and answers");
-      for (unsigned i = 0; i < tempValues.size(); i++){
-        if (retMap.count(arraysInFactor[i])){
-          const Array *array = arraysInFactor[i];
+      for (const Array *array : arraysInFactor){
+        if (retMap.count(array)){
           // We already have an array with some partially correct answers,
           // so we need to place the answers to the new query into the right
           // spot while avoiding the undetermined values also in the array
@@ -514,8 +499,11 @@ bool IndependentSolver::computeInitialValues(const Query& query,
             tempPtr[index] = value;
           }
         } else {
+          std::vector<unsigned char> &tempPtr = retMap[array];
           // Dump all the new values into the array
-          retMap[arraysInFactor[i]] = tempValues[i];
+          auto val = tempAssignment->bindings.find(array);
+          if (val != tempAssignment->bindings.end())
+            tempPtr = val->second;
         }
       }
     }
