@@ -564,7 +564,6 @@ ObjectState::ObjectState(const MemoryObject *mo)
   : copyOnWriteOwner(0),
     refCount(0),
     object(mo),
-    size(mo->size),
     readOnly(false),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this)){
@@ -576,7 +575,6 @@ ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
   : copyOnWriteOwner(0),
     refCount(0),
     object(mo),
-    size(mo->size),
     readOnly(false),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this, array)) {
@@ -587,7 +585,6 @@ ObjectState::ObjectState(const ObjectState &os)
   : copyOnWriteOwner(0),
     refCount(0),
     object(os.object),
-    size(os.size),
     readOnly(false),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
