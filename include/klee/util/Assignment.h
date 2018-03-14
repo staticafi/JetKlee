@@ -43,6 +43,9 @@ namespace klee {
         ++valIt;
       }
     }
+    Assignment(const std::map<const Array*, std::vector<unsigned char> > &bindings,
+               bool _allowFreeValues=false)
+      : allowFreeValues(_allowFreeValues), bindings(bindings) {}
 
     uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
