@@ -310,6 +310,8 @@ public:
   ObjectState(const MemoryObject *mo, const Array *array);
 
   ObjectState(const ObjectState &os);
+  // Copy for realloc
+  ObjectState(const ObjectState &os, const MemoryObject *mo);
   ~ObjectState();
 
   const MemoryObject *getObject() const { return object; }
