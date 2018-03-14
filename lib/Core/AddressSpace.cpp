@@ -72,12 +72,16 @@ bool AddressSpace::resolveConstantAddress(const KValue &pointer,
     MemoryObject hack(address);
     if (const MemoryMap::value_type *res = objects.lookup_previous(&hack)) {
       const MemoryObject *mo = res->first;
-      // Check if the provided address is between start and end of the object
-      // [mo->address, mo->address + mo->size) or the object is a 0-sized object.
-      if ((mo->size==0 && address==mo->address) ||
-          (address - mo->address < mo->size)) {
-        result = *res;
-        return true;
+      // objects with symbolic size can only be accessed through segmented pointers
+      if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size)) {
+        unsigned size = CE->getZExtValue();
+        // Check if the provided address is between start and end of the object
+        // [mo->address, mo->address + mo->size) or the object is a 0-sized object.
+        if ((size==0 && address==mo->address) ||
+            (address - mo->address < size)) {
+          result = *res;
+          return true;
+        }
       }
     }
   }
@@ -117,10 +121,13 @@ bool AddressSpace::resolveOne(ExecutionState &state,
     
     if (res) {
       const MemoryObject *mo = res->first;
-      if (example - mo->address < mo->size) {
-        result = *res;
-        success = true;
-        return true;
+      // objects with symbolic size can only be accessed through segmented pointers
+      if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size)) {
+        if (example - mo->address < CE->getZExtValue()) {
+          result = *res;
+          success = true;
+          return true;
+        }
       }
     }
 
@@ -370,9 +377,9 @@ void AddressSpace::copyOutConcretes() {
       auto address = reinterpret_cast<std::uint8_t*>(mo->address);
 
       if (!os->readOnly) {
-        // TODO segment
         auto &concreteStore = os->offsetPlane->concreteStore;
-        concreteStore.resize(mo->size, os->offsetPlane->initialValue);
+        concreteStore.resize(os->offsetPlane->sizeBound,
+                             os->offsetPlane->initialValue);
         memcpy(address, concreteStore.data(), concreteStore.size());
       }
     }

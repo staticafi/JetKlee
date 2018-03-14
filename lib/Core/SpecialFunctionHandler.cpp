@@ -269,10 +269,13 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
   const MemoryObject *mo = op.first;
   const ObjectState *os = op.second;
 
-  char *buf = new char[mo->size];
+  assert(isa<ConstantExpr>(mo->size) && "string must not be symbolic size");
+  unsigned size = cast<ConstantExpr>(mo->size)->getZExtValue();
+
+  char *buf = new char[size];
 
   unsigned i;
-  for (i = 0; i < mo->size - 1; i++) {
+  for (i = 0; i < size - 1; i++) {
     ref<Expr> cur = os->read8(i).getValue();
     cur = executor.toUnique(state, cur);
     assert(isa<ConstantExpr>(cur) && 
@@ -601,9 +604,8 @@ void SpecialFunctionHandler::handleGetObjSize(ExecutionState &state,
          ie = rl.end(); it != ie; ++it) {
     executor.bindLocal(
         target, *it->second,
-        KValue(ConstantExpr::create(it->first.first->size,
-                                    executor.kmodule->targetData->getTypeSizeInBits(
-                                      target->inst->getType()))));
+        KValue(it->first.first->size).ZExt(
+          executor.kmodule->targetData->getTypeSizeInBits(target->inst->getType())));
   }
 }
 
