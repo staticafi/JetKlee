@@ -212,19 +212,6 @@ void ImpliedValue::checkForImpliedValues(Solver *S, ref<Expr> e,
   std::vector<ref<Expr> > assumption;
   assumption.push_back(EqExpr::create(e, value));
 
-  // obscure... we need to make sure that all the read indices are
-  // bounds checked. if we don't do this we can end up constructing
-  // invalid counterexamples because STP will happily make out of
-  // bounds indices which will not get picked up. this is of utmost
-  // importance if we are being backed by the CexCachingSolver.
-
-  for (std::vector< ref<ReadExpr> >::iterator i = reads.begin(), 
-         ie = reads.end(); i != ie; ++i) {
-    ReadExpr *re = i->get();
-    assumption.push_back(UltExpr::create(re->index, 
-                                         re->updates.root->getSize()));
-  }
-
   ConstraintManager assume(assumption);
   for (std::vector< ref<ReadExpr> >::iterator i = reads.begin(), 
          ie = reads.end(); i != ie; ++i) {
