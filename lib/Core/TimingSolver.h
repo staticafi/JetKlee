@@ -73,7 +73,8 @@ public:
                           std::shared_ptr<const Assignment> &result,
                         SolverQueryMetaData &metaData);
 
-  std::pair<ref<Expr>, ref<Expr>> getRange(const ConstraintSet &,
+  std::pair<ref<ConstantExpr>, ref<ConstantExpr>> getRange(
+                                           const ConstraintSet &,
                                            ref<Expr> query,
                                            SolverQueryMetaData &metaData);
 };

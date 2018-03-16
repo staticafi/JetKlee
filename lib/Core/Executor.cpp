@@ -4457,7 +4457,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       sizes.push_back(CE->getZExtValue());
     } else {
       auto pair = solver->getRange(extendedConstraints, mo->size, state.queryMetaData);
-      sizes.push_back(cast<ConstantExpr>(pair.first)->getZExtValue());
+      sizes.push_back(pair.first->getZExtValue());
       cm.addConstraint(EqExpr::create(mo->size, pair.first));
     }
   }

@@ -159,7 +159,7 @@ bool TimingSolver::getInitialValues(
   return success;
 }
 
-std::pair<ref<Expr>, ref<Expr>>
+std::pair<ref<ConstantExpr>, ref<ConstantExpr>>
 TimingSolver::getRange(const ConstraintSet &constraints, ref<Expr> expr,
                        SolverQueryMetaData &metaData) {
   TimerStatIncrementer timer(stats::solverTime);

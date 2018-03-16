@@ -107,7 +107,7 @@ Solver::getInitialValues(const Query& query,
   return success;
 }
 
-std::pair< ref<Expr>, ref<Expr> > Solver::getRange(const Query& query) {
+std::pair< ref<ConstantExpr>, ref<ConstantExpr> > Solver::getRange(const Query& query) {
   ref<Expr> e = query.expr;
   Expr::Width width = e->getWidth();
   uint64_t min, max;
