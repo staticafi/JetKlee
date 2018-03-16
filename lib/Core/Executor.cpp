@@ -3025,106 +3025,28 @@ void Executor::executeAlloc(ExecutionState &state,
                             bool zeroMemory,
                             const ObjectState *reallocFrom) {
   size = toUnique(state, size);
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(size)) {
-    const llvm::Value *allocSite = state.prevPC->inst;
-    size_t allocationAlignment = getAllocationAlignment(allocSite);
-    MemoryObject *mo =
-        memory->allocate(CE->getZExtValue(), isLocal, /*isGlobal=*/false,
-                         allocSite, allocationAlignment);
-    if (!mo) {
-      bindLocal(target, state, 
-                KValue(ConstantExpr::alloc(0, Context::get().getPointerWidth())));
-    } else {
-      bindLocal(target, state, mo->getPointer());
-      if (!reallocFrom) {
-        ObjectState *os = bindObjectInState(state, mo, isLocal);
-        if (zeroMemory) {
-          os->initializeToZero();
-        } else {
-          os->initializeToRandom();
-        }
-      } else {
-        ObjectState *os = new ObjectState(*reallocFrom, mo);
-        state.addressSpace.unbindObject(reallocFrom->getObject());
-        state.addressSpace.bindObject(mo, os);
-      }
-    }
+  const llvm::Value *allocSite = state.prevPC->inst;
+  size_t allocationAlignment = getAllocationAlignment(allocSite);
+  MemoryObject *mo =
+      memory->allocate(size, isLocal, /*isGlobal=*/false,
+                       allocSite, allocationAlignment);
+  if (!mo) {
+    bindLocal(target, state, 
+              KValue(ConstantExpr::alloc(0, Context::get().getPointerWidth())));
   } else {
-    // XXX For now we just pick a size. Ideally we would support
-    // symbolic sizes fully but even if we don't it would be better to
-    // "smartly" pick a value, for example we could fork and pick the
-    // min and max values and perhaps some intermediate (reasonable
-    // value).
-    // 
-    // It would also be nice to recognize the case when size has
-    // exactly two values and just fork (but we need to get rid of
-    // return argument first). This shows up in pcre when llvm
-    // collapses the size expression with a select.
-
-    ref<ConstantExpr> example;
-    bool success = solver->getValue(state, size, example);
-    assert(success && "FIXME: Unhandled solver failure");
-    (void) success;
-    
-    // Try and start with a small example.
-    Expr::Width W = example->getWidth();
-    while (example->Ugt(ConstantExpr::alloc(128, W))->isTrue()) {
-      ref<ConstantExpr> tmp = example->LShr(ConstantExpr::alloc(1, W));
-      bool res;
-      bool success = solver->mayBeTrue(state, EqExpr::create(tmp, size), res);
-      assert(success && "FIXME: Unhandled solver failure");      
-      (void) success;
-      if (!res)
-        break;
-      example = tmp;
-    }
-
-    StatePair fixedSize = fork(state, EqExpr::create(example, size), true);
-    
-    if (fixedSize.second) { 
-      // Check for exactly two values
-      ref<ConstantExpr> tmp;
-      bool success = solver->getValue(*fixedSize.second, size, tmp);
-      assert(success && "FIXME: Unhandled solver failure");      
-      (void) success;
-      bool res;
-      success = solver->mustBeTrue(*fixedSize.second, 
-                                   EqExpr::create(tmp, size),
-                                   res);
-      assert(success && "FIXME: Unhandled solver failure");      
-      (void) success;
-      if (res) {
-        executeAlloc(*fixedSize.second, tmp, isLocal,
-                     target, zeroMemory, reallocFrom);
+    bindLocal(target, state, mo->getPointer());
+    if (!reallocFrom) {
+      ObjectState *os = bindObjectInState(state, mo, isLocal);
+      if (zeroMemory) {
+        os->initializeToZero();
       } else {
-        // See if a *really* big value is possible. If so assume
-        // malloc will fail for it, so lets fork and return 0.
-        StatePair hugeSize = 
-          fork(*fixedSize.second, 
-               UltExpr::create(ConstantExpr::alloc(1U<<31, W), size),
-               true);
-        if (hugeSize.first) {
-          klee_message("NOTE: found huge malloc, returning 0");
-          bindLocal(target, *hugeSize.first, 
-                    KValue(ConstantExpr::alloc(0, Context::get().getPointerWidth())));
-        }
-        
-        if (hugeSize.second) {
-
-          std::string Str;
-          llvm::raw_string_ostream info(Str);
-          ExprPPrinter::printOne(info, "  size expr", size);
-          info << "  concretization : " << example << "\n";
-          info << "  unbound example: " << tmp << "\n";
-          terminateStateOnError(*hugeSize.second, "concretized symbolic size",
-                                Model, NULL, info.str());
-        }
+        os->initializeToRandom();
       }
+    } else {
+      ObjectState *os = new ObjectState(*reallocFrom, mo);
+      state.addressSpace.unbindObject(reallocFrom->getObject());
+      state.addressSpace.bindObject(mo, os);
     }
-
-    if (fixedSize.first) // can be zero when fork fails
-      executeAlloc(*fixedSize.first, example, isLocal, 
-                   target, zeroMemory, reallocFrom);
   }
 }
 
