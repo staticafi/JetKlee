@@ -3722,14 +3722,10 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   for (std::pair<const MemoryObject *, const Array *> pair : state.symbolics) {
     const MemoryObject *mo = pair.first;
     const Array *array = pair.second;
-    std::vector<uint8_t> values;
-    size_t size = array->size;
-    values.reserve(size);
-    if (assignment) {
-      for (unsigned i = 0; i < size; i++)
-        values.push_back(assignment->getValue(array, i));
+    auto it = assignment->bindings.find(array);
+    if (it != assignment->bindings.end()) {
+      res.push_back(std::make_pair(mo->name, it->second));
     }
-    res.push_back(std::make_pair(mo->name, values));
   }
   return true;
 }
