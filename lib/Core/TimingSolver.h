@@ -67,7 +67,7 @@ namespace klee {
     bool getInitialValues(const ExecutionState&,
                           std::shared_ptr<const Assignment> &result);
 
-    std::pair< ref<Expr>, ref<Expr> >
+    std::pair< ref<ConstantExpr>, ref<ConstantExpr> >
     getRange(const ExecutionState&, ref<Expr> query);
   };
 
