@@ -3522,6 +3522,20 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     if (pi!=pie) break;
   }
 
+  // try to minimize sizes of symbolic-size objects
+  std::vector<uint64_t> sizes;
+  sizes.reserve(state.symbolics.size());
+  for (unsigned i = 0; i != state.symbolics.size(); ++i) {
+    const MemoryObject *mo = state.symbolics[i].first;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size)) {
+      sizes.push_back(CE->getZExtValue());
+    } else {
+      auto pair = solver->getRange(tmp, mo->size);
+      sizes.push_back(pair.first->getZExtValue());
+      tmp.addConstraint(EqExpr::create(mo->size, pair.first));
+    }
+  }
+
   std::vector< std::vector<unsigned char> > values;
   std::shared_ptr<const Assignment> assignment(0);
   if (!state.symbolics.empty()) {
@@ -3534,13 +3548,17 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       return false;
     }
   }
-  for (std::pair<const MemoryObject *, const Array *> pair : state.symbolics) {
-    const MemoryObject *mo = pair.first;
-    const Array *array = pair.second;
+  for (unsigned i = 0; i != state.symbolics.size(); ++i) {
+    const MemoryObject *mo = state.symbolics[i].first;
+    const Array *array = state.symbolics[i].second;
     auto it = assignment->bindings.find(array);
+    std::vector<uint8_t> data;
+    data.reserve(sizes[i]);
     if (it != assignment->bindings.end()) {
-      res.push_back(std::make_pair(mo->name, it->second));
+      data = it->second;
     }
+    data.resize(sizes[i]);
+    res.push_back(std::make_pair(mo->name, data));
   }
   return true;
 }
