@@ -101,13 +101,28 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
                                       bool isGlobal,
                                       const llvm::Value *allocSite,
                                       size_t alignment) {
-  if (size > 10 * 1024 * 1024)
+  ref<Expr> sizeExpr = ConstantExpr::alloc(size, Context::get().getPointerWidth());
+  return allocate(sizeExpr, isLocal, isGlobal, allocSite, alignment);
+}
+
+MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
+                                      bool isGlobal,
+                                      const llvm::Value *allocSite,
+                                      size_t alignment) {
+  uint64_t concreteSize = 0;
+  bool hasConcreteSize = false;
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(size)) {
+    hasConcreteSize = true;
+    concreteSize = CE->getZExtValue();
+  }
+
+  if (concreteSize > 10 * 1024 * 1024)
     klee_warning_once(0, "Large alloc: %" PRIu64
                          " bytes.  KLEE may run out of memory.",
-                      size);
+                      concreteSize);
 
   // Return NULL if size is zero, this is equal to error during allocation
-  if (NullOnZeroMalloc && size == 0)
+  if (NullOnZeroMalloc && hasConcreteSize && concreteSize == 0)
     return 0;
 
   if (!llvm::isPowerOf2_64(alignment)) {
@@ -121,21 +136,23 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
 
     // Handle the case of 0-sized allocations as 1-byte allocations.
     // This way, we make sure we have this allocation between its own red zones
-    size_t alloc_size = std::max(size, (uint64_t)1);
+    size_t alloc_size = std::max(concreteSize, (uint64_t)1);
     if ((char *)address + alloc_size < deterministicSpace + spaceSize) {
       nextFreeSlot = (char *)address + alloc_size + RedzoneSize;
     } else {
       klee_warning_once(0, "Couldn't allocate %" PRIu64
                            " bytes. Not enough deterministic space left.",
-                        size);
+                        concreteSize);
       address = 0;
     }
   } else {
+    // allocate 1 byte for symbolic-size allocation, just so we get an address
+    size_t alloc_size = hasConcreteSize ? concreteSize : 1;
     // Use malloc for the standard case
     if (alignment <= 8)
-      address = (uint64_t)malloc(size);
+      address = (uint64_t)malloc(alloc_size);
     else {
-      int res = posix_memalign((void **)&address, alignment, size);
+      int res = posix_memalign((void **)&address, alignment, alloc_size);
       if (res < 0) {
         klee_warning("Allocating aligned memory failed.");
         address = 0;
@@ -147,10 +164,8 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
     return 0;
 
   ++stats::allocations;
-  // TODO symsize
-  ref<Expr> symSize = ConstantExpr::alloc(size, Context::get().getPointerWidth());
-  MemoryObject *res = new MemoryObject(++lastSegment, address, symSize, isLocal, isGlobal, false,
-                                       allocSite, this);
+  MemoryObject *res = new MemoryObject(++lastSegment, address, size, isLocal,
+                                       isGlobal, false, allocSite, this);
   objects.insert(res);
   return res;
 }
