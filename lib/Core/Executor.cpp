@@ -1474,12 +1474,21 @@ static bool isDebugIntrinsic(const Function *f, KModule *KM) {
 
 static inline const llvm::fltSemantics * fpWidthToSemantics(unsigned width) {
   switch(width) {
+#if LLVM_VERSION_MAJOR < 4
   case Expr::Int32:
     return &llvm::APFloat::IEEEsingle;
   case Expr::Int64:
     return &llvm::APFloat::IEEEdouble;
   case Expr::Fl80:
     return &llvm::APFloat::x87DoubleExtended;
+#else
+  case Expr::Int32:
+    return &llvm::APFloat::IEEEsingle();
+  case Expr::Int64:
+    return &llvm::APFloat::IEEEdouble();
+  case Expr::Fl80:
+    return &llvm::APFloat::x87DoubleExtended();
+#endif
   default:
     return 0;
   }
