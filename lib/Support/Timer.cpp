@@ -10,15 +10,12 @@
 #include "klee/Config/Version.h"
 #include "klee/Internal/Support/Timer.h"
 
-#include "klee/Internal/System/Time.h"
-
 using namespace klee;
-using namespace llvm;
 
 WallTimer::WallTimer() {
-  startMicroseconds = util::getWallTimeVal().usec();
+  start = Timer::now();
 }
 
-uint64_t WallTimer::check() {
-  return util::getWallTimeVal().usec() - startMicroseconds;
+WallTimer::Duration::rep WallTimer::check() {
+  return std::chrono::duration_cast<Duration>(Timer::now() - start).count();
 }

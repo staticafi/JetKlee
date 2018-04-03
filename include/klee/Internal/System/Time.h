@@ -10,7 +10,7 @@
 #ifndef KLEE_UTIL_TIME_H
 #define KLEE_UTIL_TIME_H
 
-#include <llvm/Support/TimeValue.h>
+#include <chrono>
 
 namespace klee {
   namespace util {
@@ -20,9 +20,6 @@ namespace klee {
 
     /// Wall time in seconds.
     double getWallTime();
-
-    /// Wall time as TimeValue object.
-    llvm::sys::TimeValue getWallTimeVal();
   }
 }
 

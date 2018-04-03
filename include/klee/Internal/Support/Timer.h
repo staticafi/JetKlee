@@ -10,17 +10,20 @@
 #ifndef KLEE_TIMER_H
 #define KLEE_TIMER_H
 
-#include <stdint.h>
+#include <chrono>
 
 namespace klee {
   class WallTimer {
-    uint64_t startMicroseconds;
+    using Timer = std::chrono::system_clock;
+    using Duration = std::chrono::microseconds;
+
+    Timer::time_point start;
     
   public:
     WallTimer();
 
     /// check - Return the delta since the timer was created, in microseconds.
-    uint64_t check();
+    Duration::rep check();
   };
 }
 

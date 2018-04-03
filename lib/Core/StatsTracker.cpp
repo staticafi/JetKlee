@@ -47,6 +47,7 @@
 #include "llvm/IR/CFG.h"
 #endif
 
+#include <chrono>
 #include <fstream>
 #include <unistd.h>
 
@@ -281,9 +282,10 @@ void StatsTracker::done() {
 
 void StatsTracker::stepInstruction(ExecutionState &es) {
   if (OutputIStats) {
+#if LLVM_VERSION_MAJOR < 4
     if (TrackInstructionTime) {
       static sys::TimeValue lastNowTime(0,0),lastUserTime(0,0);
-    
+
       if (lastUserTime.seconds()==0 && lastUserTime.nanoseconds()==0) {
         sys::TimeValue sys(0,0);
         sys::Process::GetTimeUsage(lastNowTime,lastUserTime,sys);
@@ -298,6 +300,30 @@ void StatsTracker::stepInstruction(ExecutionState &es) {
         lastNowTime = now;
       }
     }
+#else
+    if (TrackInstructionTime) {
+      static sys::TimePoint<> lastNowTime;
+      static bool first = true;
+      std::chrono::nanoseconds lastUserTime;
+
+      if (first) {
+        first = false;
+        std::chrono::nanoseconds sys;
+        sys::Process::GetTimeUsage(lastNowTime,lastUserTime,sys);
+      } else {
+        sys::TimePoint<> now;
+        std::chrono::nanoseconds user, sys;
+        sys::Process::GetTimeUsage(now,user,sys);
+
+        auto delta = user - lastUserTime;
+        auto deltaNow = now - lastNowTime;
+        stats::instructionTime += delta.count();
+        stats::instructionRealTime += deltaNow.count();
+        lastUserTime = user;
+        lastNowTime = now;
+      }
+    }
+#endif
 
     Instruction *inst = es.pc->inst;
     const InstructionInfo &ii = *es.pc->info;
