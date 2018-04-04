@@ -8,13 +8,13 @@ target triple = "x86_64-unknown-linux-gnu"
 define i32 @main() nounwind uwtable {
 entry:
   %a = alloca i8*, align 8
-  %0 = load i8** %a, align 8
+  %0 = load i8*, i8** %a, align 8
   %1 = call i64 @llvm.objectsize.i64.p0i8(i8* %0, i1 true)
   %cmp = icmp ne i64 %1, 0
   br i1 %cmp, label %abort.block, label %continue.block
 
 continue.block:
-  %2 = load i8** %a, align 8
+  %2 = load i8*, i8** %a, align 8
   %3 = call i64 @llvm.objectsize.i64.p0i8(i8* %2, i1 false)
   %cmp1 = icmp ne i64 %3, -1
   br i1 %cmp1, label %abort.block, label %exit.block
