@@ -2552,9 +2552,15 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
       constantOffset = constantOffset->Add(ConstantExpr::alloc(addend,
                                                                Context::get().getPointerWidth()));
     } else {
-      const SequentialType *set = cast<SequentialType>(*ii);
-      uint64_t elementSize = 
-        kmodule->targetData->getTypeStoreSize(set->getElementType());
+      assert(isa<SequentialType>(*ii) || isa<PointerType>(*ii));
+      uint64_t elementSize = 0;
+      if (const SequentialType *set = dyn_cast<SequentialType>(*ii)) {
+        elementSize =
+            kmodule->targetData->getTypeStoreSize(set->getElementType());
+      } else if (const PointerType *pt = dyn_cast<PointerType>(*ii)) {
+        elementSize =
+            kmodule->targetData->getTypeStoreSize(pt->getElementType());
+      }
       Value *operand = ii.getOperand();
       if (Constant *c = dyn_cast<Constant>(operand)) {
         ref<ConstantExpr> index = 
