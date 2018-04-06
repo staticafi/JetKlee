@@ -266,6 +266,7 @@ namespace {
 		    clEnumValN(Executor::Exec, "Exec", "Trying to execute an unexpected instruction"),
 		    clEnumValN(Executor::External, "External", "External objects referenced"),
 		    clEnumValN(Executor::Free, "Free", "Freeing invalid memory"),
+		    clEnumValN(Executor::Leak, "Leak", "Leaking memory at exit"),
 		    clEnumValN(Executor::Model, "Model", "Memory model limit hit"),
 		    clEnumValN(Executor::Overflow, "Overflow", "An overflow occurred"),
 		    clEnumValN(Executor::Ptr, "Ptr", "Pointer error"),
@@ -297,6 +298,11 @@ namespace {
             cl::init(2000));
 
   cl::opt<bool>
+  CheckLeaks("check-leaks",
+             cl::desc("Check for memory leaks"),
+             cl::init(false));
+
+  cl::opt<bool>
   MaxMemoryInhibit("max-memory-inhibit",
             cl::desc("Inhibit forking at memory cap (vs. random terminate) (default=on)"),
             cl::init(true));
@@ -314,6 +320,7 @@ const char *Executor::TerminateReasonNames[] = {
   [ Exec ] = "exec",
   [ External ] = "external",
   [ Free ] = "free",
+  [ Leak ] = "leak",
   [ Model ] = "model",
   [ Overflow ] = "overflow",
   [ Ptr ] = "ptr",
@@ -2901,12 +2908,27 @@ void Executor::terminateStateEarly(ExecutionState &state,
   terminateState(state);
 }
 
+static bool hasMemoryLeaks(ExecutionState &state) {
+    for (auto& object : state.addressSpace.objects) {
+        if (!object.first->isLocal && !object.first->isGlobal) {
+            // => is heap-allocated
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void Executor::terminateStateOnExit(ExecutionState &state) {
-  if (ExitOnErrorType.empty() &&
-      (!OnlyOutputStatesCoveringNew || state.coveredNew ||
-      (AlwaysOutputSeeds && seedMap.count(&state))))
-    interpreterHandler->processTestCase(state, 0, 0);
-  terminateState(state);
+  if (CheckLeaks && hasMemoryLeaks(state)) {
+      terminateStateOnError(state, "memory error: memory leak detected", Leak);
+  } else {
+    if (ExitOnErrorType.empty() &&
+        (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+        (AlwaysOutputSeeds && seedMap.count(&state))))
+      interpreterHandler->processTestCase(state, 0, 0);
+    terminateState(state);
+  }
 }
 
 const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const ExecutionState &state,
