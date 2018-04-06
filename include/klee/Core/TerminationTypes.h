@@ -27,12 +27,13 @@
   TTYPE(Assert, 11U, "assert.err")                                             \
   TTYPE(BadVectorAccess, 12U, "bad_vector_access.err")                         \
   TTYPE(Free, 13U, "free.err")                                                 \
-  TTYPE(Model, 14U, "model.err")                                               \
-  TTYPE(Overflow, 15U, "overflow.err")                                         \
-  TTYPE(Ptr, 16U, "ptr.err")                                                   \
-  TTYPE(ReadOnly, 17U, "read_only.err")                                        \
-  TTYPE(ReportError, 18U, "report_error.err")                                  \
-  MARK(PROGERR, 18U)                                                           \
+  TTYPE(Leak, 14U, "leak.err")                                                 \
+  TTYPE(Model, 15U, "model.err")                                               \
+  TTYPE(Overflow, 16U, "overflow.err")                                         \
+  TTYPE(Ptr, 17U, "ptr.err")                                                   \
+  TTYPE(ReadOnly, 18U, "read_only.err")                                        \
+  TTYPE(ReportError, 19U, "report_error.err")                                  \
+  MARK(PROGERR, 19U)                                                           \
   TTYPE(User, 23U, "user.err")                                                 \
   MARK(USERERR, 23U)                                                           \
   TTYPE(Execution, 25U, "exec.err")                                            \
