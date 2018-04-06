@@ -1527,6 +1527,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
+      // there is no other instruction to execute
+      state.pc = {0};
       terminateStateOnExit(state);
     } else {
       state.popFrame();
