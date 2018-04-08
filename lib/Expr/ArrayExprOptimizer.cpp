@@ -219,9 +219,9 @@ bool ExprOptimizer::computeIndexes(array2idx_ty &arrays, const ref<Expr> &e,
 
     // For each concrete value 'i' stored in the array
     for (size_t aIdx = 0; aIdx < arr->constantValues.size(); aIdx += width) {
-      auto *a = new Assignment();
       std::vector<const Array *> objects;
       std::vector<std::vector<unsigned char>> values;
+      auto *a = new Assignment(objects, values);
 
       // For each symbolic index Expr(k) found
       for (auto &index_it : element.second) {

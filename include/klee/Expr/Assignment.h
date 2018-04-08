@@ -29,6 +29,20 @@ namespace klee {
     VectorAssignment(bool _allowFreeValues=false)
       : allowFreeValues(_allowFreeValues) {}
 
+    VectorAssignment(const std::vector<const Array*> &objects,
+                     std::vector< std::vector<unsigned char> > &values,
+                     bool _allowFreeValues = false)
+    : allowFreeValues(_allowFreeValues) {
+      std::vector<std::vector<unsigned char> >::iterator valIt = values.begin();
+      for (std::vector<const Array*>::const_iterator it = objects.begin(),
+           ie = objects.end(); it != ie; ++it) {
+        const Array *os = *it;
+        std::vector<unsigned char> &arr = *valIt;
+        bindings.insert(std::make_pair(os, arr));
+        ++valIt;
+      }
+    }
+
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(ref<Expr> e) const;
   };
@@ -37,16 +51,11 @@ namespace klee {
   public:
     typedef std::map<const Array*, std::vector<unsigned char> > bindings_ty;
 
-    bool allowFreeValues;
     bindings_ty bindings;
 
   public:
-    Assignment(bool _allowFreeValues=false)
-      : allowFreeValues(_allowFreeValues) {}
     Assignment(const std::vector<const Array*> &objects,
-               std::vector< std::vector<unsigned char> > &values,
-               bool _allowFreeValues=false)
-      : allowFreeValues(_allowFreeValues){
+               std::vector< std::vector<unsigned char> > &values) {
       std::vector< std::vector<unsigned char> >::iterator valIt =
         values.begin();
       for (std::vector<const Array*>::const_iterator it = objects.begin(),
@@ -57,9 +66,8 @@ namespace klee {
         ++valIt;
       }
     }
-    Assignment(const std::map<const Array*, std::vector<unsigned char> > &bindings,
-               bool _allowFreeValues=false)
-      : allowFreeValues(_allowFreeValues), bindings(bindings) {}
+    Assignment(const std::map<const Array*, std::vector<unsigned char> > &bindings)
+      : bindings(bindings) {}
 
     uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
@@ -109,12 +117,7 @@ namespace klee {
     if (it!=bindings.end() && index<it->second.size()) {
       return ConstantExpr::alloc(it->second[index], array->getRange());
     } else {
-      if (allowFreeValues) {
-        return ReadExpr::create(UpdateList(array, 0),
-                                ConstantExpr::alloc(index, array->getDomain()));
-      } else {
-        return ConstantExpr::alloc(0, array->getRange());
-      }
+      return ConstantExpr::alloc(0, array->getRange());
     }
   }
 
