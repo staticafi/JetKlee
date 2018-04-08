@@ -3814,7 +3814,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     std::vector<uint8_t> data;
     data.reserve(sizes[i]);
     if (it != assignment->bindings.end()) {
-      data = it->second;
+      data = it->second.asVector();
     }
     data.resize(sizes[i]);
     res.push_back(std::make_pair(mo->name, data));
