@@ -39,4 +39,78 @@ void Assignment::createConstraintsFromAssignment(
     }
   }
 }
+
+void MapArrayModel::toCompact(CompactArrayModel& model) const {
+  model.skipRanges.clear();
+  model.values.clear();
+  unsigned cursor = 0;
+  for (const auto item : content) {
+    unsigned difference = item.first - cursor;
+    if (shouldSkip(difference)) {
+      model.skipRanges.push_back(std::make_pair(cursor, difference));
+    } else {
+      model.values.resize(model.values.size() + difference);
+    }
+    model.values.push_back(item.second);
+    cursor = item.first + 1;
+  }
+}
+
+uint8_t CompactArrayModel::get(unsigned index) const {
+  unsigned skipTotal = 0;
+  for (const auto item : skipRanges) {
+    unsigned skipStart = item.first;
+    unsigned skipCount = item.second;
+    unsigned skipEnd = skipStart + skipCount;
+    if (index < skipEnd) {
+      if (index >= skipStart) {
+        // it's within skipped range, so it can be anything, for example 0
+        return 0;
+      } else {
+        return values[index - skipTotal];
+      }
+    }
+    skipTotal += skipCount;
+  }
+  if (index - skipTotal < values.size())
+    return values[index - skipTotal];
+  return 0;
+}
+
+std::map<uint32_t, uint8_t> CompactArrayModel::asMap() const {
+  std::map<uint32_t, uint8_t> retMap;
+  unsigned index = 0;
+  unsigned cursor = 0;
+  for (const auto item : skipRanges) {
+    for (; index < item.first; index++, cursor++) {
+      retMap[index] = values[cursor];
+    }
+    index += item.second;
+  }
+  for (; cursor < values.size(); cursor++, index++) {
+    retMap[index] = values[cursor];
+  }
+  return retMap;
+}
+
+std::vector<uint8_t> CompactArrayModel::asVector() const {
+  std::vector<uint8_t> result;
+  unsigned index = 0;
+  unsigned cursor = 0;
+  for (const auto item : skipRanges) {
+    for (; index < item.first; index++, cursor++) {
+      result.push_back(values[cursor]);
+    }
+    index += item.second;
+    result.resize(result.size() + item.second);
+  }
+  for (; cursor < values.size(); cursor++, index++) {
+    result.push_back(values[cursor]);
+  }
+  return result;
+}
+
+void CompactArrayModel::dump() const {
+  // TODO
+}
 }
