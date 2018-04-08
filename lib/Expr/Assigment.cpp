@@ -17,8 +17,7 @@ void Assignment::dump() const {
   for (bindings_ty::const_iterator i = bindings.begin(), e = bindings.end(); i != e;
        ++i) {
     llvm::errs() << (*i).first->name << "\n[";
-    for (int j = 0, k = (*i).second.size(); j < k; ++j)
-      llvm::errs() << (int)(*i).second[j] << ",";
+    i->second.dump();
     llvm::errs() << "]\n";
   }
 }
@@ -29,9 +28,10 @@ void Assignment::createConstraintsFromAssignment(
   for (bindings_ty::const_iterator it = bindings.begin(), ie = bindings.end();
        it != ie; ++it) {
     const Array *array = it->first;
-    const std::vector<unsigned char> &values = it->second;
-    for (unsigned arrayIndex = 0; arrayIndex < values.size(); ++arrayIndex) {
-      unsigned char value = values[arrayIndex];
+    const auto &values = it->second;
+    for (const auto pair : values.asMap()) {
+      unsigned arrayIndex = pair.first;
+      unsigned char value = pair.second;
       out.push_back(EqExpr::create(
           ReadExpr::create(UpdateList(array, 0),
                            ConstantExpr::alloc(arrayIndex, array->getDomain())),
