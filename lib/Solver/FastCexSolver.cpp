@@ -16,7 +16,6 @@
 #include "klee/Expr/ExprRangeEvaluator.h"
 #include "klee/Expr/ExprUtil.h"
 #include "klee/Expr/ExprVisitor.h"
-#include "klee/Expr/SizeVisitor.h"
 #include "klee/Solver/IncompleteSolver.h"
 #include "klee/Support/Debug.h"
 #include "klee/Support/IntEvaluation.h" // FIXME: Use APInt
@@ -1092,16 +1091,6 @@ bool FastCexSolver::computeValue(const Query& query, ref<Expr> &result) {
   }
 }
 
-class CexSizeVisitor : public SizeVisitor {
-private:
-  CexData &cd;
-public:
-  CexSizeVisitor(CexData &cd) : cd(cd) {}
-  ref<Expr> evaluate(ref<Expr> expr) {
-    return cd.evaluatePossible(expr);
-  }
-};
-
 bool
 FastCexSolver::computeInitialValues(const Query& query,
                                     std::shared_ptr<const Assignment>
@@ -1119,9 +1108,6 @@ FastCexSolver::computeInitialValues(const Query& query,
   hasSolution = !isValid;
   if (!hasSolution)
     return true;
-
-  CexSizeVisitor sizeVisitor(cd);
-  sizeVisitor.visitQuery(query);
 
   Assignment::map_bindings_ty values;
 

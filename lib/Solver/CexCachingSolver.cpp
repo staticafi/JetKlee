@@ -15,7 +15,6 @@
 #include "klee/Expr/Expr.h"
 #include "klee/Expr/ExprUtil.h"
 #include "klee/Expr/ExprVisitor.h"
-#include "klee/Expr/SizeVisitor.h"
 #include "klee/Support/OptionCategories.h"
 #include "klee/Statistics/TimerStatIncrementer.h"
 #include "klee/Solver/SolverImpl.h"
