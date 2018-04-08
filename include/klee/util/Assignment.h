@@ -19,7 +19,7 @@
 namespace klee {
   class Array;
 
-  class Assignment {
+  class VectorAssignment {
   public:
     typedef std::map<const Array*, std::vector<unsigned char> > bindings_ty;
 
@@ -27,13 +27,28 @@ namespace klee {
     bindings_ty bindings;
     
   public:
-    Assignment(bool _allowFreeValues=false) 
+    VectorAssignment(bool _allowFreeValues=false)
+      : allowFreeValues(_allowFreeValues) {}
+
+    ref<Expr> evaluate(const Array *mo, unsigned index) const;
+    ref<Expr> evaluate(ref<Expr> e) const;
+  };
+
+  class Assignment {
+  public:
+    typedef std::map<const Array*, std::vector<unsigned char> > bindings_ty;
+
+    bool allowFreeValues;
+    bindings_ty bindings;
+
+  public:
+    Assignment(bool _allowFreeValues=false)
       : allowFreeValues(_allowFreeValues) {}
     Assignment(const std::vector<const Array*> &objects,
                std::vector< std::vector<unsigned char> > &values,
-               bool _allowFreeValues=false) 
+               bool _allowFreeValues=false)
       : allowFreeValues(_allowFreeValues){
-      std::vector< std::vector<unsigned char> >::iterator valIt = 
+      std::vector< std::vector<unsigned char> >::iterator valIt =
         values.begin();
       for (std::vector<const Array*>::const_iterator it = objects.begin(),
              ie = objects.end(); it != ie; ++it) {
@@ -56,9 +71,10 @@ namespace klee {
     bool satisfies(InputIterator begin, InputIterator end) const;
     void dump() const;
   };
-  
+
+  template <typename T>
   class AssignmentEvaluator : public ExprEvaluator {
-    const Assignment &a;
+    const T &a;
 
   protected:
     ref<Expr> getInitialValue(const Array &mo, unsigned index) {
@@ -66,12 +82,12 @@ namespace klee {
     }
     
   public:
-    AssignmentEvaluator(const Assignment &_a) : a(_a) {}    
+    AssignmentEvaluator(const T &_a) : a(_a) {}
   };
 
   /***/
 
-  inline ref<Expr> Assignment::evaluate(const Array *array, 
+  inline ref<Expr> VectorAssignment::evaluate(const Array *array,
                                         unsigned index) const {
     assert(array);
     bindings_ty::const_iterator it = bindings.find(array);
@@ -87,9 +103,30 @@ namespace klee {
     }
   }
 
-  inline ref<Expr> Assignment::evaluate(ref<Expr> e) const {
-    AssignmentEvaluator v(*this);
+    inline ref<Expr> Assignment::evaluate(const Array *array,
+                                        unsigned index) const {
+    assert(array);
+    bindings_ty::const_iterator it = bindings.find(array);
+    if (it!=bindings.end() && index<it->second.size()) {
+      return ConstantExpr::alloc(it->second[index], array->getRange());
+    } else {
+      if (allowFreeValues) {
+        return ReadExpr::create(UpdateList(array, 0),
+                                ConstantExpr::alloc(index, array->getDomain()));
+      } else {
+        return ConstantExpr::alloc(0, array->getRange());
+      }
+    }
+  }
+
+  inline ref<Expr> VectorAssignment::evaluate(ref<Expr> e) const {
+    AssignmentEvaluator<VectorAssignment> v(*this);
     return v.visit(e); 
+  }
+
+  inline ref<Expr> Assignment::evaluate(ref<Expr> e) const {
+    AssignmentEvaluator<Assignment> v(*this);
+    return v.visit(e);
   }
 
   inline uint8_t Assignment::getValue(const Array* array, unsigned index) const {
@@ -102,7 +139,7 @@ namespace klee {
 
   template<typename InputIterator>
   inline bool Assignment::satisfies(InputIterator begin, InputIterator end) const {
-    AssignmentEvaluator v(*this);
+    AssignmentEvaluator<Assignment> v(*this);
     for (; begin!=end; ++begin)
       if (!v.visit(*begin)->isTrue())
         return false;

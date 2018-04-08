@@ -92,7 +92,7 @@ void SeedInfo::patchSeed(const ExecutionState &state,
                                       ConstantExpr::alloc(i, Expr::Int32));
     
     // If not in bindings then this can't be a violation?
-    Assignment::bindings_ty::iterator it2 = assignment.bindings.find(array);
+    VectorAssignment::bindings_ty::iterator it2 = assignment.bindings.find(array);
     if (it2 != assignment.bindings.end()) {
       ref<Expr> isSeed = EqExpr::create(read, 
                                         ConstantExpr::alloc(it2->second[i], 
@@ -125,7 +125,7 @@ void SeedInfo::patchSeed(const ExecutionState &state,
   
   // We could still do a lot better than this, for example by looking at
   // independence. But really, this shouldn't be happening often.
-  for (Assignment::bindings_ty::iterator it = assignment.bindings.begin(), 
+  for (VectorAssignment::bindings_ty::iterator it = assignment.bindings.begin(),
          ie = assignment.bindings.end(); it != ie; ++it) {
     const Array *array = it->first;
     for (unsigned i=0; i<it->second.size(); ++i) {
