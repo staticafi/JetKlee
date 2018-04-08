@@ -171,7 +171,6 @@ private:
 
 public:
   Z3_context ctx;
-  std::map<const Array *, std::vector<Z3ASTHandle> > readIndices;
   Z3Builder(bool autoClearConstructCache, const char *z3LogInteractionFile);
   ~Z3Builder();
 
