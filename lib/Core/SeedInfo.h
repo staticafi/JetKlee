@@ -23,7 +23,7 @@ namespace klee {
 
   class SeedInfo {
   public:
-    Assignment assignment;
+    VectorAssignment assignment;
     KTest *input;
     unsigned inputPosition;
     std::set<struct KTestObject*> used;
