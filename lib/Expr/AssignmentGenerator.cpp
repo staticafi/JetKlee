@@ -199,7 +199,10 @@ bool AssignmentGenerator::helperGenerateAssignment(const ref<Expr> &e,
           return false;
         }
         if (a->bindings.find(re.updates.root) == a->bindings.end()) {
-          a->bindings.insert(std::make_pair(re.updates.root, c_value));
+          CompactArrayModel compactModel;
+          auto mapModel = MapArrayModel(c_value);
+          mapModel.toCompact(compactModel);
+          a->bindings.insert(std::make_pair(re.updates.root,  compactModel));
         } else {
           return false;
         }

@@ -333,7 +333,7 @@ class ModelVisitor : public ExprVisitor {
 private:
   Z3Builder *builder;
   ::Z3_model model;
-  Assignment::bindings_ty bindings; // XXX
+  Assignment::map_bindings_ty bindings;
 
 public:
   ModelVisitor(Z3Builder *builder, ::Z3_model model)
@@ -378,10 +378,7 @@ public:
            "Integer from model is out of range");
     Z3_dec_ref(builder->ctx, valueEvaluated);
 
-    auto &data = bindings[expr.updates.root];
-    if (index >= data.size())
-      data.resize(index + 1);
-    data[index] = value;
+    bindings[expr.updates.root].add(index, value);
 
     return Action::doChildren();
   }

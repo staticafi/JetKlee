@@ -18,6 +18,54 @@
 namespace klee {
   class Array;
 
+  class CompactArrayModel {
+  private:
+    std::vector<std::pair<uint32_t, uint32_t> > skipRanges;
+    std::vector<uint8_t> values;
+    friend class MapArrayModel;
+  public:
+    uint8_t get(unsigned index) const;
+    std::map<uint32_t, uint8_t> asMap() const;
+    std::vector<uint8_t> asVector() const;
+    void dump() const;
+  };
+
+  class MapArrayModel {
+  private:
+    std::map<uint32_t, uint8_t> content;
+    bool shouldSkip(unsigned difference) const {
+      return difference > 1;
+    }
+  public:
+    MapArrayModel() {}
+    MapArrayModel(const MapArrayModel &other) {
+      content = other.content;
+    }
+    MapArrayModel(const CompactArrayModel &other) {
+      content = other.asMap();
+    }
+    MapArrayModel(const std::vector<uint8_t> &other) {
+      for (unsigned i = 0; i < other.size(); i++) {
+        content[i] = other[i];
+      }
+    }
+    std::map<uint32_t, uint8_t> asMap() const {
+      return content;
+    }
+    uint8_t get(unsigned index) const {
+      auto it = content.find(index);
+      if (it != content.end())
+        return it->second;
+      return 0;
+    }
+
+    void add(uint32_t index, uint8_t value) {
+      content[index] = value;
+    }
+
+    void toCompact(CompactArrayModel& model) const;
+  };
+
   class VectorAssignment {
   public:
     typedef std::map<const Array*, std::vector<unsigned char> > bindings_ty;
@@ -49,25 +97,19 @@ namespace klee {
 
   class Assignment {
   public:
-    typedef std::map<const Array*, std::vector<unsigned char> > bindings_ty;
+    typedef std::map<const Array*, CompactArrayModel> bindings_ty;
+    typedef std::map<const Array*, MapArrayModel> map_bindings_ty;
 
     bindings_ty bindings;
 
   public:
-    Assignment(const std::vector<const Array*> &objects,
-               std::vector< std::vector<unsigned char> > &values) {
-      std::vector< std::vector<unsigned char> >::iterator valIt =
-        values.begin();
-      for (std::vector<const Array*>::const_iterator it = objects.begin(),
-             ie = objects.end(); it != ie; ++it) {
-        const Array *os = *it;
-        std::vector<unsigned char> &arr = *valIt;
-        bindings.insert(std::make_pair(os, arr));
-        ++valIt;
+    Assignment(const bindings_ty bindings) : bindings(bindings) {}
+    Assignment(const map_bindings_ty models) {
+      for (const auto &pair : models) {
+        auto &item = bindings[pair.first];
+        pair.second.toCompact(item);
       }
     }
-    Assignment(const std::map<const Array*, std::vector<unsigned char> > &bindings)
-      : bindings(bindings) {}
 
     uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
@@ -113,12 +155,7 @@ namespace klee {
     inline ref<Expr> Assignment::evaluate(const Array *array,
                                         unsigned index) const {
     assert(array);
-    bindings_ty::const_iterator it = bindings.find(array);
-    if (it!=bindings.end() && index<it->second.size()) {
-      return ConstantExpr::alloc(it->second[index], array->getRange());
-    } else {
-      return ConstantExpr::alloc(0, array->getRange());
-    }
+    return ConstantExpr::alloc(getValue(array, index), array->getRange());
   }
 
   inline ref<Expr> VectorAssignment::evaluate(ref<Expr> e) const {
@@ -133,8 +170,8 @@ namespace klee {
 
   inline uint8_t Assignment::getValue(const Array* array, unsigned index) const {
     bindings_ty::const_iterator it = bindings.find(array);
-    if (it!=bindings.end() && index<it->second.size()) {
-      return it->second[index];
+    if (it!=bindings.end()) {
+      return it->second.get(index);
     }
     return 0;
   }

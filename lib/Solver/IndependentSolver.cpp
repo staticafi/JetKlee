@@ -465,8 +465,8 @@ bool IndependentSolver::computeInitialValues(const Query& query,
   // to remember to manually call delete
   std::list<IndependentElementSet> *factors = getAllIndependentConstraintsSets(query);
 
-  //Used to rearrange all of the answers into the correct order
-  std::map<const Array*, std::vector<unsigned char> > retMap;
+  // Used to build the result
+  Assignment::map_bindings_ty retMap;
   for (std::list<IndependentElementSet>::iterator it = factors->begin();
        it != factors->end(); ++it) {
     std::vector<const Array*> arraysInFactor;
@@ -493,17 +493,14 @@ bool IndependentSolver::computeInitialValues(const Query& query,
           // spot while avoiding the undetermined values also in the array
           for (unsigned index : it->elements[array]){
             unsigned char value = tempAssignment->getValue(array, index);
-            std::vector<unsigned char> &tempPtr = retMap[array];
-            if (index >= tempPtr.size())
-              tempPtr.resize(index + 1);
-            tempPtr[index] = value;
+            retMap[array].add(index, value);
           }
         } else {
-          std::vector<unsigned char> &tempPtr = retMap[array];
+          auto &tempPtr = retMap[array];
           // Dump all the new values into the array
           auto val = tempAssignment->bindings.find(array);
           if (val != tempAssignment->bindings.end())
-            tempPtr = val->second;
+            tempPtr = MapArrayModel(val->second);
         }
       }
     }
