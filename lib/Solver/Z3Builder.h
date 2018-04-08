@@ -175,7 +175,6 @@ public:
   Z3_context ctx;
   std::unordered_map<const Array *, std::vector<Z3ASTHandle> >
       constant_array_assertions;
-  std::map<const Array *, std::vector<Z3ASTHandle> > readIndices;
   Z3Builder(bool autoClearConstructCache, const char *z3LogInteractionFile);
   ~Z3Builder();
 
