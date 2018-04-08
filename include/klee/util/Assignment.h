@@ -19,98 +19,19 @@
 namespace klee {
   class Array;
 
-  class ArrayModel {
-  public:
-    virtual uint8_t get(unsigned index) const = 0;
-    virtual std::map<uint32_t, uint8_t> asMap() const = 0;
-    virtual void dump() const = 0;
-  };
-
-  class VectorArrayModel : public ArrayModel {
-  public:
-    std::vector<uint8_t> content;
-    VectorArrayModel(std::vector<uint8_t> content) : content(content) {}
-    uint8_t get(unsigned index) const override {
-      return content[index];
-    }
-    std::map<uint32_t, uint8_t> asMap() const override {
-      std::map<uint32_t, uint8_t> retMap;
-      for (unsigned i = 0; i < content.size(); i++) {
-        retMap[i] = content[i];
-      }
-      return retMap;
-    }
-    void dump() const override {
-      for (unsigned i = 0; i < content.size(); ++i)
-        llvm::errs() << content[i] << ",";
-    }
-  };
-
-  class CompactArrayModel : public ArrayModel {
+  class CompactArrayModel {
   private:
     std::vector<std::pair<uint32_t, uint32_t> > skipRanges;
     std::vector<uint8_t> values;
     friend class MapArrayModel;
   public:
-    uint8_t get(unsigned index) const override {
-      // TODO better search
-#if 0
-      for (unsigned i = skipRanges.size() - 1; i > 0; i--) {
-        auto rangeStart = skipRanges[i].first;
-        auto rangeSkip = skipRanges[i].second;
-        if (index > rangeStart) {
-          if (index < rangeStart + rangeSkip) {
-            // it's within skipped range, so it can be anything, for example 0
-            return 0;
-          } else {
-            return values[index + rangeSkip];
-          }
-        }
-      }
-#endif
-      if (index < values.size())
-        return values[index];
-      return 0;
-    }
-
-    std::map<uint32_t, uint8_t> asMap() const override {
-      std::map<uint32_t, uint8_t> retMap;
-      unsigned index = 0;
-      unsigned valueIndex = 0;
-      for (unsigned i = 0; i < skipRanges.size(); i++) {
-        for (; index < skipRanges[i].first; index++, valueIndex++) {
-          retMap[index] = values[valueIndex];
-        }
-        index = skipRanges[i].second;
-      }
-      for (; valueIndex < values.size(); index++, valueIndex++) {
-        retMap[index] = values[valueIndex];
-      }
-      return retMap;
-    }
-
-    std::vector<uint8_t> asVector() const {
-      std::vector<uint8_t> result;
-      // TODO reserve
-      unsigned index = 0;
-      for (unsigned i = 0; i < skipRanges.size(); i++) {
-        for (; index < skipRanges[i].first; index++) {
-          result.push_back(values[index]);
-        }
-        result.resize(result.size() + skipRanges[i].second - index);
-      }
-      for (; index < values.size(); index++) {
-        result.push_back(values[index]);
-      }
-      return result;
-    }
-
-    void dump() const override {
-      // TODO
-    }
+    uint8_t get(unsigned index) const;
+    std::map<uint32_t, uint8_t> asMap() const;
+    std::vector<uint8_t> asVector() const;
+    void dump() const;
   };
 
-  class MapArrayModel : public ArrayModel {
+  class MapArrayModel {
   private:
     std::map<uint32_t, uint8_t> content;
     bool shouldSkip(unsigned difference) const {
@@ -121,7 +42,7 @@ namespace klee {
     MapArrayModel(const MapArrayModel &other) {
       content = other.content;
     }
-    MapArrayModel(const ArrayModel &other) {
+    MapArrayModel(const CompactArrayModel &other) {
       content = other.asMap();
     }
     MapArrayModel(const std::vector<uint8_t> &other) {
@@ -129,10 +50,10 @@ namespace klee {
         content[i] = other[i];
       }
     }
-    std::map<uint32_t, uint8_t> asMap() const override {
+    std::map<uint32_t, uint8_t> asMap() const {
       return content;
     }
-    uint8_t get(unsigned index) const override {
+    uint8_t get(unsigned index) const {
       auto it = content.find(index);
       if (it != content.end())
         return it->second;
@@ -142,58 +63,8 @@ namespace klee {
     void add(uint32_t index, uint8_t value) {
       content[index] = value;
     }
-    void toCompact(CompactArrayModel& model) const {
-#if 0
-      unsigned skipRangeCount = 0;
-      unsigned valueCount = 0;
-      uint8_t *values = 0;
-      std::pair<uint32_t, uint32_t> *skipRanges = 0;
-      std::map<uint32_t, uint8_t>::const_iterator it = content.begin();
-      while (it != content.end()) {
-        std::pair<uint32_t, uint8_t> current = *it;
-        if (++it != content.end()) {
-          std::pair<uint32_t, uint8_t> next = *it;
-          unsigned difference = next.first - current.first;
-          if (shouldSkip(difference)) {
-            skipRangeCount++;
-          }
-          valueCount++;
-        }
-      }
-      if (valueCount) {
-        if (skipRangeCount)
-          skipRanges = new std::pair<uint32_t, uint32_t>[skipRangeCount];
-        values = new uint8_t[valueCount](); // initialized to zeros by ()
-        unsigned skipRangeIndex = 0;
-        unsigned skipValue = 0;
-        unsigned valueIndex = 0;
-        it = content.begin();
-        while (it != content.end()) {
-          std::pair<uint32_t, uint8_t> current = *it;
-          if (++it != content.end()) {
-            std::pair<uint32_t, uint8_t> next = *it;
-            unsigned difference = next.first - current.first;
-            if (shouldSkip(difference)) {
-              skipValue += difference;
-              skipRanges[skipRangeIndex] = std::make_pair(current.first, skipValue);
-              skipRangeIndex++;
-            }
-          }
-          values[valueIndex++] = current.second;
-        }
-      }
-#else
-      for (const auto pair : content) {
-        if (pair.first >= model.values.size())
-          model.values.resize(pair.first + 1);
-        model.values[pair.first] = pair.second;
-      }
-#endif
-    }
 
-    void dump() const override {
-      // TODO
-    }
+    void toCompact(CompactArrayModel& model) const;
   };
 
   class VectorAssignment {
