@@ -1117,37 +1117,37 @@ FastCexSolver::computeInitialValues(const Query& query,
   CexSizeVisitor sizeVisitor(cd);
   sizeVisitor.visitQuery(query);
 
-  std::vector< std::vector<unsigned char> > values;
+  Assignment::map_bindings_ty values;
 
   // Propogation found a satisfying assignment, compute the initial values.
-  std::vector<const Array*> objects;
-  findSymbolicObjects(query.constraints.begin(), query.constraints.end(), objects);
-  findSymbolicObjects(query.expr, objects);
-  for (unsigned i = 0; i != objects.size(); ++i) {
-    const Array *array = objects[i];
-    assert(array);
-    uint64_t size = sizeVisitor.sizes[array];
-    std::vector<unsigned char> data;
-    data.reserve(size);
+  std::vector<ref<ReadExpr> > reads;
+  findReads(query.expr, true, reads);
+  for (const auto constraint : query.constraints)
+    findReads(constraint, true, reads);
 
-    for (unsigned i=0; i < size; i++) {
-      ref<Expr> read = 
-        ReadExpr::create(UpdateList(array, 0),
-                         ConstantExpr::create(i, array->getDomain()));
-      ref<Expr> value = cd.evaluatePossible(read);
-      
-      if (ConstantExpr *CE = dyn_cast<ConstantExpr>(value)) {
-        data.push_back((unsigned char) CE->getZExtValue(8));
-      } else {
-        // FIXME: When does this happen?
-        return false;
-      }
+  for (ref<ReadExpr> read : reads) {
+    const Array *array = read->updates.root;
+    ref<Expr> indexExpr = cd.evaluatePossible(read->index);
+    unsigned index;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(indexExpr)) {
+      index = CE->getZExtValue(Expr::Int32);
+    } else {
+      // FIXME: When does this happen?
+      return false;
     }
-
-    values.push_back(data);
+    ref<Expr> initialRead = cd.evaluatePossible(
+        ReadExpr::create(UpdateList(array, 0), indexExpr));
+    uint8_t value;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(initialRead)) {
+      value = CE->getZExtValue(Expr::Int8);
+    } else {
+      // FIXME: When does this happen?
+      return false;
+    }
+    values[array].add(index, value);
   }
 
-  result = std::make_shared<Assignment>(objects, values);
+  result = std::make_shared<Assignment>(values);
 
   return true;
 }
