@@ -4085,7 +4085,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     }
 
     ref<Expr> offset = mo->getOffsetExpr(address.getOffset());
-    ref<Expr> check = mo->getBoundsCheckPointer(address, bytes);
+    ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes);
     check = optimizer.optimizeExpr(check, true);
 
     bool inBounds;
