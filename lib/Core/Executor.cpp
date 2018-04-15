@@ -3341,7 +3341,7 @@ void Executor::resolveExact(ExecutionState &state,
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
-    ref<Expr> inBounds = it->first->getBoundsCheckPointer(address);
+    ref<Expr> inBounds = address.Eq(it->first->getPointer()).getValue();
     
     StatePair branches = fork(*unbound, inBounds, true);
     
