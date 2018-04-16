@@ -10,7 +10,14 @@
 #ifndef KVALUE_H
 #define KVALUE_H
 
-#include <klee/Expr.h>
+#include "klee/Expr.h"
+
+#include "llvm/Support/raw_ostream.h"
+
+
+namespace llvm {
+  class raw_ostream;
+}
 
 namespace klee {
   class KValue {
@@ -122,6 +129,15 @@ namespace klee {
                     ConcatExpr::createN(values.size(), values.data()));
     }
   };
+
+  inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const KValue &kvalue) {
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(kvalue.pointerSegment)) {
+      if (CE->isZero()) {
+        return os << kvalue.value;
+      }
+    }
+    return os << kvalue.pointerSegment << ':' << kvalue.value;
+  }
 }
 
 #endif

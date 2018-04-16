@@ -536,17 +536,13 @@ void SpecialFunctionHandler::handlePrintRange(ExecutionState &state,
          "invalid number of arguments to klee_print_range");
 
   std::string msg_str = readStringAtAddress(state, arguments[0]);
-  // TODO segment
-  llvm::errs() << msg_str << ":" << arguments[1].value;
-  // TODO segment
+  llvm::errs() << msg_str << ":" << arguments[1];
   if (!isa<ConstantExpr>(arguments[1].value)) {
     // FIXME: Pull into a unique value method?
     ref<ConstantExpr> value;
-    // TODO segment
     bool success __attribute__ ((unused)) = executor.solver->getValue(state, arguments[1].value, value);
     assert(success && "FIXME: Unhandled solver failure");
     bool res;
-    // TODO segment
     success = executor.solver->mustBeTrue(state, 
                                           EqExpr::create(arguments[1].value, value),
                                           res);
@@ -555,7 +551,6 @@ void SpecialFunctionHandler::handlePrintRange(ExecutionState &state,
       llvm::errs() << " == " << value;
     } else { 
       llvm::errs() << " ~= " << value;
-      // TODO segment
       std::pair< ref<Expr>, ref<Expr> > res =
         executor.solver->getRange(state, arguments[1].value);
       llvm::errs() << " (in [" << res.first << ", " << res.second <<"])";
