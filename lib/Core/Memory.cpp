@@ -377,7 +377,7 @@ void ObjectStatePlane::write8(unsigned offset, uint8_t value) {
   if (offset >= sizeBound)
     sizeBound = offset + 1;
   if (concreteStore.size() <= offset)
-    concreteStore.resize(sizeBound);
+    concreteStore.resize(sizeBound, initialValue);
   concreteStore[offset] = value;
   setKnownSymbolic(offset, 0);
 
