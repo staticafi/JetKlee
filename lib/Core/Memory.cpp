@@ -271,7 +271,9 @@ void ObjectStatePlane::flushForWrite() {
       markByteSymbolic(offset);
       setKnownSymbolic(offset, 0);
     }
-  } 
+  }
+  // everything is potentially overwritten
+  symbolic = true;
 }
 
 bool ObjectStatePlane::isByteConcrete(unsigned offset) const {
