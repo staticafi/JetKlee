@@ -95,8 +95,8 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
     updates(0, 0),
+    defaultConcrete(false),
     sizeBound(0),
-    symbolic(false),
     initialValue(0) {
   if (!UseConstantArrays) {
     static unsigned id = 0;
@@ -113,8 +113,8 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
     updates(array, 0),
+    defaultConcrete(true),
     sizeBound(0),
-    symbolic(true),
     initialValue(0) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(parent->getObject()->size)) {
     sizeBound = CE->getZExtValue();
@@ -128,8 +128,8 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStateP
     flushMask(os.flushMask),
     knownSymbolics(os.knownSymbolics),
     updates(os.updates),
+    defaultConcrete(os.defaultConcrete),
     sizeBound(os.sizeBound),
-    symbolic(os.symbolic),
     initialValue(os.initialValue) {
   assert(!os.parent->readOnly && "no need to copy read only object?");
 }
@@ -254,19 +254,19 @@ void ObjectStatePlane::flushForWrite() {
     }
   }
   // everything is potentially overwritten
-  symbolic = true;
+  defaultConcrete = true;
 }
 
 bool ObjectStatePlane::isByteConcrete(unsigned offset) const {
   if (offset < concreteMask.size())
     return concreteMask.get(offset);
-  return !symbolic;
+  return !defaultConcrete;
 }
 
 bool ObjectStatePlane::isByteFlushed(unsigned offset) const {
   if (offset < flushMask.size())
     return !flushMask.get(offset);
-  return symbolic;
+  return defaultConcrete;
 }
 
 bool ObjectStatePlane::isByteKnownSymbolic(unsigned offset) const {
@@ -275,36 +275,36 @@ bool ObjectStatePlane::isByteKnownSymbolic(unsigned offset) const {
 
 void ObjectStatePlane::markByteConcrete(unsigned offset) {
   if (offset >= concreteMask.size()) {
-    if (!symbolic)
+    if (!defaultConcrete)
       return;
-    concreteMask.resize(sizeBound, !symbolic);
+    concreteMask.resize(sizeBound, !defaultConcrete);
   }
   concreteMask.set(offset);
 }
 
 void ObjectStatePlane::markByteSymbolic(unsigned offset) {
   if (offset >= concreteMask.size()) {
-    if (symbolic)
+    if (defaultConcrete)
       return;
-    concreteMask.resize(sizeBound, !symbolic);
+    concreteMask.resize(sizeBound, !defaultConcrete);
   }
   concreteMask.unset(offset);
 }
 
 void ObjectStatePlane::markByteUnflushed(unsigned offset) const {
   if (offset >= flushMask.size()) {
-    if (!symbolic)
+    if (!defaultConcrete)
       return;
-    flushMask.resize(sizeBound, !symbolic);
+    flushMask.resize(sizeBound, !defaultConcrete);
   }
   flushMask.set(offset);
 }
 
 void ObjectStatePlane::markByteFlushed(unsigned offset) const {
   if (offset >= flushMask.size()) {
-    if (symbolic)
+    if (defaultConcrete)
       return;
-    flushMask.resize(sizeBound, !symbolic);
+    flushMask.resize(sizeBound, !defaultConcrete);
   }
   flushMask.unset(offset);
 }
@@ -351,8 +351,19 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
                       sizeBound,
                       allocInfo.c_str());
   }
-  
-  return ReadExpr::create(getUpdates(), ZExtExpr::create(offset, Expr::Int32));
+
+  offset = ZExtExpr::create(offset, Expr::Int32);
+
+  if (parent->symbolic || isa<ConstantExpr>(parent->getObject()->getSizeExpr())) {
+    return ReadExpr::create(getUpdates(), offset);
+  } else {
+    // symbolic-sized concrete objects need to behave as if they were
+    // initialized to the default value up to infinity
+    return SelectExpr::create(UltExpr::create(offset,
+                                              ConstantExpr::alloc(sizeBound, Expr::Int32)),
+                              ReadExpr::create(getUpdates(), offset),
+                              ConstantExpr::alloc(initialValue, Expr::Int8));
+  }
 }
 
 void ObjectStatePlane::write8(unsigned offset, uint8_t value) {
@@ -557,6 +568,7 @@ ObjectState::ObjectState(const MemoryObject *mo)
     refCount(0),
     object(mo),
     readOnly(false),
+    symbolic(false),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this)){
   mo->refCount++;
@@ -568,6 +580,7 @@ ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
     refCount(0),
     object(mo),
     readOnly(false),
+    symbolic(true),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this, array)) {
   mo->refCount++;
@@ -578,6 +591,7 @@ ObjectState::ObjectState(const ObjectState &os)
     refCount(0),
     object(os.object),
     readOnly(false),
+    symbolic(os.symbolic),
     segmentPlane(0),
     offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
   object->refCount++;
