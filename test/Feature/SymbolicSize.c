@@ -14,6 +14,8 @@ int main() {
             array[i] = 3;
         for (int i = 0; i < size; i++)
             assert(array[i] == 3);
+        for (int i = size - 1; i >= 0; i--)
+            assert(array[i] == 3);
     }
     return 0;
 }
