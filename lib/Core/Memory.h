@@ -219,7 +219,7 @@ private:
 public:
   unsigned sizeBound;
 
-  bool symbolic;
+  bool initialized;
 
   uint8_t initialValue;
 
