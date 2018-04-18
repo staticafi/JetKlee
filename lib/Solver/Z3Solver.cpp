@@ -83,8 +83,9 @@ public:
                             std::shared_ptr<const Assignment> &result,
                             bool &hasSolution);
   SolverRunStatus
-  handleSolverResponse(const Query &query, ::Z3_solver theSolver,
+  handleSolverResponse(::Z3_solver theSolver,
                        ::Z3_lbool satisfiable,
+                       const Z3Builder::captured_reads_ty &reads,
                        std::shared_ptr<const Assignment> &result,
                        bool &hasSolution, bool needsModel);
   SolverRunStatus getOperationStatusCode();
@@ -248,17 +249,19 @@ bool Z3SolverImpl::internalRunSolver(
 
   runStatusCode = SOLVER_RUN_STATUS_FAILURE;
 
+  Z3Builder::captured_reads_ty reads;
+
   for (ConstraintManager::const_iterator it = query.constraints.begin(),
                                          ie = query.constraints.end();
        it != ie; ++it) {
-    Z3_solver_assert(builder->ctx, theSolver, builder->construct(*it));
+    Z3_solver_assert(builder->ctx, theSolver, builder->construct(*it, reads));
   }
   ++stats::queries;
   if (needsModel)
     ++stats::queryCounterexamples;
 
   Z3ASTHandle z3QueryExpr =
-      Z3ASTHandle(builder->construct(query.expr), builder->ctx);
+      Z3ASTHandle(builder->construct(query.expr, reads), builder->ctx);
 
   // KLEE Queries are validity queries i.e.
   // ∀ X Constraints(X) → query(X)
@@ -279,7 +282,7 @@ bool Z3SolverImpl::internalRunSolver(
   }
 
   ::Z3_lbool satisfiable = Z3_solver_check(builder->ctx, theSolver);
-  runStatusCode = handleSolverResponse(query, theSolver, satisfiable, result,
+  runStatusCode = handleSolverResponse(theSolver, satisfiable, reads, result,
                                        hasSolution, needsModel);
 
   Z3_solver_dec_ref(builder->ctx, theSolver);
@@ -303,9 +306,10 @@ bool Z3SolverImpl::internalRunSolver(
 }
 
 SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
-    const Query &query,
     ::Z3_solver theSolver, ::Z3_lbool satisfiable,
-    std::shared_ptr<const Assignment> &result, bool &hasSolution,
+    const Z3Builder::captured_reads_ty &reads,
+    std::shared_ptr<const Assignment> &result,
+    bool &hasSolution,
     bool needsModel) {
   switch (satisfiable) {
   case Z3_L_TRUE: {
@@ -318,52 +322,48 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
     assert(theModel && "Failed to retrieve model");
     Z3_model_inc_ref(builder->ctx, theModel);
 
-    std::vector<ref<ReadExpr> > reads;
-    findReads(query.expr, true, reads);
-    for (const auto constraint: query.constraints)
-      findReads(constraint, true, reads);
-
     Assignment::map_bindings_ty bindings;
-    for (ref<ReadExpr> read : reads) {
-      bool success;
-      // Get the model of the index
-      unsigned index;
-      Z3ASTHandle indexExpr = builder->construct(read->index); // should be cached
-      // We can't use Z3ASTHandle here so have to do ref counting manually
-      ::Z3_ast indexEvaluated;
-      success = Z3_model_eval(builder->ctx, theModel, indexExpr,
-                            /*model_completion=*/Z3_FALSE, &indexEvaluated);
-      assert(success && "Failed to evaluate index model");
-      Z3_inc_ref(builder->ctx, indexEvaluated);
-      if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
-        // if the index is not numeric, it means that it's a "don't care" value
+    for (const auto &pair : reads) {
+      const Array *array = pair.first;
+      for (Z3ASTHandle indexExpr : pair.second) {
+        bool success;
+        // Get the model of the index
+        unsigned index;
+        // We can't use Z3ASTHandle here so have to do ref counting manually
+        ::Z3_ast indexEvaluated;
+        success = Z3_model_eval(builder->ctx, theModel, indexExpr,
+                              /*model_completion=*/Z3_FALSE, &indexEvaluated);
+        assert(success && "Failed to evaluate index model");
+        Z3_inc_ref(builder->ctx, indexEvaluated);
+        if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
+          // if the index is not numeric, it means that it's a "don't care" value
+          Z3_dec_ref(builder->ctx, indexEvaluated);
+          continue;
+        }
+        success = Z3_get_numeral_uint(builder->ctx, indexEvaluated, &index);
+        assert(success && "failed to get value back");
         Z3_dec_ref(builder->ctx, indexEvaluated);
-        continue;
+
+        // Get the model of the read value
+        int value = 0;
+        // We can't use Z3ASTHandle here so have to do ref counting manually
+        ::Z3_ast valueEvaluated;
+        Z3ASTHandle initialRead = builder->getInitialRead(array, index);
+        success = Z3_model_eval(builder->ctx, theModel, initialRead,
+                               /*model_completion=*/Z3_TRUE, &valueEvaluated);
+        assert(success && "Failed to evaluate model");
+        Z3_inc_ref(builder->ctx, valueEvaluated);
+        assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
+               "Evaluated expression has wrong sort");
+
+        success = Z3_get_numeral_int(builder->ctx, valueEvaluated, &value);
+        assert(success && "failed to get value back");
+        assert(value >= 0 && value <= 255 &&
+               "Integer from model is out of range");
+        Z3_dec_ref(builder->ctx, valueEvaluated);
+
+        bindings[array].add(index, value);
       }
-      success = Z3_get_numeral_uint(builder->ctx, indexEvaluated,
-                                            &index);
-      assert(success && "failed to get value back");
-      Z3_dec_ref(builder->ctx, indexEvaluated);
-
-      // Get the model of the read value
-      int value = 0;
-      // We can't use Z3ASTHandle here so have to do ref counting manually
-      ::Z3_ast valueEvaluated;
-      Z3ASTHandle initialRead = builder->getInitialRead(read->updates.root, index);
-      success = Z3_model_eval(builder->ctx, theModel, initialRead,
-                             /*model_completion=*/Z3_TRUE, &valueEvaluated);
-      assert(success && "Failed to evaluate model");
-      Z3_inc_ref(builder->ctx, valueEvaluated);
-      assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
-             "Evaluated expression has wrong sort");
-
-      success = Z3_get_numeral_int(builder->ctx, valueEvaluated, &value);
-      assert(success && "failed to get value back");
-      assert(value >= 0 && value <= 255 &&
-             "Integer from model is out of range");
-      Z3_dec_ref(builder->ctx, valueEvaluated);
-
-      bindings[read->updates.root].add(index, value);
     }
 
     result = std::make_shared<Assignment>(bindings);

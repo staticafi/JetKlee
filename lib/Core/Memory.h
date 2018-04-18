@@ -217,11 +217,10 @@ private:
   // mutable because we may need flush during read of const
   mutable UpdateList updates;
 
-  // whether values not explicitly initialized should return default value or read expr
-  bool defaultConcrete;
-
 public:
   unsigned sizeBound;
+
+  bool initialized;
 
   uint8_t initialValue;
 
@@ -296,7 +295,6 @@ private:
 
 public:
   bool readOnly;
-  bool symbolic;
 
 private:
   ObjectStatePlane *segmentPlane;
