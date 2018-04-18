@@ -84,7 +84,6 @@ add_subdirectory(Assignment)
 add_subdirectory(Expr)
 add_subdirectory(Ref)
 add_subdirectory(Solver)
-add_subdirectory(TreeStream)
 
 # Set up lit configuration
 set (UNIT_TEST_EXE_SUFFIX "Test")
