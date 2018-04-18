@@ -54,17 +54,24 @@ llvm::cl::opt<unsigned long long> DeterministicStartAddress(
 }
 
 /***/
-MemoryManager::MemoryManager(ArrayCache *_arrayCache)
+MemoryManager::MemoryManager(ArrayCache *_arrayCache,
+                             unsigned ptrWidth)
     : arrayCache(_arrayCache), deterministicSpace(0), nextFreeSlot(0),
       spaceSize(DeterministicAllocationSize.getValue() * 1024 * 1024),
-      lastSegment(0) {
+      pointerBitWidth(ptrWidth), lastSegment(0) {
   if (DeterministicAllocation) {
     // Page boundary
     void *expectedAddress = (void *)DeterministicStartAddress.getValue();
 
+    unsigned flags = MAP_ANONYMOUS | MAP_PRIVATE;
+    if (ptrWidth == 32)
+        flags |= MAP_32BIT;
+
     char *newSpace =
-        (char *)mmap(expectedAddress, spaceSize, PROT_READ | PROT_WRITE,
-                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        (char *)mmap(expectedAddress, spaceSize,
+
+                     PROT_READ | PROT_WRITE,
+                     flags, -1, 0);
 
     if (newSpace == MAP_FAILED) {
       klee_error("Couldn't mmap() memory for deterministic allocations");
@@ -79,17 +86,42 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache)
   }
 }
 
+static void free_address(MemoryObject *mo, bool low_address)
+{
+  size_t alloc_size = 1;
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size))
+    alloc_size = CE->getZExtValue();
+  if (low_address)
+    munmap((void *)mo->address, alloc_size);
+  else
+    free((void *) mo->address);
+}
+
 MemoryManager::~MemoryManager() {
   while (!objects.empty()) {
     MemoryObject *mo = *objects.begin();
     if (!mo->isFixed && !DeterministicAllocation)
-      free((void *)mo->address);
+      free_address(mo, pointerBitWidth == 32);
     objects.erase(mo);
     delete mo;
   }
 
   if (DeterministicAllocation)
     munmap(deterministicSpace, spaceSize);
+}
+
+static uint64_t allocate_memory(uint64_t size, bool low_address = false)
+{
+  void *mem;
+  if (low_address) {
+    mem = mmap(0, size, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+    if (mem == MAP_FAILED)
+      return 0;
+  } else
+    mem = malloc(size);
+
+  return (uint64_t) mem;
 }
 
 MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
@@ -127,9 +159,12 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
 
   uint64_t address = 0;
   if (DeterministicAllocation) {
-
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+    address = llvm::alignTo((uint64_t)nextFreeSlot + alignment - 1, alignment);
+#else
     address = llvm::RoundUpToAlignment((uint64_t)nextFreeSlot + alignment - 1,
                                        alignment);
+#endif
 
     // Handle the case of 0-sized allocations as 1-byte allocations.
     // This way, we make sure we have this allocation between its own red zones
@@ -146,9 +181,14 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
     // allocate 1 byte for symbolic-size allocation, just so we get an address
     size_t alloc_size = hasConcreteSize ? concreteSize : 1;
     // Use malloc for the standard case
-    if (alignment <= 8)
-      address = (uint64_t)malloc(alloc_size);
-    else {
+    if (alignment <= 8 || pointerBitWidth == 32) {
+      address = allocate_memory(alloc_size, pointerBitWidth == 32);
+      if (address == 0 && size != 0) {
+          klee_warning("Allocating memory failed.");
+          return 0;
+      }
+      assert(pointerBitWidth > 32 || address < (1L << 32));
+    } else {
       int res = posix_memalign((void **)&address, alignment, alloc_size);
       if (res < 0) {
         klee_warning("Allocating aligned memory failed.");
@@ -195,7 +235,8 @@ void MemoryManager::deallocate(const MemoryObject *mo) { assert(0); }
 void MemoryManager::markFreed(MemoryObject *mo) {
   if (objects.find(mo) != objects.end()) {
     if (!mo->isFixed && !DeterministicAllocation)
-      free((void *)mo->address);
+      free_address(mo, pointerBitWidth == 32);
+
     objects.erase(mo);
   }
 }

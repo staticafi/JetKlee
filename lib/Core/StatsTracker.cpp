@@ -282,6 +282,29 @@ void StatsTracker::done() {
 void StatsTracker::stepInstruction(ExecutionState &es) {
   if (OutputIStats) {
     if (TrackInstructionTime) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+      static sys::TimePoint<> lastNowTime;
+      static std::chrono::nanoseconds lastUserTime(0);
+
+      if (lastUserTime.count() == 0) {
+        std::chrono::nanoseconds sys;
+        sys::Process::GetTimeUsage(lastNowTime, lastUserTime, sys);
+      } else {
+        sys::TimePoint<> now;
+        std::chrono::nanoseconds user, sys;
+
+        sys::Process::GetTimeUsage(now, user, sys);
+
+        std::chrono::microseconds delta =
+          std::chrono::duration_cast<std::chrono::microseconds>(user - lastUserTime);
+        std::chrono::microseconds deltaNow =
+          std::chrono::duration_cast<std::chrono::microseconds>(now - lastNowTime);
+        stats::instructionTime += delta.count();
+        stats::instructionRealTime += deltaNow.count();
+        lastUserTime = user;
+        lastNowTime = now;
+      }
+#else
       static sys::TimeValue lastNowTime(0,0),lastUserTime(0,0);
     
       if (lastUserTime.seconds()==0 && lastUserTime.nanoseconds()==0) {
@@ -297,6 +320,7 @@ void StatsTracker::stepInstruction(ExecutionState &es) {
         lastUserTime = user;
         lastNowTime = now;
       }
+#endif
     }
 
     Instruction *inst = es.pc->inst;
@@ -457,6 +481,8 @@ void StatsTracker::updateStateStatistics(uint64_t addend) {
   for (std::set<ExecutionState*>::iterator it = executor.states.begin(),
          ie = executor.states.end(); it != ie; ++it) {
     ExecutionState &state = **it;
+    if (!state.pc)
+        continue;
     const InstructionInfo &ii = *state.pc->info;
     theStatisticManager->incrementIndexedValue(stats::states, ii.id, addend);
     if (UseCallPaths)
@@ -633,7 +659,11 @@ static std::vector<Instruction*> getSuccs(Instruction *i) {
     for (succ_iterator it = succ_begin(bb), ie = succ_end(bb); it != ie; ++it)
       res.push_back(&*(it->begin()));
   } else {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+    res.push_back(&*(++(i->getIterator())));
+#else
     res.push_back(&*(++BasicBlock::iterator(i)));
+#endif
   }
 
   return res;
@@ -890,6 +920,9 @@ void StatsTracker::computeReachableUncovered() {
 
       if (next==es->stack.end()) {
         kii = es->pc;
+        // no other instruction to execute
+        if (!kii)
+            break;
       } else {
         kii = next->caller;
         ++kii;

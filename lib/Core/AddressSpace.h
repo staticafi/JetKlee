@@ -44,7 +44,8 @@ namespace klee {
 
     /// Unsupported, use copy constructor
     AddressSpace &operator=(const AddressSpace&); 
-    
+
+  public:
     /// The MemoryObject -> ObjectState map that constitutes the
     /// address space.
     ///
@@ -53,6 +54,7 @@ namespace klee {
     ///
     /// \invariant forall o in objects, o->copyOnWriteOwner <= cowKey
     MemoryMap objects;
+  private:
     SegmentMap segmentMap;
     
   public:

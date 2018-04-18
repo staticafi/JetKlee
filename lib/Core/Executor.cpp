@@ -266,6 +266,7 @@ namespace {
 		    clEnumValN(Executor::Exec, "Exec", "Trying to execute an unexpected instruction"),
 		    clEnumValN(Executor::External, "External", "External objects referenced"),
 		    clEnumValN(Executor::Free, "Free", "Freeing invalid memory"),
+		    clEnumValN(Executor::Leak, "Leak", "Leaking memory at exit"),
 		    clEnumValN(Executor::Model, "Model", "Memory model limit hit"),
 		    clEnumValN(Executor::Overflow, "Overflow", "An overflow occurred"),
 		    clEnumValN(Executor::Ptr, "Ptr", "Pointer error"),
@@ -297,6 +298,11 @@ namespace {
             cl::init(2000));
 
   cl::opt<bool>
+  CheckLeaks("check-leaks",
+             cl::desc("Check for memory leaks"),
+             cl::init(false));
+
+  cl::opt<bool>
   MaxMemoryInhibit("max-memory-inhibit",
             cl::desc("Inhibit forking at memory cap (vs. random terminate) (default=on)"),
             cl::init(true));
@@ -314,6 +320,7 @@ const char *Executor::TerminateReasonNames[] = {
   [ Exec ] = "exec",
   [ External ] = "external",
   [ Free ] = "free",
+  [ Leak ] = "leak",
   [ Model ] = "model",
   [ Overflow ] = "overflow",
   [ Ptr ] = "ptr",
@@ -399,8 +406,12 @@ const Module *Executor::setModule(llvm::Module *module,
 
   // Initialize the context.
   DataLayout *TD = kmodule->targetData;
+
+  unsigned bw = TD->getPointerSizeInBits();
+  memory->setPointerBitWidth(bw);
+
   Context::initialize(TD->isLittleEndian(),
-                      (Expr::Width) TD->getPointerSizeInBits());
+                      (Expr::Width) bw);
 
   specialFunctionHandler = new SpecialFunctionHandler(*this);
 
@@ -486,6 +497,9 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
                                            bool isReadOnly) {
   MemoryObject *mo = memory->allocateFixed((uint64_t) (unsigned long) addr, 
                                            size, 0);
+  if (!mo)
+      klee_error("Failed allocating memory for an external object");
+
   ObjectState *os = bindObjectInState(state, mo, false);
   for(unsigned i = 0; i < size; i++)
     os->write8(i, (uint8_t)0, ((uint8_t*)addr)[i]);
@@ -524,14 +538,23 @@ void Executor::initializeGlobals(ExecutionState &state) {
     globalAddresses.insert(std::make_pair(f, KValue(addr)));
   }
 
+#ifndef WINDOWS
+#ifndef __APPLE__
+  /* From /usr/include/errno.h: it [errno] is a per-thread variable. */
+  int *errno_addr = __errno_location();
+#else
+  int *errno_addr = __error();
+#endif
+  MemoryObject *errnoObj =
+      addExternalObject(state, (void *)errno_addr, sizeof *errno_addr, false);
+  // Copy values from and to program space explicitly
+  errnoObj->isUserSpecified = true;
+#endif
+
   // Disabled, we don't want to promote use of live externals.
 #ifdef HAVE_CTYPE_EXTERNALS
 #ifndef WINDOWS
 #ifndef DARWIN
-  /* From /usr/include/errno.h: it [errno] is a per-thread variable. */
-  int *errno_addr = __errno_location();
-  addExternalObject(state, (void *)errno_addr, sizeof *errno_addr, false);
-
   /* from /usr/include/ctype.h:
        These point into arrays of 384, so they can be indexed by any `unsigned
        char' value [0,255]; by EOF (-1); or by any `signed char' value
@@ -597,6 +620,9 @@ void Executor::initializeGlobals(ExecutionState &state) {
       MemoryObject *mo = memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/true, /*allocSite=*/v,
                                           /*alignment=*/globalObjectAlignment);
+      if (!mo)
+          klee_error("Unable to allocate memory for a global variables");
+
       ObjectState *os = bindObjectInState(state, mo, false);
       globalObjects.insert(std::make_pair(v, mo));
       globalAddresses.insert(std::make_pair(v, mo->getPointer()));
@@ -745,6 +771,28 @@ void Executor::branch(ExecutionState &state,
       addConstraint(*result[i], conditions[i]);
 }
 
+std::string Executor::getPathInfo(const ExecutionState &state, bool trueBranch)
+{
+  const llvm::BranchInst *branch =
+          dyn_cast<llvm::BranchInst>(state.prevPC->inst);
+  const llvm::Instruction *succ =
+          branch->getSuccessor(trueBranch ? 0 : 1)->getFirstNonPHI();
+
+  const InstructionInfo &ii = kmodule->infos->getInfo(succ);
+  const std::string &file = ii.file;
+  unsigned int fsize = file.size();
+  unsigned int line = ii.line;
+  std::stringstream ss;
+
+  ss << (trueBranch ? '1' : '0');
+
+  ss.write(reinterpret_cast<char*>(&fsize), sizeof(unsigned int));
+  ss << file;
+  ss.write(reinterpret_cast<char*>(&line), sizeof(unsigned int));
+
+  return ss.str();
+}
+
 Executor::StatePair 
 Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   Solver::Validity res;
@@ -881,7 +929,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   if (res==Solver::True) {
     if (!isInternal) {
       if (pathWriter) {
-        current.pathOS << "1";
+        current.pathOS << getPathInfo(current, true);
       }
     }
 
@@ -889,7 +937,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   } else if (res==Solver::False) {
     if (!isInternal) {
       if (pathWriter) {
-        current.pathOS << "0";
+        current.pathOS << getPathInfo(current, false);
       }
     }
 
@@ -948,15 +996,15 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
       // is used for both falseState and trueState.
       falseState->pathOS = pathWriter->open(current.pathOS);
       if (!isInternal) {
-        trueState->pathOS << "1";
-        falseState->pathOS << "0";
+        trueState->pathOS << getPathInfo(current, true);
+        falseState->pathOS << getPathInfo(current, false);
       }
     }
     if (symPathWriter) {
       falseState->symPathOS = symPathWriter->open(current.symPathOS);
       if (!isInternal) {
-        trueState->symPathOS << "1";
-        falseState->symPathOS << "0";
+        trueState->symPathOS << getPathInfo(current, true);
+        falseState->symPathOS << getPathInfo(current, false);
       }
     }
 
@@ -1299,10 +1347,18 @@ void Executor::executeCall(ExecutionState &state,
           //
           // Alignment requirements for scalar types is the same as their size
           if (argWidth > Expr::Int64) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+             size = llvm::alignTo(size, 16);
+#else
              size = llvm::RoundUpToAlignment(size, 16);
+#endif
              requires16ByteAlignment = true;
           }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+          size += llvm::alignTo(argWidth, WordSize) / 8;
+#else
           size += llvm::RoundUpToAlignment(argWidth, WordSize) / 8;
+#endif
         }
       }
 
@@ -1335,10 +1391,18 @@ void Executor::executeCall(ExecutionState &state,
 
             Expr::Width argWidth = arguments[i].getWidth();
             if (argWidth > Expr::Int64) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+              offset = llvm::alignTo(offset, 16);
+#else
               offset = llvm::RoundUpToAlignment(offset, 16);
+#endif
             }
             os->write(offset, arguments[i]);
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+            offset += llvm::alignTo(argWidth, WordSize) / 8;
+#else
             offset += llvm::RoundUpToAlignment(argWidth, WordSize) / 8;
+#endif
           }
         }
       }
@@ -1426,12 +1490,21 @@ static bool isDebugIntrinsic(const Function *f, KModule *KM) {
 
 static inline const llvm::fltSemantics * fpWidthToSemantics(unsigned width) {
   switch(width) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+  case Expr::Int32:
+    return &llvm::APFloat::IEEEsingle();
+  case Expr::Int64:
+    return &llvm::APFloat::IEEEdouble();
+  case Expr::Fl80:
+    return &llvm::APFloat::x87DoubleExtended();
+#else
   case Expr::Int32:
     return &llvm::APFloat::IEEEsingle;
   case Expr::Int64:
     return &llvm::APFloat::IEEEdouble;
   case Expr::Fl80:
     return &llvm::APFloat::x87DoubleExtended;
+#endif
   default:
     return 0;
   }
@@ -1454,6 +1527,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     
     if (state.stack.size() <= 1) {
       assert(!caller && "caller set on initial stack frame");
+      // there is no other instruction to execute
+      state.pc = {0};
       terminateStateOnExit(state);
     } else {
       state.popFrame();
@@ -1537,7 +1612,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       // switch to an internal rep.
       llvm::IntegerType *Ty = cast<IntegerType>(si->getCondition()->getType());
       ConstantInt *ci = ConstantInt::get(Ty, CE->getZExtValue());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+      unsigned index = si->findCaseValue(ci)->getSuccessorIndex();
+#else
       unsigned index = si->findCaseValue(ci).getSuccessorIndex();
+#endif
       transferToBasicBlock(si->getSuccessor(index), si->getParent(), state);
     } else {
       // Handle possible different branch targets
@@ -2096,8 +2175,13 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         !fpWidthToSemantics(right->getWidth()))
       return terminateStateOnExecError(state, "Unsupported FRem operation");
     llvm::APFloat Res(*fpWidthToSemantics(left->getWidth()), left->getAPValue());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 8)
+    Res.mod(
+        APFloat(*fpWidthToSemantics(right->getWidth()), right->getAPValue()));
+#else
     Res.mod(APFloat(*fpWidthToSemantics(right->getWidth()),right->getAPValue()),
             APFloat::rmNearestTiesToEven);
+#endif
     bindLocal(ki, state, ConstantExpr::alloc(Res.bitcastToAPInt()));
     break;
   }
@@ -2146,7 +2230,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     llvm::APFloat Arg(*fpWidthToSemantics(arg->getWidth()), arg->getAPValue());
     uint64_t value = 0;
     bool isExact = true;
-    Arg.convertToInteger(&value, resultType, false,
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+    MutableArrayRef<uint64_t> valueRef = makeMutableArrayRef(value);
+#else
+    uint64_t *valueRef = &value;
+#endif
+    Arg.convertToInteger(valueRef, resultType, false,
                          llvm::APFloat::rmTowardZero, &isExact);
     bindLocal(ki, state, ConstantExpr::alloc(value, resultType));
     break;
@@ -2163,7 +2252,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     uint64_t value = 0;
     bool isExact = true;
-    Arg.convertToInteger(&value, resultType, true,
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+    MutableArrayRef<uint64_t> valueRef = makeMutableArrayRef(value);
+#else
+    uint64_t *valueRef = &value;
+#endif
+    Arg.convertToInteger(valueRef, resultType, true,
                          llvm::APFloat::rmTowardZero, &isExact);
     bindLocal(ki, state, ConstantExpr::alloc(value, resultType));
     break;
@@ -2456,8 +2550,7 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
       uint64_t addend = sl->getElementOffset((unsigned) ci->getZExtValue());
       constantOffset = constantOffset->Add(ConstantExpr::alloc(addend,
                                                                Context::get().getPointerWidth()));
-    } else {
-      const SequentialType *set = cast<SequentialType>(*ii);
+    } else if (const SequentialType *set = dyn_cast<SequentialType>(*ii)) {
       uint64_t elementSize = 
         kmodule->targetData->getTypeStoreSize(set->getElementType());
       Value *operand = ii.getOperand();
@@ -2471,7 +2564,24 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
       } else {
         kgepi->indices.push_back(std::make_pair(index, elementSize));
       }
-    }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+    } else if (const PointerType *ptr = dyn_cast<PointerType>(*ii)) {
+      uint64_t elementSize =
+        kmodule->targetData->getTypeStoreSize(ptr->getElementType());
+      Value *operand = ii.getOperand();
+      if (Constant *c = dyn_cast<Constant>(operand)) {
+        ref<ConstantExpr> index =
+          evalConstant(c)->SExt(Context::get().getPointerWidth());
+        ref<ConstantExpr> addend =
+          index->Mul(ConstantExpr::alloc(elementSize,
+                                         Context::get().getPointerWidth()));
+        constantOffset = constantOffset->Add(addend);
+      } else {
+        kgepi->indices.push_back(std::make_pair(index, elementSize));
+      }
+#endif
+    } else
+      assert("invalid type" && 0);
     index++;
   }
   kgepi->offset = constantOffset->getZExtValue();
@@ -2748,18 +2858,35 @@ void Executor::terminateState(ExecutionState &state) {
 
 void Executor::terminateStateEarly(ExecutionState &state, 
                                    const Twine &message) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew ||
-      (AlwaysOutputSeeds && seedMap.count(&state)))
+  if (ExitOnErrorType.empty() &&
+      (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+      (AlwaysOutputSeeds && seedMap.count(&state))))
     interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
                                         "early");
   terminateState(state);
 }
 
+static bool hasMemoryLeaks(ExecutionState &state) {
+    for (auto& object : state.addressSpace.objects) {
+        if (!object.first->isLocal && !object.first->isGlobal) {
+            // => is heap-allocated
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void Executor::terminateStateOnExit(ExecutionState &state) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew || 
-      (AlwaysOutputSeeds && seedMap.count(&state)))
-    interpreterHandler->processTestCase(state, 0, 0);
-  terminateState(state);
+  if (CheckLeaks && hasMemoryLeaks(state)) {
+      terminateStateOnError(state, "memory error: memory leak detected", Leak);
+  } else {
+    if (ExitOnErrorType.empty() &&
+        (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+        (AlwaysOutputSeeds && seedMap.count(&state))))
+      interpreterHandler->processTestCase(state, 0, 0);
+    terminateState(state);
+  }
 }
 
 const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const ExecutionState &state,
@@ -2825,9 +2952,14 @@ void Executor::terminateStateOnError(ExecutionState &state,
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
-  
-  if (EmitAllErrors ||
-      emittedErrors.insert(std::make_pair(lastInst, message)).second) {
+
+  if (shouldExitOn(termReason))
+    haltExecution = true;
+
+  bool notemitted = emittedErrors.insert(std::make_pair(lastInst, message)).second;
+
+  // give a message about found error
+  if (EmitAllErrors || notemitted) {
     if (ii.file != "") {
       klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
     } else {
@@ -2835,7 +2967,12 @@ void Executor::terminateStateOnError(ExecutionState &state,
     }
     if (!EmitAllErrors)
       klee_message("NOTE: now ignoring this error at this location");
+  }
 
+  // process the testcase if we either should emit all errors, or if we search
+  // for a specific error and this is the error (haltExecution is set to true),
+  // or if we do not search for a specific error and we haven't emitted this error yet
+  if (EmitAllErrors || haltExecution || (ExitOnErrorType.empty() && notemitted)) {
     std::string MsgString;
     llvm::raw_string_ostream msg(MsgString);
     msg << "Error: " << message << "\n";
@@ -2860,11 +2997,8 @@ void Executor::terminateStateOnError(ExecutionState &state,
 
     interpreterHandler->processTestCase(state, msg.str().c_str(), suffix);
   }
-    
-  terminateState(state);
 
-  if (shouldExitOn(termReason))
-    haltExecution = true;
+  terminateState(state);
 }
 
 // XXX shoot me
@@ -2957,6 +3091,27 @@ void Executor::callExternalFunction(ExecutionState &state,
                           External);
     return;
   }
+
+#ifndef WINDOWS
+#ifndef __APPLE__
+  /* From /usr/include/errno.h: it [errno] is a per-thread variable. */
+  int *errno_addr = __errno_location();
+#else
+  int *errno_addr = __error();
+#endif
+  // Update errno value explicitly
+  ObjectPair result;
+  bool resolved = state.addressSpace.resolveConstantAddress(
+      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  if (!resolved)
+    klee_error("Could not resolve memory object for errno");
+  int error = externalDispatcher->getLastErrno();
+  if (memcmp(result.second->offsetPlane->concreteStore.data(), &error, sizeof(*errno_addr)) != 0) {
+    ObjectState *wos =
+        state.addressSpace.getWriteable(result.first, result.second);
+    memcpy(wos->offsetPlane->concreteStore.data(), &error, sizeof(*errno_addr));
+  }
+#endif
 
   Type *resultType = target->inst->getType();
   if (resultType != Type::getVoidTy(function->getContext())) {
@@ -3432,7 +3587,13 @@ void Executor::runFunctionAsMain(Function *f,
 
   // hack to clear memory objects
   delete memory;
-  memory = new MemoryManager(NULL);
+
+#if LLVM_VERSION_CODE <= LLVM_VERSION(3, 1)
+  TargetData *TD = kmodule->targetData;
+#else
+  DataLayout *TD = kmodule->targetData;
+#endif
+  memory = new MemoryManager(NULL, TD->getPointerSizeInBits());
 
   globalObjects.clear();
   globalAddresses.clear();

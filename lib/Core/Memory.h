@@ -201,6 +201,7 @@ private:
 class ObjectStatePlane {
 private:
   friend class AddressSpace;
+  friend class Executor;
 
   const ObjectState *parent;
 
@@ -284,6 +285,7 @@ private:
 class ObjectState {
 private:
   friend class AddressSpace;
+  friend class Executor;
   unsigned copyOnWriteOwner; // exclusively for AddressSpace
 
   friend class ObjectHolder;

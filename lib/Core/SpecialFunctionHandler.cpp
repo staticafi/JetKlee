@@ -91,6 +91,8 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("klee_define_fixed_object", handleDefineFixedObject, false),
   add("klee_get_obj_size", handleGetObjSize, true),
   add("klee_get_errno", handleGetErrno, true),
+  add("__errno_location", handleErrnoLocation, true),
+  add("__error", handleErrnoLocation, true),
   add("klee_is_symbolic", handleIsSymbolic, true),
   add("klee_make_symbolic", handleMakeSymbolic, false),
   add("klee_mark_global", handleMarkGlobal, false),
@@ -582,10 +584,48 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
   // XXX should type check args
   assert(arguments.size()==0 &&
          "invalid number of arguments to klee_get_errno");
-  executor.bindLocal(target, state,
-                     KValue(ConstantExpr::create(errno, Expr::Int32)));
+#ifndef WINDOWS
+#ifndef __APPLE__
+  int *errno_addr = __errno_location();
+#else
+  int *errno_addr = __error();
+#endif
+#else
+  int *errno_addr = nullptr;
+#endif
+
+  // Retrieve the memory object of the errno variable
+  ObjectPair result;
+  bool resolved = state.addressSpace.resolveConstantAddress(
+      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  if (!resolved)
+    executor.terminateStateOnError(state, "Could not resolve address for errno",
+                                   Executor::User);
+  executor.bindLocal(target, state, result.second->read(0, Expr::Int32));
 }
 
+void SpecialFunctionHandler::handleErrnoLocation(
+    ExecutionState &state, KInstruction *target,
+    const std::vector<Cell> &arguments) {
+  // Returns the address of the errno variable
+  assert(arguments.size() == 0 &&
+         "invalid number of arguments to __errno_location");
+
+#ifndef WINDOWS
+#ifndef __APPLE__
+  int *errno_addr = __errno_location();
+#else
+  int *errno_addr = __error();
+#endif
+#else
+  int *errno_addr = nullptr;
+#endif
+  executor.bindLocal(
+      target, state,
+      ConstantExpr::create((uint64_t)errno_addr,
+                           executor.kmodule->targetData->getTypeSizeInBits(
+                               target->inst->getType())));
+}
 void SpecialFunctionHandler::handleCalloc(ExecutionState &state,
                             KInstruction *target,
                             const std::vector<Cell> &arguments) {
@@ -726,14 +766,32 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
       executor.terminateStateOnError(state, "illegal number of arguments to klee_make_symbolic(void*, size_t, char*)", Executor::User);
       return;
   }
+
   if (name.length() == 0) {
     name = "unnamed";
     klee_warning("klee_make_symbolic: renamed empty name to \"unnamed\"");
   }
 
+  // if we already have such a name, attach a number as a suffix
+  // to be able to tell the objects apart
+  auto it = state.symbolicNames.find(name);
+  if (it == state.symbolicNames.end()) {
+      state.symbolicNames.emplace_hint(it, name, 0);
+  } else {
+      name += ":" + std::to_string(++it->second);
+  }
+
   Executor::ExactResolutionList rl;
   executor.resolveExact(state, arguments[0], rl, "make_symbolic");
-  
+
+  // if the given size is 0, then we whould infer the size from the memory object
+  // (the 'whole' memory object is symbolic)
+  bool whole_object = false;
+  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(arguments[1].getValue())) {
+    if (CE->isZero())
+      whole_object = true;
+  }
+
   for (Executor::ExactResolutionList::iterator it = rl.begin(), 
          ie = rl.end(); it != ie; ++it) {
     const MemoryObject *mo = it->first.first;
@@ -750,12 +808,22 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
     // FIXME: Type coercion should be done consistently somewhere.
     bool res;
-    bool success __attribute__ ((unused)) =
-      executor.solver->mustBeTrue(*s, 
-                                  EqExpr::create(ZExtExpr::create(arguments[1].value,
-                                                                  Context::get().getPointerWidth()),
-                                                 mo->getSizeExpr()),
-                                  res);
+    bool success __attribute__ ((unused));
+      if (whole_object) {
+        success =
+        executor.solver->mustBeTrue(*s,
+                                    EqExpr::create(ZExtExpr::create(mo->size,
+                                                                    Context::get().getPointerWidth()),
+                                                   mo->getSizeExpr()),
+                                    res);
+      } else {
+        success =
+        executor.solver->mustBeTrue(*s,
+                                    EqExpr::create(ZExtExpr::create(arguments[1].getValue(),
+                                                                    Context::get().getPointerWidth()),
+                                                   mo->getSizeExpr()),
+                                    res);
+      }
     assert(success && "FIXME: Unhandled solver failure");
     
     if (res) {

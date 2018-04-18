@@ -30,10 +30,11 @@ private:
   char *deterministicSpace;
   char *nextFreeSlot;
   size_t spaceSize;
+  unsigned pointerBitWidth;
   uint64_t lastSegment;
 
 public:
-  MemoryManager(ArrayCache *arrayCache);
+  MemoryManager(ArrayCache *arrayCache, unsigned ptrBitwidth = 64);
   ~MemoryManager();
 
   /**
@@ -54,6 +55,8 @@ public:
    * Returns the size used by deterministic allocation in bytes
    */
   size_t getUsedDeterministicSize();
+
+  void setPointerBitWidth(unsigned bw) { pointerBitWidth = bw; }
 };
 
 } // End klee namespace

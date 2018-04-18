@@ -31,10 +31,10 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "llvm/Support/TargetSelect.h"
@@ -42,6 +42,12 @@
 
 #if LLVM_VERSION_CODE < LLVM_VERSION(3, 5)
 #include "llvm/Support/system_error.h"
+#endif
+
+#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
+#include <llvm/Bitcode/BitcodeReader.h>
+#else
+#include <llvm/Bitcode/ReaderWriter.h>
 #endif
 
 #include <dirent.h>
@@ -290,7 +296,12 @@ KleeHandler::KleeHandler(int argc, char **argv)
     for (; i <= INT_MAX; ++i) {
       SmallString<128> d(directory);
       llvm::sys::path::append(d, "klee-out-");
-      raw_svector_ostream ds(d); ds << i; ds.flush();
+      raw_svector_ostream ds(d);
+      ds << i;
+// SmallString is always up-to-date, no need to flush. See Support/raw_ostream.h
+#if LLVM_VERSION_CODE < LLVM_VERSION(3, 8)
+      ds.flush();
+#endif
 
       // create directory and try to link klee-last
       if (mkdir(d.c_str(), 0775) == 0) {
@@ -388,6 +399,32 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
   return openOutputFile(getTestFilename(suffix, id));
 }
 
+llvm::raw_ostream &operator<<(llvm::raw_ostream &o, const PathLocation &I)
+{
+  o << I.branch << " " << I.file.size() << " " << I.file << " " << I.line;
+  return o;
+}
+
+std::istream &operator>>(std::istream &i, PathLocation &I)
+{
+  unsigned branch, count;
+
+  // >> to char is different -- use a temporary unsigned
+  i >> branch;
+  I.branch = branch;
+  i >> count;
+  i.get();
+
+  char *buf = new char[count];
+  i.read(buf, count);
+  I.file = std::string(buf, count);
+  delete[] buf;
+
+  i.get();
+  i >> I.line;
+
+  return i;
+}
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
 void KleeHandler::processTestCase(const ExecutionState &state,
@@ -445,11 +482,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     }
 
     if (m_pathWriter) {
-      std::vector<unsigned char> concreteBranches;
+      std::vector<PathLocation> concreteBranches;
       m_pathWriter->readStream(m_interpreter->getPathStreamID(state),
                                concreteBranches);
       llvm::raw_fd_ostream *f = openTestFile("path", id);
-      for (std::vector<unsigned char>::iterator I = concreteBranches.begin(),
+      for (std::vector<PathLocation>::iterator I = concreteBranches.begin(),
                                                 E = concreteBranches.end();
            I != E; ++I) {
         *f << *I << "\n";
@@ -484,11 +521,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     }
 
     if (m_symPathWriter) {
-      std::vector<unsigned char> symbolicBranches;
+      std::vector<PathLocation> symbolicBranches;
       m_symPathWriter->readStream(m_interpreter->getSymbolicPathStreamID(state),
                                   symbolicBranches);
       llvm::raw_fd_ostream *f = openTestFile("sym.path", id);
-      for (std::vector<unsigned char>::iterator I = symbolicBranches.begin(), E = symbolicBranches.end(); I!=E; ++I) {
+      for (std::vector<PathLocation>::iterator I = symbolicBranches.begin(), E = symbolicBranches.end(); I!=E; ++I) {
         *f << *I << "\n";
       }
       delete f;
@@ -531,9 +568,11 @@ void KleeHandler::loadPathFile(std::string name,
     assert(0 && "unable to open path file");
 
   while (f.good()) {
-    unsigned value;
-    f >> value;
-    buffer.push_back(!!value);
+    PathLocation loc;
+    f >> loc;
+    if (!f.good())
+            break;
+    buffer.push_back(!!loc.branch);
     f.get();
   }
 }
@@ -647,12 +686,24 @@ static int initEnv(Module *mainModule) {
   Instruction *firstInst = &*(mainFn->begin()->begin());
 
   Value *oldArgc = &*(mainFn->arg_begin());
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  Value *oldArgv = &*(mainFn->arg_begin() + 1);
+#else
   Value *oldArgv = &*(++mainFn->arg_begin());
+#endif
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  const DataLayout &DL = mainFn->getParent()->getDataLayout();
+  AllocaInst* argcPtr =
+    new AllocaInst(oldArgc->getType(), DL.getAllocaAddrSpace(), "argcPtr", firstInst);
+  AllocaInst* argvPtr =
+    new AllocaInst(oldArgv->getType(), DL.getAllocaAddrSpace(), "argvPtr", firstInst);
+#else
   AllocaInst* argcPtr =
     new AllocaInst(oldArgc->getType(), "argcPtr", firstInst);
   AllocaInst* argvPtr =
     new AllocaInst(oldArgv->getType(), "argvPtr", firstInst);
+#endif
 
   /* Insert void klee_init_env(int* argc, char*** argv) */
   std::vector<const Type*> params;
@@ -663,8 +714,8 @@ static int initEnv(Module *mainModule) {
     cast<Function>(mainModule->getOrInsertFunction("klee_init_env",
                                                    Type::getVoidTy(ctx),
                                                    argcPtr->getType(),
-                                                   argvPtr->getType(),
-                                                   NULL));
+                                                   argvPtr->getType()
+                                                   KLEE_LLVM_GOIF_TERMINATOR));
   assert(initEnvFn);
   std::vector<Value*> args;
   args.push_back(argcPtr);
@@ -698,6 +749,8 @@ static const char *modelledExternals[] = {
   "_assert",
   "__assert_fail",
   "__assert_rtn",
+  "__errno_location",
+  "__error",
   "calloc",
   "_exit",
   "exit",
@@ -1021,20 +1074,20 @@ static llvm::Module *linkWithUclibc(llvm::Module *mainModule, StringRef libDir) 
     mainModule->getOrInsertFunction("realpath",
                                     PointerType::getUnqual(i8Ty),
                                     PointerType::getUnqual(i8Ty),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("getutent",
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("__fgetc_unlocked",
                                     Type::getInt32Ty(ctx),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
     mainModule->getOrInsertFunction("__fputc_unlocked",
                                     Type::getInt32Ty(ctx),
                                     Type::getInt32Ty(ctx),
-                                    PointerType::getUnqual(i8Ty),
-                                    NULL);
+                                    PointerType::getUnqual(i8Ty)
+                                    KLEE_LLVM_GOIF_TERMINATOR);
   }
 
   f = mainModule->getFunction("__ctype_get_mb_cur_max");
@@ -1104,7 +1157,11 @@ static llvm::Module *linkWithUclibc(llvm::Module *mainModule, StringRef libDir) 
   args.push_back(llvm::ConstantExpr::getBitCast(userMainFn,
                                                 ft->getParamType(0)));
   args.push_back(&*(stub->arg_begin())); // argc
+#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
+  args.push_back(&*(stub->arg_begin() + 1)); // argv
+#else
   args.push_back(&*(++stub->arg_begin())); // argv
+#endif
   args.push_back(Constant::getNullValue(ft->getParamType(3))); // app_init
   args.push_back(Constant::getNullValue(ft->getParamType(4))); // app_fini
   args.push_back(Constant::getNullValue(ft->getParamType(5))); // rtld_fini
@@ -1124,7 +1181,11 @@ int main(int argc, char **argv, char **envp) {
   llvm::InitializeNativeTarget();
 
   parseArguments(argc, argv);
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+  sys::PrintStackTraceOnErrorSignal(argv[0]);
+#else
   sys::PrintStackTraceOnErrorSignal();
+#endif
 
   if (Watchdog) {
     if (MaxTime==0) {
