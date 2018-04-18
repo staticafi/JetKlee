@@ -102,6 +102,9 @@ public:
 };
 
 class Z3Builder {
+public:
+  typedef std::map<const Array*, std::vector<Z3ASTHandle> > captured_reads_ty;
+  captured_reads_ty *capturedReads;
   ExprHashMap<std::pair<Z3ASTHandle, unsigned> > constructed;
   Z3ArrayExprHash _arr_hash;
 
@@ -182,6 +185,13 @@ public:
     Z3ASTHandle res = construct(e, 0);
     if (autoClearConstructCache)
       clearConstructCache();
+    return res;
+  }
+
+  Z3ASTHandle construct(ref<Expr> e, captured_reads_ty &reads) {
+    capturedReads = &reads;
+    Z3ASTHandle res = construct(e);
+    capturedReads = 0;
     return res;
   }
 
