@@ -517,8 +517,6 @@ Z3ASTHandle Z3Builder::constructActual(ref<Expr> e, int *width_out) {
     assert(re && re->updates.root);
     *width_out = re->updates.root->getRange();
     Z3ASTHandle indexExpr = construct(re->index, 0);
-    if (capturedReads)
-      (*capturedReads)[re->updates.root].push_back(indexExpr);
     return readExpr(getArrayForUpdate(re->updates.root, re->updates.head),
                     indexExpr);
   }

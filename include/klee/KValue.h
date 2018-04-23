@@ -86,14 +86,23 @@ namespace klee {
     _op_seg_zero(Shl);
     _op_seg_zero(LShr);
     _op_seg_zero(AShr);
-    _op_seg_zero(Ugt);
-    _op_seg_zero(Uge);
-    _op_seg_zero(Ult);
-    _op_seg_zero(Ule);
-    _op_seg_zero(Sgt);
-    _op_seg_zero(Sge);
-    _op_seg_zero(Slt);
-    _op_seg_zero(Sle);
+
+#define _op_seg_cmp_lexicographic(cmp) \
+    KValue cmp(const KValue &other) const { \
+      return KValue(SelectExpr::create( \
+              EqExpr::create(pointerSegment, other.pointerSegment), \
+              cmp##Expr::create(value, other.value), \
+              cmp##Expr::create(pointerSegment, other.pointerSegment))); \
+    }
+
+    _op_seg_cmp_lexicographic(Ugt);
+    _op_seg_cmp_lexicographic(Uge);
+    _op_seg_cmp_lexicographic(Ult);
+    _op_seg_cmp_lexicographic(Ule);
+    _op_seg_cmp_lexicographic(Sgt);
+    _op_seg_cmp_lexicographic(Sge);
+    _op_seg_cmp_lexicographic(Slt);
+    _op_seg_cmp_lexicographic(Sle);
 
     KValue Eq(const KValue &other) const {
       return KValue(AndExpr::create(
