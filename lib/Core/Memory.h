@@ -222,6 +222,7 @@ public:
   unsigned sizeBound;
 
   bool initialized;
+  bool symbolic;
 
   uint8_t initialValue;
 
