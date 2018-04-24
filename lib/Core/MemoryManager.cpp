@@ -183,7 +183,7 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
     // Use malloc for the standard case
     if (alignment <= 8 || pointerBitWidth == 32) {
       address = allocate_memory(alloc_size, pointerBitWidth == 32);
-      if (address == 0 && size != 0) {
+      if (address == 0 && concreteSize != 0) {
           klee_warning("Allocating memory failed.");
           return 0;
       }
