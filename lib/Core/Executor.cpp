@@ -3117,11 +3117,8 @@ void Executor::callExternalFunction(ExecutionState &state,
       ce->toMemory(&args[wordIndex]);
       ObjectPair op;
       // Checking to see if the argument is a pointer to something
-      // TODO segment
-      auto segment = ConstantExpr::create(0, ce->getWidth());
       if (ce->getWidth() == Context::get().getPointerWidth()) {
-        state.addressSpace.resolveOne(state, solver,
-                                      KValue(segment, ce),
+        state.addressSpace.resolveOne(state, solver, *ai,
                                       op, success);
         if (success)
           op.second->flushToConcreteStore(solver, state);
