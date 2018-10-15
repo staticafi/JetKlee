@@ -2571,7 +2571,7 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
       Value *operand = ii.getOperand();
       if (Constant *c = dyn_cast<Constant>(operand)) {
         ref<ConstantExpr> index =
-          evalConstant(c)->SExt(Context::get().getPointerWidth());
+          cast<ConstantExpr>(evalConstant(c).getValue())->SExt(Context::get().getPointerWidth());
         ref<ConstantExpr> addend =
           index->Mul(ConstantExpr::alloc(elementSize,
                                          Context::get().getPointerWidth()));
