@@ -1271,16 +1271,16 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
 }
 
 ref<Expr> Executor::toUnique(const ExecutionState &state, 
-                             ref<Expr> &e) {
+                             const ref<Expr> &e) {
   ref<Expr> result = e;
 
   if (!isa<ConstantExpr>(e)) {
     ref<ConstantExpr> value;
     bool isTrue = false;
-    e = optimizer.optimizeExpr(e, true);
+    auto expr = optimizer.optimizeExpr(e, true);
     solver->setTimeout(coreSolverTimeout);
-    if (solver->getValue(state.constraints, e, value, state.queryMetaData)) {
-      ref<Expr> cond = EqExpr::create(e, value);
+    if (solver->getValue(state.constraints, expr, value, state.queryMetaData)) {
+      ref<Expr> cond = EqExpr::create(expr, value);
       cond = optimizer.optimizeExpr(cond, false);
       if (solver->mustBeTrue(state.constraints, cond, isTrue,
                              state.queryMetaData) &&
