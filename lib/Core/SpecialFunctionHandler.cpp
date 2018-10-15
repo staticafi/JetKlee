@@ -244,21 +244,21 @@ std::string
 SpecialFunctionHandler::readStringAtAddress(ExecutionState &state, 
                                             const Cell &addressCell) {
   ObjectPair op;
-  ref<Expr> addressExpr = executor.toUnique(state, addressCell.value);
-  if (!isa<ConstantExpr>(addressExpr)) {
+  auto offsetExpr = executor.toUnique(state, addressCell.getOffset());
+  if (!isa<ConstantExpr>(offsetExpr)) {
     executor.terminateStateOnUserError(
-        state, "Symbolic string pointer passed to one of the klee_ functions");
-    return "";
-  }
-  ref<Expr> segmentExpr = executor.toUnique(state, addressCell.pointerSegment);
-  if (!isa<ConstantExpr>(segmentExpr)) {
-    executor.terminateStateOnUserError(
-        state, "String with symbolic segment passed to one of the klee_ functions");
+      state, "String with symbolic offset passed to one of the klee_ functions");
     return "";
   }
 
-  KValue address(executor.toUnique(state, addressCell.getSegment()),
-                 executor.toUnique(state, addressCell.getOffset()));
+  auto segmentExpr = executor.toUnique(state, addressCell.getSegment());
+  if (!isa<ConstantExpr>(segmentExpr)) {
+    executor.terminateStateOnUserError(
+      state, "String with symbolic segment passed to one of the klee_ functions");
+    return "";
+  }
+
+  KValue address(segmentExpr, offsetExpr);
   if (!state.addressSpace.resolveConstantAddress(address, op)) {
     executor.terminateStateOnUserError(
         state, "Invalid string pointer passed to one of the klee_ functions");

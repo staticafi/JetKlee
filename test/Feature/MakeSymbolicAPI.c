@@ -20,7 +20,7 @@ int main() {
 
   if (a == 3)
     klee_make_symbolic(&c, sizeof(c), p);
-    // CHECK-ERR-DAG: KLEE: ERROR: {{.*}} Symbolic string pointer passed to one of the klee_ functions
+    // CHECK-ERR-DAG: KLEE: ERROR: {{.*}} String with symbolic offset passed to one of the klee_ functions
 
   if (a == 4)
     klee_make_symbolic(&c, sizeof(c) - 1, "c");
