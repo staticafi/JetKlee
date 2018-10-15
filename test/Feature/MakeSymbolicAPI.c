@@ -20,7 +20,7 @@ int main() {
 
   if (a == 3)
     klee_make_symbolic(&c, sizeof(c), p);
-    //CHECK-ERR-DAG: KLEE: ERROR: {{.*}} Symbolic string pointer passed to one of the klee_ functions
+    //CHECK-ERR-DAG: KLEE: ERROR: {{.*}} String with symbolic offset passed to one of the klee_ functions
 
   klee_make_symbolic(&b, sizeof(b));
   //CHECK-ERR-DAG: KLEE: ERROR: {{.*}} Incorrect number of arguments to klee_make_symbolic(void*, size_t, char*)
