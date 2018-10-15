@@ -53,7 +53,7 @@ namespace klee {
     /// the resolution is complete (`p` can only point to the given
     /// memory object), and 2 otherwise.
     int checkPointerInObject(ExecutionState &state, TimingSolver *solver,
-                             ref<Expr> p, const ObjectPair &op,
+                             const KValue& p, const ObjectPair &op,
                              ResolutionList &rl, unsigned maxResolutions) const;
 
   public:
@@ -110,7 +110,7 @@ namespace klee {
                                 const KValue &pointer,
                                 ResolutionList &rl,
                                 unsigned maxResolutions=0,
-                                double timeout=0.);
+                                double timeout=0.) const;
 
     /***/
 

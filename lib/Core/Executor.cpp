@@ -2500,7 +2500,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       auto of = i - 1;
       unsigned bitOffset = EltBits * of;
       elems.push_back(
-          of == iIdx ? newElt : ExtractExpr::create(vec, bitOffset, EltBits));
+          of == iIdx ? newElt : vec.Extract(bitOffset, EltBits));
     }
 
     assert(Context::get().isLittleEndian() && "FIXME:Broken for big endian");
@@ -3056,12 +3056,11 @@ void Executor::callExternalFunction(ExecutionState &state,
       // TODO segment
       bool success = solver->getValue(state, ai->value, ce);
       assert(success && "FIXME: Unhandled solver failure");
-      (void) success;
       ce->toMemory(&args[wordIndex]);
       ObjectPair op;
       // Checking to see if the argument is a pointer to something
       if (ce->getWidth() == Context::get().getPointerWidth() &&
-          state.addressSpace.resolveOne(ce, op)) {
+          state.addressSpace.resolveOne(state, solver, ce, op, success)) {
         op.second->flushToConcreteStore(solver, state);
       }
       wordIndex += (ce->getWidth()+63)/64;
@@ -3087,12 +3086,14 @@ void Executor::callExternalFunction(ExecutionState &state,
   // Update external errno state with local state value
   int *errno_addr = getErrnoLocation(state);
   ObjectPair result;
-  bool resolved = state.addressSpace.resolveOne(
-      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  bool success;
+  bool resolved = state.addressSpace.resolveOne(state, solver,
+      KValue(ConstantExpr::create((uint64_t)errno_addr, Expr::Int64)),
+      result, success);
   if (!resolved)
     klee_error("Could not resolve memory object for errno");
-  ref<Expr> errValueExpr = result.second->read(0, sizeof(*errno_addr) * 8);
-  ConstantExpr *errnoValue = dyn_cast<ConstantExpr>(errValueExpr);
+  auto errValueExpr = result.second->read(0, sizeof(*errno_addr) * 8);
+  ConstantExpr *errnoValue = dyn_cast<ConstantExpr>(errValueExpr.getValue());
   if (!errnoValue) {
     terminateStateOnExecError(state,
                               "external call with errno value symbolic: " +
@@ -3123,7 +3124,7 @@ void Executor::callExternalFunction(ExecutionState &state,
       klee_warning_once(function, "%s", os.str().c_str());
   }
 
-  bool success = externalDispatcher->executeCall(function, target->inst, args);
+  success = externalDispatcher->executeCall(function, target->inst, args);
   if (!success) {
     terminateStateOnError(state, "failed external call: " + function->getName(),
                           External);

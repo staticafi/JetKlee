@@ -193,7 +193,8 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 }
 
 int AddressSpace::checkPointerInObject(ExecutionState &state,
-                                       TimingSolver *solver, ref<Expr> p,
+                                       TimingSolver *solver,
+                                       const KValue& p,
                                        const ObjectPair &op, ResolutionList &rl,
                                        unsigned maxResolutions) const {
   // XXX I think there is some query wasteage here?
@@ -266,7 +267,7 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
                                           const KValue &pointer,
                                           ResolutionList &rl,
                                           unsigned maxResolutions,
-                                          double timeout) {
+                                          double timeout) const {
   if (!cast<ConstantExpr>(pointer.getSegment())->isZero()) {
     ObjectPair res;
     if (resolveConstantAddress(pointer, res))
@@ -320,7 +321,8 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
         return true;
 
       int incomplete =
-          checkPointerInObject(state, solver, p, *oi, rl, maxResolutions);
+          checkPointerInObject(state, solver, pointer,
+                               *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
 
@@ -349,9 +351,11 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
         break;
 
       int incomplete =
-          checkPointerInObject(state, solver, p, *oi, rl, maxResolutions);
+          checkPointerInObject(state, solver, pointer,
+                               *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
+    }
 
   return false;
 }

@@ -64,9 +64,9 @@ namespace klee {
                  dyn_cast<ConstantDataSequential>(c)) {
         // Handle a vector or array: first element has the smallest address,
         // the last element the highest
-        std::vector<ref<Expr> > kids;
+        std::vector<KValue> kids;
         for (unsigned i = cds->getNumElements(); i != 0; --i) {
-          ref<Expr> kid = evalConstant(cds->getElementAsConstant(i - 1), ki);
+          auto kid = evalConstant(cds->getElementAsConstant(i - 1), ki);
           kids.push_back(kid);
         }
         assert(Context::get().isLittleEndian() &&
@@ -111,14 +111,12 @@ namespace klee {
         }
         assert(Context::get().isLittleEndian() &&
                "FIXME:Broken for big endian");
-        assert(isa<ConstantExpr>(ConcatExpr::createN(numOperands, kids.data()))
-		       && "result of constant vector built is not a constant");
         return KValue::concatValues(kids);
       } else if (const BlockAddress * ba = dyn_cast<BlockAddress>(c)) {
         // return the address of the specified basic block in the specified function
         const auto arg_bb = (BasicBlock *) ba->getOperand(1);
         const auto res = Expr::createPointer(reinterpret_cast<std::uint64_t>(arg_bb));
-        return KValue(cast<ConstantExpr>(res));
+        return KValue(res);
       } else {
         std::string msg("Cannot handle constant ");
         llvm::raw_string_ostream os(msg);
@@ -202,8 +200,8 @@ namespace klee {
 
       for (gep_type_iterator ii = gep_type_begin(ce), ie = gep_type_end(ce);
            ii != ie; ++ii) {
-        ref<ConstantExpr> indexOp =
-            evalConstant(cast<Constant>(ii.getOperand()), ki);
+        auto indexOp
+            = cast<ConstantExpr>(evalConstant(cast<Constant>(ii.getOperand()), ki).getValue());
         if (indexOp->isZero())
           continue;
 
@@ -213,9 +211,6 @@ namespace klee {
 #else
         if (StructType *STy = dyn_cast<StructType>(*ii)) {
 #endif
-          const StructLayout *sl = kmodule->targetData->getStructLayout(st);
-          const ConstantInt *ci = cast<ConstantInt>(ii.getOperand());
-
           // Handle a struct index, which adds its field offset to the pointer.
           unsigned ElementIdx = indexOp->getZExtValue();
           const StructLayout *SL = kmodule->targetData->getStructLayout(STy);

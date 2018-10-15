@@ -598,8 +598,11 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
 
   // Retrieve the memory object of the errno variable
   ObjectPair result;
-  bool resolved = state.addressSpace.resolveOne(
-      ConstantExpr::create((uint64_t)errno_addr, Expr::Int64), result);
+  bool resolved
+    = state.addressSpace.resolveOne(state, executor.solver,
+                                    KValue(ConstantExpr::create((uint64_t)errno_addr,
+                                                                Expr::Int64)),
+                                    result, resolved);
   if (!resolved)
     executor.terminateStateOnError(state, "Could not resolve address for errno",
                                    Executor::User);
@@ -609,7 +612,7 @@ void SpecialFunctionHandler::handleGetErrno(ExecutionState &state,
 
 void SpecialFunctionHandler::handleErrnoLocation(
     ExecutionState &state, KInstruction *target,
-    std::vector<ref<Expr> > &arguments) {
+    const std::vector<klee::Cell> &arguments) {
   // Returns the address of the errno variable
   assert(arguments.size() == 0 &&
          "invalid number of arguments to __errno_location/__error");
@@ -758,7 +761,7 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
     return;
   }
 
-  name = arguments[2]->isZero() ? "" : readStringAtAddress(state, arguments[2]);
+  name = arguments[2].getValue()->isZero() ? "" : readStringAtAddress(state, arguments[2]);
 
   if (name.length() == 0) {
     name = "unnamed";
