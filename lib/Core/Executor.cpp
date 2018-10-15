@@ -1090,7 +1090,7 @@ void Executor::bindArgument(KFunction *kf, unsigned index,
 }
 
 ref<Expr> Executor::toUnique(const ExecutionState &state, 
-                             ref<Expr> &e) {
+                             const ref<Expr> &e) {
   ref<Expr> result = e;
 
   if (!isa<ConstantExpr>(e)) {
