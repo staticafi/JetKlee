@@ -263,7 +263,10 @@ public:
     from the solver and puts them in the concreteStore.
   */
   void flushToConcreteStore(TimingSolver *solver,
-                            const ExecutionState &state) const;
+                            const ExecutionState &state);
+  bool flushByteToConcreteStore(TimingSolver *solver,
+                                const ExecutionState &state,
+                                unsigned byte);
 
 private:
   const UpdateList &getUpdates() const;
@@ -347,6 +350,11 @@ public:
   void write64(unsigned offset, uint64_t segment, uint64_t value);
 
   ArrayCache *getArrayCache() const;
+
+  void flushToConcreteStore(TimingSolver *solver,
+                            const ExecutionState &state) const {
+        offsetPlane->flushToConcreteStore(solver, state);
+    }
 
 private:
   bool prepareSegmentPlane(bool nonzero);

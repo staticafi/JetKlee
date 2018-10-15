@@ -194,19 +194,32 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
 }
 
 void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
-                                       const ExecutionState &state) const {
-  for (unsigned i = 0; i < size; i++) {
-    if (isByteKnownSymbolic(i)) {
-      ref<ConstantExpr> ce;
-      bool success = solver->getValue(state, read8(i), ce);
-      if (!success)
+                                            const ExecutionState &state) {
+  for (unsigned i = 0; i < concreteStore.size(); i++) {
+    if (!flushByteToConcreteStore(solver, state, i)) {
         klee_warning("Solver timed out when getting a value for external call, "
                      "byte %p+%u will have random value",
-                     (void *)object->address, i);
-      else
-        ce->toMemory(concreteStore + i);
+                     (void *)parent->getObject()->address, i);
     }
   }
+}
+
+bool ObjectStatePlane::flushByteToConcreteStore(TimingSolver *solver,
+                                                const ExecutionState &state,
+                                                unsigned byte) {
+    if (isByteKnownSymbolic(byte)) {
+      ref<ConstantExpr> ce;
+      bool success = solver->getValue(state, read8(byte), ce);
+      if (success) {
+        uint8_t value;
+        ce->toMemory(&value);
+        concreteStore[byte] = value;
+      }
+
+      return success;
+    }
+
+    return true;
 }
 
 void ObjectStatePlane::makeConcrete() {
