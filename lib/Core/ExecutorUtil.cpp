@@ -206,24 +206,24 @@ namespace klee {
           continue;
 
         KValue addend;
+        // Handle a struct index, which adds its field offset to the pointer.
 #if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
         if (auto STy = ii.getStructTypeOrNull()) {
 #else
         if (StructType *STy = dyn_cast<StructType>(*ii)) {
 #endif
-          // Handle a struct index, which adds its field offset to the pointer.
           unsigned ElementIdx = indexOp->getZExtValue();
           const StructLayout *SL = kmodule->targetData->getStructLayout(STy);
           addend = KValue(ConstantExpr::alloc(SL->getElementOffset(ElementIdx),
                                               pointerWidth));
         } else {
-          const SequentialType *set = cast<SequentialType>(*ii);
-          KValue index = evalConstant(cast<Constant>(ii.getOperand()), ki);
-          unsigned elementSize = 
-            kmodule->targetData->getTypeStoreSize(set->getElementType());
-
-          index = index.ZExt(pointerWidth);
-          addend = index.Mul(KValue(ConstantExpr::alloc(elementSize, pointerWidth)));
+          // For array or vector indices, scale the index by the size of the type.
+          // Indices can be negative
+          addend = indexOp->SExt(Context::get().getPointerWidth());
+          addend.Mul(ConstantExpr::alloc(
+                       APInt(Context::get().getPointerWidth(),
+                             kmodule->targetData->getTypeAllocSize(
+                               ii.getIndexedType()))));
         }
 
         base = base.Add(addend);

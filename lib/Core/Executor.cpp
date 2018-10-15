@@ -2617,7 +2617,9 @@ void Executor::computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie) {
         kmodule->targetData->getTypeStoreSize(ptr->getElementType());
       auto operand = ii.getOperand();
       if (auto c = dyn_cast<Constant>(operand)) {
-        auto index = evalConstant(c)->SExt(Context::get().getPointerWidth());
+        auto index
+            = cast<ConstantExpr>(evalConstant(c).getValue())->SExt(
+                                    Context::get().getPointerWidth());
         auto addend = index->Mul(ConstantExpr::alloc(elementSize,
                                          Context::get().getPointerWidth()));
         constantOffset = constantOffset->Add(addend);
