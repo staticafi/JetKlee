@@ -165,7 +165,8 @@ bool AddressSpace::resolveOne(ExecutionState &state,
 }
 
 int AddressSpace::checkPointerInObject(ExecutionState &state,
-                                       TimingSolver *solver, ref<Expr> p,
+                                       TimingSolver *solver,
+                                       ref<Expr> segment, ref<Expr> addr,
                                        const ObjectPair &op, ResolutionList &rl,
                                        unsigned maxResolutions) const {
   // XXX I think there is some query wasteage here?
@@ -173,7 +174,7 @@ int AddressSpace::checkPointerInObject(ExecutionState &state,
   // mustBeTrue before mayBeTrue for the first result. easy
   // to add I just want to have a nice symbolic test case first.
   const MemoryObject *mo = op.first;
-  ref<Expr> inBounds = mo->getBoundsCheckPointer(p);
+  ref<Expr> inBounds = mo->getBoundsCheckPointer(segment, addr);
   bool mayBeTrue;
   if (!solver->mayBeTrue(state, inBounds, mayBeTrue)) {
     return 1;
@@ -251,7 +252,8 @@ bool AddressSpace::resolve(ExecutionState &state,
         return true;
 
       int incomplete =
-          checkPointerInObject(state, solver, p, *oi, rl, maxResolutions);
+          checkPointerInObject(state, solver, segment, p,
+                               *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
 
@@ -277,7 +279,8 @@ bool AddressSpace::resolve(ExecutionState &state,
         break;
 
       int incomplete =
-          checkPointerInObject(state, solver, p, *oi, rl, maxResolutions);
+          checkPointerInObject(state, solver, segment, p,
+                               *oi, rl, maxResolutions);
       if (incomplete != 2)
         return incomplete ? true : false;
     }
