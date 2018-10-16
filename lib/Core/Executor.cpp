@@ -2577,14 +2577,9 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       return;
     }
 
-    // evalConstant() will use ConcatExpr to build vectors with the
-    // zero-th element left most (most significant bits), followed
-    // by the next element (second left most) and so on. This means
-    // that we have to adjust the index so we read left to right
-    // rather than right to left.
-    unsigned bitOffset = EltBits*(vt->getNumElements() - iIdx -1);
+    unsigned bitOffset = EltBits * iIdx;
     KValue Result = vec.Extract(bitOffset, EltBits);
-    bindLocal(ki, state, Result);
+	bindLocal(ki, state, Result);
     break;
   }
   case Instruction::ShuffleVector:
