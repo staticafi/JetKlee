@@ -753,7 +753,7 @@ void SpecialFunctionHandler::handleGetValue(ExecutionState &state,
          "invalid number of arguments to klee_get_value");
 
   // TODO segment
-  executor.executeGetValue(state, arguments[0].value, target);
+  executor.executeGetValue(state, arguments[0], target);
 }
 
 void SpecialFunctionHandler::handleDefineFixedObject(ExecutionState &state,

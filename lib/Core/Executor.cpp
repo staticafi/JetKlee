@@ -1138,24 +1138,33 @@ Executor::toConstant(ExecutionState &state,
 }
 
 void Executor::executeGetValue(ExecutionState &state,
-                               ref<Expr> e,
+                               const KValue& kval,
                                KInstruction *target) {
-  e = state.constraints.simplifyExpr(e);
+  ref<Expr> expr = state.constraints.simplifyExpr(kval.getValue());
+  ref<Expr> segment = state.constraints.simplifyExpr(kval.getSegment());
+
   std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it = 
     seedMap.find(&state);
-  if (it==seedMap.end() || isa<ConstantExpr>(e)) {
-    ref<ConstantExpr> value;
-    e = optimizer.optimizeExpr(e, true);
-    bool success = solver->getValue(state, e, value);
+  if (it==seedMap.end() ||
+      (isa<ConstantExpr>(expr) && isa<ConstantExpr>(segment))) {
+    ref<ConstantExpr> off, seg;
+    expr = optimizer.optimizeExpr(expr, true);
+    bool success = solver->getValue(state, expr, off);
+    assert(success && "FIXME: Unhandled solver failure");
+
+    success = solver->getValue(state, segment, seg);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
-    // TODO segment
-    bindLocal(target, state, KValue(value));
+    bindLocal(target, state, KValue(seg, off));
   } else {
+    // This does not work with segments yet
+    assert(0 && "Not implemented with segments yet");
+    abort();
+
     std::set< ref<Expr> > values;
     for (std::vector<SeedInfo>::iterator siit = it->second.begin(), 
            siie = it->second.end(); siit != siie; ++siit) {
-      ref<Expr> cond = siit->assignment.evaluate(e);
+      ref<Expr> cond = siit->assignment.evaluate(expr);
       cond = optimizer.optimizeExpr(cond, true);
       ref<ConstantExpr> value;
       bool success = solver->getValue(state, cond, value);
@@ -1167,7 +1176,7 @@ void Executor::executeGetValue(ExecutionState &state,
     std::vector< ref<Expr> > conditions;
     for (std::set< ref<Expr> >::iterator vit = values.begin(), 
            vie = values.end(); vit != vie; ++vit)
-      conditions.push_back(EqExpr::create(e, *vit));
+      conditions.push_back(EqExpr::create(expr, *vit));
 
     std::vector<ExecutionState*> branches;
     branch(state, conditions, branches);
@@ -1176,9 +1185,10 @@ void Executor::executeGetValue(ExecutionState &state,
     for (std::set< ref<Expr> >::iterator vit = values.begin(), 
            vie = values.end(); vit != vie; ++vit) {
       ExecutionState *es = *bit;
-      if (es)
-        // TODO segment
+      if (es) {
+        assert(0 && "Need segment");
         bindLocal(target, *es, KValue(*vit));
+      }
       ++bit;
     }
   }
