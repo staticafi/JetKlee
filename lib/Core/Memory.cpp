@@ -186,7 +186,7 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
 
 void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
                                        const ExecutionState &state) {
-  for (unsigned i = 0; i < size; i++) {
+  for (unsigned i = 0; i < concreteStore.size(); i++) {
     if (isByteKnownSymbolic(i)) {
       ref<ConstantExpr> ce;
       bool success = solver->getValue(state, read8(i), ce);
