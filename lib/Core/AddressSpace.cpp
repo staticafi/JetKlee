@@ -237,9 +237,6 @@ bool AddressSpace::resolve(ExecutionState &state,
   if (isa<ConstantExpr>(pointer.getSegment()))
     return resolveConstantSegment(state, solver, pointer, rl, maxResolutions, timeout);
 
-  TimerStatIncrementer timer(stats::resolveTime);
-  uint64_t timeout_us = (uint64_t) (timeout*1000000.);
-
   bool mayBeTrue;
   ref<Expr> zeroSegment = ConstantExpr::create(0, pointer.getWidth());
   if (!solver->mayBeTrue(state, Expr::createIsZero(pointer.getSegment()), mayBeTrue))
@@ -249,8 +246,9 @@ bool AddressSpace::resolve(ExecutionState &state,
                                           rl, maxResolutions, timeout))
     return true;
   // TODO inefficient
+  TimerStatIncrementer timer(stats::resolveTime);
   for (const SegmentMap::value_type &res : segmentMap) {
-    if (timeout_us && timeout_us < timer.check())
+    if (timeout && timeout < timer.check())
       return true;
     ref<Expr> segmentExpr = ConstantExpr::create(res.first, pointer.getWidth());
     ref<Expr> expr = EqExpr::create(pointer.getSegment(), segmentExpr);
@@ -267,7 +265,7 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
                                           const KValue &pointer,
                                           ResolutionList &rl,
                                           unsigned maxResolutions,
-                                          double timeout) const {
+                                          time::Span timeout) const {
   if (!cast<ConstantExpr>(pointer.getSegment())->isZero()) {
     ObjectPair res;
     if (resolveConstantAddress(pointer, res))
@@ -276,8 +274,6 @@ bool AddressSpace::resolveConstantSegment(ExecutionState &state,
   }
 
   TimerStatIncrementer timer(stats::resolveTime);
-  uint64_t timeout_us = (uint64_t) (timeout*1000000.);
-
 
   // XXX in general this isn't exactly what we want... for
   // a multiple resolution case (or for example, a \in {b,c,0})

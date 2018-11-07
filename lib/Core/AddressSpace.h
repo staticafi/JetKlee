@@ -113,7 +113,7 @@ namespace klee {
                                 const KValue &pointer,
                                 ResolutionList &rl,
                                 unsigned maxResolutions=0,
-                                double timeout=0.) const;
+                                time::Span timeout=time::Span()) const;
 
     /***/
 
