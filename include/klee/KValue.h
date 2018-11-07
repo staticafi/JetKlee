@@ -126,6 +126,11 @@ namespace klee {
                     ExtractExpr::create(value, bitOff, width));
     }
 
+    ref<Expr> createIsZero() const {
+        return AndExpr::create(Expr::createIsZero(getSegment()),
+                               Expr::createIsZero(getOffset()));
+    }
+
     template <class T>
     static KValue concatValues(const T &input) {
       std::vector<ref<Expr> > segments;
