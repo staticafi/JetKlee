@@ -4010,7 +4010,7 @@ void Executor::resolveExact(ExecutionState &state,
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
-    ref<Expr> inBounds = address.Eq(it->first->getPointer()).getValue();
+    ref<Expr> inBounds = addressOptim.Eq(it->first->getPointer()).getValue();
 
     StatePair branches =
         fork(*unbound, inBounds, true, BranchType::ResolvePointer);
@@ -4024,7 +4024,7 @@ void Executor::resolveExact(ExecutionState &state,
 
   if (unbound) {
     terminateStateOnError(*unbound, "memory error: invalid pointer: " + name,
-                          StateTerminationType::Ptr, getAddressInfo(*unbound, address));
+                          StateTerminationType::Ptr, getAddressInfo(*unbound, addressOptim));
   }
 }
 
