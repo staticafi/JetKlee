@@ -4128,7 +4128,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                              optimizer.optimizeExpr(address.getOffset(), true));
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
-  bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
+  bool incomplete = state.addressSpace.resolve(state, solver, addressOptim, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(time::Span());
   
@@ -4172,7 +4172,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     } else {
       terminateStateOnError(*unbound, "memory error: out of bound pointer",
                             StateTerminationType::Ptr,
-                            getAddressInfo(*unbound, address));
+                            getAddressInfo(*unbound, addressOptim));
     }
   }
 }
