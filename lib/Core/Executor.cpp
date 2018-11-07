@@ -3295,25 +3295,28 @@ void Executor::executeAlloc(ExecutionState &state,
 void Executor::executeFree(ExecutionState &state,
                            const KValue &address,
                            KInstruction *target) {
-  address = optimizer.optimizeExpr(address.getOffset(), true);
-  StatePair zeroPointer = fork(state, Expr::createIsZero(address), true);
+  auto addressOptim
+    = KValue(address.getSegment(),
+             optimizer.optimizeExpr(address.getOffset(), true));
+
+  StatePair zeroPointer = fork(state, addressOptim.createIsZero(), true);
   if (zeroPointer.first) {
     if (target)
       bindLocal(target, *zeroPointer.first, KValue(Expr::createPointer(0)));
   }
   if (zeroPointer.second) { // address != 0
     ExactResolutionList rl;
-    resolveExact(*zeroPointer.second, address, rl, "free");
+    resolveExact(*zeroPointer.second, addressOptim, rl, "free");
     
     for (Executor::ExactResolutionList::iterator it = rl.begin(), 
            ie = rl.end(); it != ie; ++it) {
       const MemoryObject *mo = it->first.first;
       if (mo->isLocal) {
         terminateStateOnError(*it->second, "free of alloca", Free, NULL,
-                              getAddressInfo(*it->second, address));
+                              getAddressInfo(*it->second, addressOptim));
       } else if (mo->isGlobal) {
         terminateStateOnError(*it->second, "free of global", Free, NULL,
-                              getAddressInfo(*it->second, address));
+                              getAddressInfo(*it->second, addressOptim));
       } else {
         it->second->addressSpace.unbindObject(mo);
         if (target)
