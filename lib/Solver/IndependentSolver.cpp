@@ -499,9 +499,8 @@ bool IndependentSolver::computeInitialValues(const Query& query,
         } else {
           auto &tempPtr = retMap[array];
           // Dump all the new values into the array
-          auto val = tempAssignment->bindings.find(array);
-          if (val != tempAssignment->bindings.end())
-            tempPtr = MapArrayModel(val->second);
+          if (auto val = tempAssignment->getBindingsOrNull(array))
+            tempPtr = MapArrayModel(*val);
         }
       }
     }

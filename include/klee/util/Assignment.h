@@ -101,9 +101,6 @@ namespace klee {
     typedef std::map<const Array*, CompactArrayModel> bindings_ty;
     typedef std::map<const Array*, MapArrayModel> map_bindings_ty;
 
-    bindings_ty bindings;
-
-  public:
     Assignment() = default;
     Assignment(const bindings_ty bindings) : bindings(bindings) {}
     Assignment(const map_bindings_ty models) {
@@ -113,6 +110,23 @@ namespace klee {
       }
     }
 
+    CompactArrayModel& getBindings(const Array *a) {
+        return bindings[a];
+    }
+
+    const CompactArrayModel *getBindingsOrNull(const Array *a) const {
+        auto it = bindings.find(a);
+        if (it == bindings.end())
+            return nullptr;
+        return &it->second;
+    }
+
+    bool hasBindings(const Array *a) const {
+        return bindings.find(a) != bindings.end();
+    }
+
+    void addBinding(const Array*, const std::vector<unsigned char>& values);
+
     uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(ref<Expr> e) const;
@@ -121,6 +135,9 @@ namespace klee {
     template<typename InputIterator>
     bool satisfies(InputIterator begin, InputIterator end) const;
     void dump() const;
+
+  private:
+    bindings_ty bindings;
   };
 
   template <typename T>
