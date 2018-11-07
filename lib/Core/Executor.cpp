@@ -3798,7 +3798,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   std::shared_ptr<const Assignment> assignment(0);
   if (!state.symbolics.empty()) {
     bool success = solver->getInitialValues(tmp, assignment);
-    solver->setTimeout(0);
+    solver->setTimeout(time::Span());
     if (!success) {
       klee_warning("unable to compute initial values (invalid constraints?)!");
       ExprPPrinter::printQuery(llvm::errs(), state.constraints,
