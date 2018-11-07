@@ -29,6 +29,11 @@ namespace klee {
     ref<Expr> getOffset() const { return value; }
     ref<Expr> getSegment() const { return pointerSegment; }
 
+    ref<Expr> createIsZero() const {
+      return AndExpr::create(Expr::createIsZero(getSegment()),
+                             Expr::createIsZero(getOffset()));
+    }
+
     void set(ref<Expr> value) {
       this->value = value;
       this->pointerSegment = ConstantExpr::alloc(0, value->getWidth());
