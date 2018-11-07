@@ -1081,10 +1081,10 @@ ref<Expr> Executor::toUnique(const ExecutionState &state,
   if (!isa<ConstantExpr>(e)) {
     ref<ConstantExpr> value;
     bool isTrue = false;
-    e = optimizer.optimizeExpr(e, true);
+    auto expr = optimizer.optimizeExpr(e, true);
     solver->setTimeout(coreSolverTimeout);
-    if (solver->getValue(state, e, value)) {
-      ref<Expr> cond = EqExpr::create(e, value);
+    if (solver->getValue(state, expr, value)) {
+      ref<Expr> cond = EqExpr::create(expr, value);
       cond = optimizer.optimizeExpr(cond, false);
       if (solver->mustBeTrue(state, cond, isTrue) && isTrue)
         result = value;
