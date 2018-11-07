@@ -485,8 +485,7 @@ public:
   // Name of the array
   const std::string name;
 
-  // FIXME: Not 64-bit clean.
-  const unsigned size;
+  const size_t size;
 
   /// Domain is how many bits can be used to access the array [32 bits]
   /// Range is the size (in bits) of the number stored there (array of bytes -> 8)
@@ -523,6 +522,10 @@ private:
 public:
   bool isSymbolicArray() const { return constantValues.empty(); }
   bool isConstantArray() const { return !isSymbolicArray(); }
+
+  size_t getConstantSize() const {
+      return size;
+  }
 
   const std::string getName() const { return name; }
   unsigned getSize() const { return size; }
