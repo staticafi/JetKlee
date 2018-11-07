@@ -3768,7 +3768,7 @@ void Executor::callExternalFunction(ExecutionState &state,
   for (std::vector<Cell>::const_iterator ai = arguments.begin(),
        ae = arguments.end(); ai!=ae; ++ai) {
     if (ExternalCalls == ExternalCallPolicy::All) { // don't bother checking uniqueness
-      auto value = optimizer.optimizeExpr(ai->value, true);
+      auto value = optimizer.optimizeExpr(ai->getValue(), true);
       ref<ConstantExpr> ce;
       // TODO segment
       bool success =
