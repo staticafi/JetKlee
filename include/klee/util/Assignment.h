@@ -104,6 +104,7 @@ namespace klee {
     bindings_ty bindings;
 
   public:
+    Assignment() = default;
     Assignment(const bindings_ty bindings) : bindings(bindings) {}
     Assignment(const map_bindings_ty models) {
       for (const auto &pair : models) {
