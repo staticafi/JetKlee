@@ -3122,8 +3122,20 @@ void Executor::callExternalFunction(ExecutionState &state,
       }
       wordIndex += (ce->getWidth()+63)/64;
     } else {
-      // TODO segment
-      ref<Expr> arg = toUnique(state, ai->value);
+      // we are allowed external calls with concrete arguments only
+      auto segmentExpr = toUnique(state, ai->getSegment());
+      if (!isa<ConstantExpr>(segmentExpr)) {
+        terminateStateOnExecError(state,
+                                  "external call with symbolic segment argument: " + 
+                                  function->getName());
+        return;
+      }
+
+      if (!segmentExpr->isZero()) {
+          klee_warning("passing pointer to external call, may not work properly");
+      }
+
+      ref<Expr> arg = toUnique(state, ai->getValue());
       if (ConstantExpr *ce = dyn_cast<ConstantExpr>(arg)) {
         // XXX kick toMemory functions from here
         ce->toMemory(&args[wordIndex]);
