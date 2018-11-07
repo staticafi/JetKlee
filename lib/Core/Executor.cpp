@@ -3106,10 +3106,10 @@ void Executor::callExternalFunction(ExecutionState &state,
   for (std::vector<Cell>::const_iterator ai = arguments.begin(),
        ae = arguments.end(); ai!=ae; ++ai) {
     if (ExternalCalls == ExternalCallPolicy::All) { // don't bother checking uniqueness
-      *ai = optimizer.optimizeExpr(*ai, true);
+      auto value = optimizer.optimizeExpr(ai->getValue(), true);
       ref<ConstantExpr> ce;
       // TODO segment
-      bool success = solver->getValue(state, ai->value, ce);
+      bool success = solver->getValue(state, value, ce);
       assert(success && "FIXME: Unhandled solver failure");
       ce->toMemory(&args[wordIndex]);
       ObjectPair op;
