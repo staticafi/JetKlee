@@ -3387,7 +3387,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   }
 
   address = KValue(address.getSegment(),
-                   optimizer.optimizeExpr(addressOffset, true));
+                   optimizer.optimizeExpr(address.getOffset(), true));
 
   // fast path: single in-bounds resolution
   ObjectPair op;
@@ -3411,7 +3411,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     }
 
     ref<Expr> offset = mo->getOffsetExpr(address.getOffset());
-    ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes),
+    ref<Expr> check = mo->getBoundsCheckOffset(offset, bytes);
     check = optimizer.optimizeExpr(check, true);
 
     bool inBounds;
@@ -3452,10 +3452,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   // we are on an error path (no resolution, multiple resolution, one
   // resolution with out of bounds)
 
-  address = optimizer.optimizeExpr(address, true);
+  auto optimAddress = KValue(address.getSegment(),
+                             optimizer.optimizeExpr(address.getOffset(), true));
   ResolutionList rl;  
   solver->setTimeout(coreSolverTimeout);
-  bool incomplete = state.addressSpace.resolve(state, solver, address, rl,
+  bool incomplete = state.addressSpace.resolve(state, solver, optimAddress, rl,
                                                0, coreSolverTimeout);
   solver->setTimeout(time::Span());
   
@@ -3465,7 +3466,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
     const MemoryObject *mo = i->first;
     const ObjectState *os = i->second;
-    ref<Expr> inBounds = mo->getBoundsCheckPointer(address, bytes);
+    ref<Expr> inBounds = mo->getBoundsCheckPointer(optimAddress, bytes);
     
     StatePair branches = fork(*unbound, inBounds, true);
     ExecutionState *bound = branches.first;
@@ -3479,10 +3480,10 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
-          wos->write(mo->getOffsetExpr(address.getOffset()), value);
+          wos->write(mo->getOffsetExpr(optimAddress.getOffset()), value);
         }
       } else {
-        KValue result = os->read(mo->getOffsetExpr(address.getOffset()), type);
+        KValue result = os->read(mo->getOffsetExpr(optimAddress.getOffset()), type);
         bindLocal(target, *bound, result);
       }
     }
@@ -3498,7 +3499,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
       terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
-                            NULL, getAddressInfo(*unbound, address));
+                            NULL, getAddressInfo(*unbound, optimAddress));
     }
   }
 }
