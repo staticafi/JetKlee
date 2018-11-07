@@ -115,4 +115,15 @@ std::vector<uint8_t> CompactArrayModel::asVector() const {
 void CompactArrayModel::dump() const {
   // TODO
 }
+
+
+void Assignment::addBinding(const Array*array,
+                            const std::vector<unsigned char>& values) {
+    assert(!hasBindings(array));
+
+    MapArrayModel mapModel(values);
+    auto &binding = bindings[array];
+    mapModel.toCompact(binding);
+}
+
 }

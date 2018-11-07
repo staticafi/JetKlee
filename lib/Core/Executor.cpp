@@ -4475,11 +4475,10 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   for (size_t i = 0; i < state.symbolics.size(); ++i) {
     const auto &mo = state.symbolics[i].first;
     const Array *array = state.symbolics[i].second;
-    auto it = assignment->bindings.find(array);
     std::vector<uint8_t> data;
     data.reserve(sizes[i]);
-    if (it != assignment->bindings.end()) {
-      data = it->second.asVector();
+    if (auto vals = assignment->getBindingsOrNull(array)) {
+      data = vals->asVector();
     }
     data.resize(sizes[i]);
     res.push_back(std::make_pair(mo->name, data));
