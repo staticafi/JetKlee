@@ -3330,15 +3330,16 @@ void Executor::resolveExact(ExecutionState &state,
                             const KValue &address,
                             ExactResolutionList &results, 
                             const std::string &name) {
-  p = optimizer.optimizeExpr(p, true);
+  auto optimAddress = KValue(address.getSegment(),
+                             optimizer.optimizeExpr(address.getOffset(), true));
   // XXX we may want to be capping this?
   ResolutionList rl;
-  state.addressSpace.resolve(state, solver, address, rl);
+  state.addressSpace.resolve(state, solver, optimAddress, rl);
   
   ExecutionState *unbound = &state;
   for (ResolutionList::iterator it = rl.begin(), ie = rl.end(); 
        it != ie; ++it) {
-    ref<Expr> inBounds = address.Eq(it->first->getPointer()).getValue();
+    ref<Expr> inBounds = optimAddress.Eq(it->first->getPointer()).getValue();
     
     StatePair branches = fork(*unbound, inBounds, true);
     
@@ -3352,7 +3353,7 @@ void Executor::resolveExact(ExecutionState &state,
 
   if (unbound) {
     terminateStateOnError(*unbound, "memory error: invalid pointer: " + name,
-                          Ptr, NULL, getAddressInfo(*unbound, address));
+                          Ptr, NULL, getAddressInfo(*unbound, optimAddress));
   }
 }
 
