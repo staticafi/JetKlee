@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <set>
+#include <vector>
 #include <cstdint>
 
 namespace llvm {
@@ -36,13 +37,30 @@ class MmapAllocation {
 
 public:
   MmapAllocation() = default;
+  MmapAllocation(size_t spacesize, void *expectedAddr = nullptr, int flags = 0);
+  MmapAllocation(MmapAllocation&&);
+  MmapAllocation(const MmapAllocation&) = delete;
   ~MmapAllocation();
 
+  void initialize(size_t datasize, void *expectedAddr = nullptr, int flags = 0);
   bool hasSpace(size_t size, size_t alignment) const;
   void *allocate(size_t size, size_t alignment);
   size_t getUsedSize() const;
+};
 
-  void initialize(size_t datasize, void *expectedAddr = nullptr, int flags = 0);
+class MemoryAllocator {
+    bool deterministic{false};
+
+    MmapAllocation deterministicMem{};
+public:
+    MemoryAllocator(bool determ, size_t determ_size, void *expectedAddr);
+
+    void *allocate(size_t size, size_t alignment);
+    void deallocate(void *);
+
+    size_t getUsedDeterministicSize() const {
+        return deterministicMem.getUsedSize();
+    }
 };
 
 class MemoryManager {
@@ -51,8 +69,8 @@ private:
   objects_ty objects;
   ArrayCache *const arrayCache;
 
+  MemoryAllocator allocator;
   uint64_t lastSegment;
-  MmapAllocation deterministicMem;
 public:
   MemoryManager(ArrayCache *arrayCache);
   ~MemoryManager();

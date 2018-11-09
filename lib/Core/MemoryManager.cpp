@@ -89,6 +89,14 @@ void MmapAllocation::initialize() {
     assert(data != nullptr && dataSize > 0);
 }
 
+MmapAllocation::MmapAllocation(MmapAllocation&& rhs)
+ : data(rhs.data),
+   nextFreeSlot(rhs.nextFreeSlot),
+   dataSize(rhs.dataSize) {
+  rhs.data = rhs.nextFreeSlot = nullptr;
+  rhs.dataSize = 0;
+}
+
 MmapAllocation::~MmapAllocation() {
   if (data)
     munmap(data, dataSize);
@@ -113,21 +121,60 @@ size_t MmapAllocation::getUsedSize() const {
     return (unsigned char *)nextFreeSlot - (unsigned char *)data;
 }
 
-/***/
-MemoryManager::MemoryManager(ArrayCache *_arrayCache)
-    : arrayCache(_arrayCache), lastSegment(0) {
-  if (DeterministicAllocation) {
-    deterministicMem.initialize(
-      DeterministicAllocationSize.getValue() * 1024 * 1024,
-      (void *)DeterministicStartAddress.getValue());
+MemoryAllocator::MemoryAllocator(bool determ,
+                                 size_t determ_size,
+                                 void *expectedAddr)
+  : deterministic(determ) {
+  if (deterministic) {
+      deterministicMem.initialize(determ_size, expectedAddr);
   }
 }
+
+void *MemoryAllocator::allocate(size_t size, size_t alignment) {
+  if (deterministic) {
+    auto address = deterministicMem.allocate(size + RedzoneSize, alignment);
+    if (!address) {
+      klee_warning_once(0, "Couldn't allocate %" PRIu64
+                           " bytes. Not enough deterministic space left.",
+                        size);
+    }
+    return address;
+  } else {
+    // Use malloc for the standard case
+    if (alignment <= 8)
+      return malloc(size);
+    else {
+      void *address = nullptr;
+      int res = posix_memalign(&address, alignment, size);
+      if (res < 0) {
+        klee_warning("Allocating aligned memory failed.");
+        return nullptr;
+      }
+
+      return address;
+    }
+  }
+}
+
+void MemoryAllocator::deallocate(void *mem) {
+  // deterministic memory will be munmap'ed
+  if (!deterministic)
+    free(mem);
+}
+
+/***/
+MemoryManager::MemoryManager(ArrayCache *_arrayCache)
+    : arrayCache(_arrayCache),
+      allocator(DeterministicAllocation,
+                DeterministicAllocationSize.getValue() * 1024 * 1024,
+                (void *)DeterministicStartAddress.getValue()),
+      lastSegment(0) {}
 
 MemoryManager::~MemoryManager() {
   while (!objects.empty()) {
     MemoryObject *mo = *objects.begin();
-    if (!mo->isFixed && !DeterministicAllocation)
-      free((void *)mo->address);
+    if (!mo->isFixed)
+      allocator.deallocate((void *)mo->address);
     objects.erase(mo);
     delete mo;
   }
@@ -166,40 +213,21 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
     return 0;
   }
 
-  uint64_t address = 0;
   if (DeterministicAllocation) {
     // Handle the case of 0-sized allocations as 1-byte allocations.
     // This way, we make sure we have this allocation between its own red zones
-    size_t alloc_size = std::max(concreteSize, (uint64_t)1);
-    if (deterministicMem.hasSpace(alloc_size + RedzoneSize, alignment)) {
-        address = (uint64_t)deterministicMem.allocate(alloc_size + RedzoneSize,
-                                                      alignment);
-    } else {
-      klee_warning_once(0, "Couldn't allocate %" PRIu64
-                           " bytes. Not enough deterministic space left.",
-                        concreteSize);
-      address = 0;
-    }
+    concreteSize = std::max(concreteSize, (uint64_t)1);
   } else {
     // allocate 1 byte for symbolic-size allocation, just so we get an address
-    size_t alloc_size = hasConcreteSize ? concreteSize : 1;
-    // Use malloc for the standard case
-    if (alignment <= 8)
-      address = (uint64_t)malloc(alloc_size);
-    else {
-      int res = posix_memalign((void **)&address, alignment, alloc_size);
-      if (res < 0) {
-        klee_warning("Allocating aligned memory failed.");
-        address = 0;
-      }
-    }
+    concreteSize = hasConcreteSize ? concreteSize : 1;
   }
 
+  auto address = allocator.allocate(concreteSize, alignment);
   if (!address)
     return 0;
 
   ++stats::allocations;
-  MemoryObject *res = new MemoryObject(++lastSegment, address, size, isLocal,
+  MemoryObject *res = new MemoryObject(++lastSegment, (uint64_t)address, size, isLocal,
                                        isGlobal, false, allocSite, this);
   objects.insert(res);
   return res;
@@ -232,12 +260,12 @@ void MemoryManager::deallocate(const MemoryObject *mo) { assert(0); }
 
 void MemoryManager::markFreed(MemoryObject *mo) {
   if (objects.find(mo) != objects.end()) {
-    if (!mo->isFixed && !DeterministicAllocation)
-      free((void *)mo->address);
+    if (!mo->isFixed)
+      allocator.deallocate((void *)mo->address);
     objects.erase(mo);
   }
 }
 
 size_t MemoryManager::getUsedDeterministicSize() const {
-  return deterministicMem.getUsedSize();
+  return allocator.getUsedDeterministicSize();
 }
