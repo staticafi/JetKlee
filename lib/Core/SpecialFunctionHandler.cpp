@@ -850,9 +850,10 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
 
   // if we already have such a name, attach a number as a suffix
   // to be able to tell the objects apart
-  auto it = state.symbolicNames.find(name);
-  if (it == state.symbolicNames.end()) {
-      state.symbolicNames.emplace_hint(it, name, 0);
+  auto symNames = state.symbolicNames.getWriteable();
+  auto it = symNames->find(name);
+  if (it == symNames->end()) {
+      symNames->emplace_hint(it, name, 0);
   } else {
       name += ":" + std::to_string(++it->second);
   }

@@ -65,6 +65,36 @@ struct StackFrame {
   ~StackFrame();
 };
 
+/// Shared pointer with copy-on-write support
+template <typename T>
+class cow_shared_ptr {
+  std::shared_ptr<T> ptr{nullptr};
+  // am I the owner of the copy?
+  bool owner{false};
+
+public:
+  cow_shared_ptr() = default;
+  cow_shared_ptr(T *p) : ptr(p) {}
+  cow_shared_ptr(cow_shared_ptr&&) = delete;
+  cow_shared_ptr(const cow_shared_ptr& rhs)
+      : ptr(rhs.ptr), owner(false) {}
+
+  const T *get() const { return ptr.get(); }
+
+  T *getWriteable() {
+    if (owner)
+      return ptr.get();
+    // create a copy of the object and claim the ownership
+    if (ptr) {
+      ptr.reset(new T(*get()));
+    } else {
+      ptr.reset(new T());
+    }
+    owner = true;
+    return ptr.get();
+  }
+};
+
 /// Contains information related to unwinding (Itanium ABI/2-Phase unwinding)
 class UnwindingInformation {
 public:
@@ -160,7 +190,7 @@ public:
 
   /// @brief A set of symbolic names assigned using klee_make_symbolic.
   /// A counter is associated to every name to allow numbering the same names.
-  std::map<const std::string, unsigned int> symbolicNames;
+  cow_shared_ptr<std::map<const std::string, unsigned int>> symbolicNames;
 
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
