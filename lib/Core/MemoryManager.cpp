@@ -100,6 +100,14 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
   return allocate(sizeExpr, isLocal, isGlobal, allocSite, alignment);
 }
 
+static inline uint64_t alignAddress(uint64_t address, size_t alignment) {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
+    return llvm::alignTo(address, alignment);
+#else
+    return llvm::RoundUpToAlignment(address, alignment);
+#endif
+}
+
 MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
                                       bool isGlobal,
                                       const llvm::Value *allocSite,
@@ -127,13 +135,7 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
 
   uint64_t address = 0;
   if (DeterministicAllocation) {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
-    address = llvm::alignTo((uint64_t)nextFreeSlot + alignment - 1, alignment);
-#else
-    address = llvm::RoundUpToAlignment((uint64_t)nextFreeSlot + alignment - 1,
-                                       alignment);
-#endif
-
+    address = alignAddress((uint64_t)nextFreeSlot + alignment - 1, alignment);
     // Handle the case of 0-sized allocations as 1-byte allocations.
     // This way, we make sure we have this allocation between its own red zones
     size_t alloc_size = std::max(concreteSize, (uint64_t)1);
