@@ -22,15 +22,27 @@ namespace klee {
 class MemoryObject;
 class ArrayCache;
 
+struct MmapAllocation {
+  void *deterministicSpace{nullptr};
+  void *nextFreeSlot{nullptr};
+  size_t spaceSize{0};
+
+  void initialize(size_t size);
+  void *getNextFreeSlot(size_t alignment) const;
+  bool hasSpace(size_t size, size_t alignment) const;
+  void *allocate(size_t size, size_t alignment);
+  size_t getUsedSize() const;
+
+  ~MmapAllocation();
+};
+
 class MemoryManager {
 private:
   typedef std::set<MemoryObject *> objects_ty;
   objects_ty objects;
   ArrayCache *const arrayCache;
 
-  char *deterministicSpace;
-  char *nextFreeSlot;
-  size_t spaceSize;
+  MmapAllocation deterministicMem{};
   uint64_t lastSegment;
 
 public:
@@ -54,7 +66,7 @@ public:
   /*
    * Returns the size used by deterministic allocation in bytes
    */
-  size_t getUsedDeterministicSize();
+  size_t getUsedDeterministicSize() const;
 };
 
 } // End klee namespace
