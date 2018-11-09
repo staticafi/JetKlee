@@ -58,17 +58,14 @@ llvm::cl::opt<unsigned long long> DeterministicStartAddress(
     llvm::cl::init(0x7ff30000000), llvm::cl::cat(MemoryCat));
 } // namespace
 
-/***/
-MemoryManager::MemoryManager(ArrayCache *_arrayCache)
-    : arrayCache(_arrayCache), deterministicSpace(0), nextFreeSlot(0),
-      spaceSize(DeterministicAllocationSize.getValue() * 1024 * 1024),
-      lastSegment(0) {
-  if (DeterministicAllocation) {
+void MmapAllocation::initialize(size_t size) {
+    assert(deterministicSpace == nullptr && spaceSize == 0);
+
     // Page boundary
     void *expectedAddress = (void *)DeterministicStartAddress.getValue();
 
     char *newSpace =
-        (char *)mmap(expectedAddress, spaceSize, PROT_READ | PROT_WRITE,
+        (char *)mmap(expectedAddress, size, PROT_READ | PROT_WRITE,
                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
     if (newSpace == MAP_FAILED) {
@@ -81,6 +78,38 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache)
     klee_message("Deterministic memory allocation starting from %p", newSpace);
     deterministicSpace = newSpace;
     nextFreeSlot = newSpace;
+    spaceSize = size;
+}
+
+MmapAllocation::~MmapAllocation() {
+  if (deterministicSpace)
+    munmap(deterministicSpace, spaceSize);
+}
+
+void *MmapAllocation::getNextFreeSlot(size_t alignment) const {
+  return (void *)llvm::alignTo((uint64_t)nextFreeSlot + alignment - 1, alignment);
+}
+
+bool MmapAllocation::hasSpace(size_t size, size_t alignment) const {
+  return ((unsigned char *)getNextFreeSlot(alignment) + size
+           < (unsigned char *)deterministicSpace + spaceSize);
+}
+
+void *MmapAllocation::allocate(size_t size, size_t alignment) {
+  auto address = getNextFreeSlot(alignment);
+  nextFreeSlot = ((unsigned char *)address) + size;
+  return address;
+}
+
+size_t MmapAllocation::getUsedSize() const {
+    return (unsigned char *)nextFreeSlot - (unsigned char *)deterministicSpace;
+}
+
+/***/
+MemoryManager::MemoryManager(ArrayCache *_arrayCache)
+    : arrayCache(_arrayCache), lastSegment(0) {
+  if (DeterministicAllocation) {
+    deterministicMem.initialize(DeterministicAllocationSize.getValue() * 1024 * 1024);
   }
 }
 
@@ -92,9 +121,6 @@ MemoryManager::~MemoryManager() {
     objects.erase(mo);
     delete mo;
   }
-
-  if (DeterministicAllocation)
-    munmap(deterministicSpace, spaceSize);
 }
 
 MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
@@ -132,13 +158,12 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
 
   uint64_t address = 0;
   if (DeterministicAllocation) {
-    address = llvm::alignTo((uint64_t)nextFreeSlot + alignment - 1, alignment);
-
     // Handle the case of 0-sized allocations as 1-byte allocations.
     // This way, we make sure we have this allocation between its own red zones
     size_t alloc_size = std::max(concreteSize, (uint64_t)1);
-    if ((char *)address + alloc_size < deterministicSpace + spaceSize) {
-      nextFreeSlot = (char *)address + alloc_size + RedzoneSize;
+    if (deterministicMem.hasSpace(alloc_size + RedzoneSize, alignment)) {
+        address = (uint64_t)deterministicMem.allocate(alloc_size + RedzoneSize,
+                                                      alignment);
     } else {
       klee_warning_once(0, "Couldn't allocate %" PRIu64
                            " bytes. Not enough deterministic space left.",
@@ -203,6 +228,6 @@ void MemoryManager::markFreed(MemoryObject *mo) {
   }
 }
 
-size_t MemoryManager::getUsedDeterministicSize() {
-  return nextFreeSlot - deterministicSpace;
+size_t MemoryManager::getUsedDeterministicSize() const {
+  return deterministicMem.getUsedSize();
 }
