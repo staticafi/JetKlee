@@ -22,18 +22,25 @@ namespace klee {
 class MemoryObject;
 class ArrayCache;
 
-struct MmapAllocation {
-  void *deterministicSpace{nullptr};
+class MmapAllocation {
+  void *data{nullptr};
   void *nextFreeSlot{nullptr};
-  size_t spaceSize{0};
+  size_t dataSize{0};
+  void *expectedAddress{nullptr};
+  int flags{0};
 
-  void initialize(size_t size);
   void *getNextFreeSlot(size_t alignment) const;
+  void initialize();
+
+public:
+  MmapAllocation() = default;
+  ~MmapAllocation();
+
   bool hasSpace(size_t size, size_t alignment) const;
   void *allocate(size_t size, size_t alignment);
   size_t getUsedSize() const;
 
-  ~MmapAllocation();
+  void initialize(size_t datasize, void *expectedAddr = nullptr, int flags = 0);
 };
 
 class MemoryManager {
@@ -42,9 +49,8 @@ private:
   objects_ty objects;
   ArrayCache *const arrayCache;
 
-  MmapAllocation deterministicMem{};
   uint64_t lastSegment;
-
+  MmapAllocation deterministicMem;
 public:
   MemoryManager(ArrayCache *arrayCache);
   ~MemoryManager();
