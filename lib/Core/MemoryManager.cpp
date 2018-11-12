@@ -58,32 +58,40 @@ llvm::cl::opt<unsigned long long> DeterministicStartAddress(
     llvm::cl::init(0x7ff30000000), llvm::cl::cat(MemoryCat));
 } // namespace
 
-void MmapAllocation::initialize(size_t size) {
-    assert(deterministicSpace == nullptr && spaceSize == 0);
+void MmapAllocation::initialize(size_t spacesize, void *expectedAddr, int flgs) {
+    dataSize = spacesize;
+    expectedAddress = expectedAddr;
+    flags = flgs;
+    initialize();
+}
 
-    // Page boundary
-    void *expectedAddress = (void *)DeterministicStartAddress.getValue();
+void MmapAllocation::initialize() {
+    assert(data == nullptr && dataSize > 0);
 
     char *newSpace =
-        (char *)mmap(expectedAddress, size, PROT_READ | PROT_WRITE,
-                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        (char *)mmap(expectedAddress, dataSize, PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE | flags, -1, 0);
 
     if (newSpace == MAP_FAILED) {
       klee_error("Couldn't mmap() memory for deterministic allocations");
     }
-    if (expectedAddress != newSpace && expectedAddress != 0) {
+    if (expectedAddress != newSpace && expectedAddress != nullptr) {
       klee_error("Could not allocate memory deterministically");
     }
 
-    klee_message("Deterministic memory allocation starting from %p", newSpace);
-    deterministicSpace = newSpace;
+    if (expectedAddress != nullptr) {
+      klee_message("Deterministic memory allocation starting from %p", newSpace);
+    }
+
+    data = newSpace;
     nextFreeSlot = newSpace;
-    spaceSize = size;
+
+    assert(data != nullptr && dataSize > 0);
 }
 
 MmapAllocation::~MmapAllocation() {
-  if (deterministicSpace)
-    munmap(deterministicSpace, spaceSize);
+  if (data)
+    munmap(data, dataSize);
 }
 
 void *MmapAllocation::getNextFreeSlot(size_t alignment) const {
@@ -92,7 +100,7 @@ void *MmapAllocation::getNextFreeSlot(size_t alignment) const {
 
 bool MmapAllocation::hasSpace(size_t size, size_t alignment) const {
   return ((unsigned char *)getNextFreeSlot(alignment) + size
-           < (unsigned char *)deterministicSpace + spaceSize);
+           < (unsigned char *)data + dataSize);
 }
 
 void *MmapAllocation::allocate(size_t size, size_t alignment) {
@@ -102,14 +110,16 @@ void *MmapAllocation::allocate(size_t size, size_t alignment) {
 }
 
 size_t MmapAllocation::getUsedSize() const {
-    return (unsigned char *)nextFreeSlot - (unsigned char *)deterministicSpace;
+    return (unsigned char *)nextFreeSlot - (unsigned char *)data;
 }
 
 /***/
 MemoryManager::MemoryManager(ArrayCache *_arrayCache)
     : arrayCache(_arrayCache), lastSegment(0) {
   if (DeterministicAllocation) {
-    deterministicMem.initialize(DeterministicAllocationSize.getValue() * 1024 * 1024);
+    deterministicMem.initialize(
+      DeterministicAllocationSize.getValue() * 1024 * 1024,
+      (void *)DeterministicStartAddress.getValue());
   }
 }
 
