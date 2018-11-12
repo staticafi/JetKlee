@@ -46,15 +46,33 @@ public:
   size_t getUsedSize() const;
 };
 
+class MmapAllocator {
+  size_t blockSize{4096};
+  int flags{0};
+  std::vector<MmapAllocation> blocks;
+
+public:
+  MmapAllocator(size_t blksize = 4096, int flags = 0)
+   : blockSize(blksize), flags(flags) {}
+
+  void *allocate(size_t size, size_t alignment);
+  size_t getUsedSize() const;
+};
+
+
 class MemoryAllocator {
     bool deterministic{false};
+    // allocate memory on lower 32bit memory space
+    bool lowmem{false};
 
     MmapAllocation deterministicMem{};
+    MmapAllocator lowmemAllocator{};
 public:
-    MemoryAllocator(bool determ, size_t determ_size, void *expectedAddr);
+    MemoryAllocator(bool determ, bool lowmem, size_t determ_size, void *expectedAddr);
 
     void *allocate(size_t size, size_t alignment);
     void deallocate(void *);
+    void useLowMemory(bool lm);
 
     size_t getUsedDeterministicSize() const {
         return deterministicMem.getUsedSize();
@@ -70,7 +88,8 @@ private:
   MemoryAllocator allocator;
   uint64_t lastSegment;
 public:
-  MemoryManager(ArrayCache *arrayCache);
+  MemoryManager(ArrayCache *arrayCache,
+                unsigned pointerWidth = 64);
   ~MemoryManager();
 
   /**
@@ -86,6 +105,9 @@ public:
   void deallocate(const MemoryObject *mo);
   void markFreed(MemoryObject *mo);
   ArrayCache *getArrayCache() const { return arrayCache; }
+  void useLowMemory(bool lm) {
+    allocator.useLowMemory(lm);
+  }
 
   /*
    * Returns the size used by deterministic allocation in bytes
