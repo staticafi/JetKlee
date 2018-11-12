@@ -58,6 +58,11 @@ llvm::cl::opt<unsigned long long> DeterministicStartAddress(
     llvm::cl::init(0x7ff30000000), llvm::cl::cat(MemoryCat));
 } // namespace
 
+MmapAllocation::MmapAllocation(size_t spacesize, void *expectedAddr, int flgs)
+  : dataSize(spacesize), expectedAddress(expectedAddr), flags(flgs) {
+      initialize();
+}
+
 void MmapAllocation::initialize(size_t spacesize, void *expectedAddr, int flgs) {
     dataSize = spacesize;
     expectedAddress = expectedAddr;
@@ -122,11 +127,17 @@ size_t MmapAllocation::getUsedSize() const {
 }
 
 MemoryAllocator::MemoryAllocator(bool determ,
+                                 bool lowmem,
                                  size_t determ_size,
                                  void *expectedAddr)
-  : deterministic(determ) {
+  : deterministic(determ), lowmemAllocator(4096, MAP_32BIT) {
   if (deterministic) {
+      klee_message("Allocating memory deterministically");
       deterministicMem.initialize(determ_size, expectedAddr);
+  }
+
+  if (lowmem) {
+      klee_message("Allocating memory with 32-bits addresses");
   }
 }
 
@@ -139,6 +150,8 @@ void *MemoryAllocator::allocate(size_t size, size_t alignment) {
                         size);
     }
     return address;
+  } else if (lowmem) {
+      return lowmemAllocator.allocate(size, alignment);
   } else {
     // Use malloc for the standard case
     if (alignment <= 8)
@@ -158,14 +171,40 @@ void *MemoryAllocator::allocate(size_t size, size_t alignment) {
 
 void MemoryAllocator::deallocate(void *mem) {
   // deterministic memory will be munmap'ed
-  if (!deterministic)
+  if (!deterministic && !lowmem)
     free(mem);
 }
 
+void MemoryAllocator::useLowMemory(bool lm) {
+  lowmem = lm;
+  // deterministic memory will be munmap'ed
+  if (lowmem) {
+    klee_message("Allocating memory with 32-bits addresses");
+  }
+}
+
+void *MmapAllocator::allocate(size_t size, size_t alignment) {
+  for (auto& block : blocks) {
+    if (block.hasSpace(size, alignment))
+      return block.allocate(size, alignment);
+  }
+
+  blocks.emplace_back(blockSize, nullptr, flags);
+  return blocks.back().allocate(size, alignment);
+}
+
+size_t MmapAllocator::getUsedSize() const {
+    size_t size = 0;
+    for (const auto& block : blocks)
+        size += block.getUsedSize();
+    return size;
+}
+
 /***/
-MemoryManager::MemoryManager(ArrayCache *_arrayCache)
+MemoryManager::MemoryManager(ArrayCache *_arrayCache, unsigned pointerWidth)
     : arrayCache(_arrayCache),
       allocator(DeterministicAllocation,
+                pointerWidth == 32,
                 DeterministicAllocationSize.getValue() * 1024 * 1024,
                 (void *)DeterministicStartAddress.getValue()),
       lastSegment(0) {}
