@@ -18,6 +18,8 @@
 
 #include "llvm/ADT/StringExtras.h"
 
+#include <vector>
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -212,6 +214,65 @@ private:
   }
 };
 
+// up to some offset this container is implemented
+// as a vector and from some offset as a map
+// (leveraging the assumption that large offsets will
+// be sparse). Threshold is the maximal number of elements
+// in the vector.
+// This class is specialized for our needs, it is not generic...
+template <typename T, const size_t Threshold = (1 << 18)>
+class SparseVector {
+    std::vector<T> _vector;
+    std::unordered_map<size_t, T> _map;
+
+public:
+    const T& operator[](size_t n) const {
+        if (n < Threshold) {
+            assert(n < _vector.size());
+            assert(_vector[n].get() != nullptr && "Use has() before");
+            return _vector[n];
+        } else {
+            auto it = _map.find(n);
+            if (it == _map.end()) {
+                assert(false && "Cannot happen, must use has() before");
+                abort();
+            }
+            assert(it->second.get() != nullptr);
+            return it->second;
+        }
+    }
+
+    void set(size_t n, const T& val) {
+        if (n < Threshold) {
+            if (_vector.size() <= n) {
+              if (val.get() == nullptr) {
+                return;
+              }
+              // make sure the access will be valid
+              _vector.resize(n + 1);
+            }
+
+            assert(_vector.size() > n);
+            _vector[n] = val;
+        } else {
+            if (val.get() == nullptr) {
+                _map.erase(n);
+            } else
+                _map[n] = val;
+        }
+    }
+
+    void clear() {
+        _vector.clear();
+        _map.clear();
+    }
+
+    bool has(size_t n) const {
+        return (_vector.size() > n && _vector[n].get())
+               || (_map.find(n) != _map.end());
+    }
+};
+
 class ObjectStatePlane {
 private:
   friend class AddressSpace;
@@ -230,7 +291,7 @@ private:
 
   /// knownSymbolics[byte] holds the symbolic expression for byte,
   /// if byte is known to be symbolic
-  std::vector<ref<Expr>> knownSymbolics;
+  SparseVector<ref<Expr>> knownSymbolics;
 
   /// unflushedMask[byte] is set if byte is unflushed
   /// mutable because may need flushed during read of const
