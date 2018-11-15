@@ -68,8 +68,6 @@ bool AddressSpace::resolveConstantAddress(const KValue &pointer,
       return true;
     }
   } else {
-    // we want to catch these cases right now
-    assert(false && "Resolving non-segmented pointer");
     uint64_t address = cast<ConstantExpr>(pointer.getValue())->getZExtValue();
     MemoryObject hack(address);
     if (const MemoryMap::value_type *res = objects.lookup_previous(&hack)) {
