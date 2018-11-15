@@ -374,6 +374,11 @@ void AddressSpace::copyOutConcretes() {
       ObjectState *os = it->second;
       auto address = reinterpret_cast<std::uint8_t*>(mo->address);
 
+      // if the allocated real virtual process' memory
+      // is less that the size bound, do not try to write to it...
+      if (os->getSizeBound() > mo->allocatedSize)
+        continue;
+
       if (!os->readOnly) {
         auto &concreteStore = os->offsetPlane->concreteStore;
         concreteStore.resize(os->offsetPlane->sizeBound,
