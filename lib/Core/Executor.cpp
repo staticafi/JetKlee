@@ -3818,8 +3818,17 @@ void Executor::callExternalFunction(ExecutionState &state,
       if (ce->getWidth() == Context::get().getPointerWidth()) {
         state.addressSpace.resolveOne(state, solver, *ai,
                                       op, success);
-        if (success)
+        if (success) {
+          if (op.second->getSizeBound() == 0 ||
+              (op.second->getSizeBound() > op.first->allocatedSize)) {
+            terminateStateOnExecError(state,
+                                      "external call with symbolic-sized object that "
+                                      "has no real virtual process memory: " +
+                                      function->getName());
+            return;
+          }
           op.second->flushToConcreteStore(solver, state);
+        }
       }
       wordIndex += (ce->getWidth()+63)/64;
     } else {
@@ -3832,8 +3841,25 @@ void Executor::callExternalFunction(ExecutionState &state,
         return;
       }
 
-      if (!segmentExpr->isZero()) {
+      if (!segmentExpr->isZero() ||
+          ai->getOffset()->getWidth() == Context::get().getPointerWidth()) {
+        ObjectPair op;
+        bool success;
+        state.addressSpace.resolveOne(state, solver, *ai, op, success);
+        if (success) {
+            klee_warning("bound: %lu, alloc size: %lu\n",
+                         op.second->getSizeBound(), op.first->allocatedSize);
+          if (op.second->getSizeBound() == 0 ||
+              (op.second->getSizeBound() > op.first->allocatedSize)) {
+            terminateStateOnExecError(state,
+                                      "external call with symbolic-sized object that "
+                                      "has no real virtual process memory: " +
+                                      function->getName());
+            return;
+          }
+
           klee_warning("passing pointer to external call, may not work properly");
+        }
       }
 
       ref<Expr> arg = toUnique(state, ai->getValue());
