@@ -241,13 +241,6 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
     concreteSize = CE->getZExtValue();
   }
 
-  if (concreteSize > 10 * 1024 * 1024) {
-    klee_warning_once(0, "Large alloc: %" PRIu64 " bytes. "
-                         "Not allocating this memory in real.",
-                      concreteSize);
-      hasConcreteSize = false;
-  }
-
   // Return NULL if size is zero, this is equal to error during allocation
   if (NullOnZeroMalloc && hasConcreteSize && concreteSize == 0)
     return 0;
@@ -256,6 +249,17 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
     klee_warning("Only alignment of power of two is supported");
     return 0;
   }
+
+  if (concreteSize > 10 * 1024 * 1024) {
+    klee_warning_once(0, "Large alloc: %" PRIu64 " bytes. "
+                         "Not allocating this memory in real.",
+                      concreteSize);
+      hasConcreteSize = false;
+  }
+
+  // XXX: hack: since we does not support external calls,
+  // make all allocation 1-byte sized
+  hasConcreteSize = false;
 
   if (DeterministicAllocation) {
     // Handle the case of 0-sized allocations as 1-byte allocations.
