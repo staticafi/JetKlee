@@ -1263,6 +1263,49 @@ void Executor::stepInstruction(ExecutionState &state) {
     haltExecution = true;
 }
 
+void Executor::executeLifetimeIntrinsic(ExecutionState &state,
+                                        KInstruction *ki,
+                                        const std::vector<Cell> &arguments,
+                                        bool isEnd) {
+  llvm::Instruction *mem
+    = llvm::dyn_cast<Instruction>(ki->inst->getOperand(1)->stripPointerCasts());
+
+  if (!mem) {
+    terminateStateOnExecError(state, "Unhandled argument for lifetime intrinsic (not an instruction).");
+    return;
+  }
+
+  auto kinstMem = kmodule->getKInstruction(mem);
+
+  if (!llvm::isa<llvm::AllocaInst>(kinstMem->inst)) {
+    terminateStateOnExecError(state, "Unhandled argument for lifetime intrinsic (not alloca)");
+    return;
+  }
+
+  ObjectPair op;
+  bool success;
+  state.addressSpace.resolveOne(state, solver, arguments[1],
+                                op, success);
+  if (!success) {
+    // the object is dead, create a new one
+    // XXX: we should distringuish between resolve error and dead object...
+    executeAlloc(state, getSizeForAlloca(state, kinstMem), true /* isLocal */,
+                 kinstMem);
+    return;
+  }
+
+  // FIXME: detect the cases where we do not mark lifetime of the whole memory.
+  // We should also check that the object's state is empty (the object has not been
+  // written before)
+
+  if (isEnd) {
+    state.addressSpace.unbindObject(op.first);
+  } else {
+    executeAlloc(state, getSizeForAlloca(state, kinstMem), true /* isLocal */,
+                 kinstMem, false /* zeroMem */, op.second /* realloc from */);
+  }
+}
+
 void Executor::executeCall(ExecutionState &state, 
                            KInstruction *ki,
                            Function *f,
@@ -1323,6 +1366,13 @@ void Executor::executeCall(ExecutionState &state,
       //
       // FIXME: It would be nice to check for errors in the usage of this as
       // well.
+        break;
+   case Intrinsic::lifetime_start:
+      executeLifetimeIntrinsic(state, ki, arguments, false /* is end */);
+      break;
+   case Intrinsic::lifetime_end:
+      executeLifetimeIntrinsic(state, ki, arguments, true /* is end */);
+      break;
     default:
       klee_error("unknown intrinsic: %s", f->getName().data());
     }
