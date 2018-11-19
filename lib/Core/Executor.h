@@ -309,6 +309,8 @@ private:
                     bool zeroMemory=false,
                     const ObjectState *reallocFrom=0);
 
+  ref<Expr> getSizeForAlloca(ExecutionState& state, KInstruction *ki) const;
+
   /// Free the given address with checking for errors. If target is
   /// given it will be bound to 0 in the resulting states (this is a
   /// convenience for realloc). Note that this function can cause the
