@@ -48,6 +48,7 @@ namespace klee {
     KInstruction **instructions;
 
     std::map<llvm::BasicBlock*, unsigned> basicBlockEntry;
+    std::map<llvm::Instruction*,KInstruction*> instructionsMap;
 
     /// Whether instructions in this function should count as
     /// "coverable" for statistics and search heuristics.
@@ -61,6 +62,12 @@ namespace klee {
     ~KFunction();
 
     unsigned getArgRegister(unsigned index) { return index; }
+
+    KInstruction *getKInstruction(llvm::Instruction *I) const {
+        auto it = instructionsMap.find(I);
+        assert(it != instructionsMap.end());
+        return it->second;
+    }
   };
 
 
@@ -143,6 +150,8 @@ namespace klee {
 
     /// Return an id for the given constant, creating a new one if necessary.
     unsigned getConstantID(llvm::Constant *c, KInstruction* ki);
+
+    KInstruction *getKInstruction(llvm::Instruction *I) const;
   };
 } // End klee namespace
 
