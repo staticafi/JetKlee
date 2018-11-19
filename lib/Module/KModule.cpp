@@ -466,6 +466,7 @@ KFunction::KFunction(llvm::Function *_function,
       Instruction *inst = &*it;
       ki->inst = inst;
       ki->dest = registerMap[inst];
+      instructionsMap[inst] = ki;
 
       if (isa<CallInst>(it) || isa<InvokeInst>(it)) {
 #if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
@@ -500,4 +501,10 @@ KFunction::~KFunction() {
   for (unsigned i=0; i<numInstructions; ++i)
     delete instructions[i];
   delete[] instructions;
+}
+
+KInstruction *KModule::getKInstruction(llvm::Instruction *I) const {
+    auto it = functionMap.find(I->getParent()->getParent());
+    assert(it != functionMap.end());
+    return it->second->getKInstruction(I);
 }
