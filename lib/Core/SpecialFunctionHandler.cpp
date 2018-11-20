@@ -27,6 +27,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
 
 #include <errno.h>
 #include <sstream>
@@ -112,6 +113,8 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("klee_alias_function", handleAliasFunction, false),
   add("malloc", handleMalloc, true),
   add("realloc", handleRealloc, true),
+  add("__VERIFIER_scope_enter", handleScopeEnter, false),
+  add("__VERIFIER_scope_leave", handleScopeLeave, false),
 
   // operator delete[](void*)
   add("_ZdaPv", handleDeleteArray, false),
@@ -771,6 +774,50 @@ void SpecialFunctionHandler::handleDefineFixedObject(ExecutionState &state,
   MemoryObject *mo = executor.memory->allocateFixed(address, size, state.prevPC->inst);
   executor.bindObjectInState(state, mo, false);
   mo->isUserSpecified = true; // XXX hack;
+}
+
+void SpecialFunctionHandler::handleScopeEnter(ExecutionState &state,
+                                              KInstruction *target,
+                                              const std::vector<Cell> &arguments) {
+  llvm::Instruction *mem
+    = llvm::dyn_cast<Instruction>(target->inst->getOperand(0)->stripPointerCasts());
+  if (!mem) {
+    executor.terminateStateOnExecError(state,
+        "Unhandled argument for scope marker (not an instruction).");
+    return;
+  }
+
+  auto kinstMem = executor.kmodule->getKInstruction(mem);
+  if (!llvm::isa<llvm::AllocaInst>(kinstMem->inst)) {
+    executor.terminateStateOnExecError(state,
+        "Unhandled argument for scope marker (not alloca)");
+    return;
+  }
+
+  executor.executeLifetimeIntrinsic(state, target,
+                                    kinstMem, arguments[0], false /* is end */);
+}
+
+void SpecialFunctionHandler::handleScopeLeave(ExecutionState &state,
+                                              KInstruction *target,
+                                              const std::vector<Cell> &arguments) {
+  llvm::Instruction *mem
+    = llvm::dyn_cast<Instruction>(target->inst->getOperand(0)->stripPointerCasts());
+  if (!mem) {
+    executor.terminateStateOnExecError(state,
+        "Unhandled argument for scope marker (not an instruction).");
+    return;
+  }
+
+  auto kinstMem = executor.kmodule->getKInstruction(mem);
+  if (!llvm::isa<llvm::AllocaInst>(kinstMem->inst)) {
+    executor.terminateStateOnExecError(state,
+        "Unhandled argument for scope marker (not alloca)");
+    return;
+  }
+
+  executor.executeLifetimeIntrinsic(state, target,
+                                    kinstMem, arguments[0], true /* is end */);
 }
 
 void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,

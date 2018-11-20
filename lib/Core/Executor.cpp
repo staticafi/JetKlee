@@ -1271,27 +1271,36 @@ void Executor::executeLifetimeIntrinsic(ExecutionState &state,
     = llvm::dyn_cast<Instruction>(ki->inst->getOperand(1)->stripPointerCasts());
 
   if (!mem) {
-    terminateStateOnExecError(state, "Unhandled argument for lifetime intrinsic (not an instruction).");
+    terminateStateOnExecError(state,
+        "Unhandled argument for lifetime intrinsic (not an instruction).");
     return;
   }
 
   auto kinstMem = kmodule->getKInstruction(mem);
 
   if (!llvm::isa<llvm::AllocaInst>(kinstMem->inst)) {
-    terminateStateOnExecError(state, "Unhandled argument for lifetime intrinsic (not alloca)");
+    terminateStateOnExecError(state,
+        "Unhandled argument for lifetime intrinsic (not alloca)");
     return;
   }
 
+  executeLifetimeIntrinsic(state, ki, kinstMem, arguments[1], isEnd);
+}
+
+void Executor::executeLifetimeIntrinsic(ExecutionState &state,
+                                        KInstruction *ki,
+                                        KInstruction *allocSite,
+                                        const KValue& address,
+                                        bool isEnd) {
   ObjectPair op;
   bool success;
-  state.addressSpace.resolveOne(state, solver, arguments[1],
-                                op, success);
+  state.addressSpace.resolveOne(state, solver, address, op, success);
   if (!success) {
     // the object is dead, create a new one
     // XXX: we should distringuish between resolve error and dead object...
     if (!isEnd) {
-      executeAlloc(state, getSizeForAlloca(state, kinstMem), true /* isLocal */,
-                   kinstMem);
+      executeAlloc(state, getSizeForAlloca(state, allocSite), true /* isLocal */,
+                   allocSite);
     } else {
       //klee_warning("Could not find allocation for lifetime end");
       terminateStateOnError(state, "Memory object is dead", Ptr);
@@ -1309,8 +1318,8 @@ void Executor::executeLifetimeIntrinsic(ExecutionState &state,
     // This is the first call to lifetime start, the object already exists.
     // We do not want to reallocate it as there may exist pointers to it
 
-    //executeAlloc(state, getSizeForAlloca(state, kinstMem), true /* isLocal */,
-    //             kinstMem, false /* zeroMem */, op.second /* realloc from */);
+    //executeAlloc(state, getSizeForAlloca(state, allocSite), true /* isLocal */,
+    //             allocSite, false /* zeroMem */, op.second /* realloc from */);
   }
 }
 
