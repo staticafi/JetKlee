@@ -28,8 +28,11 @@ public:
   explicit BitArray(unsigned size, bool value = false) : bits(new uint32_t[length(size)]), _size(size) {
     memset(bits, value?0xFF:0, sizeof(*bits)*length(size));
   }
-  BitArray(const BitArray &b) : bits(new uint32_t[length(b._size)]), _size(b._size) {
-    memcpy(bits, b.bits, sizeof(*bits)*length(_size));
+  BitArray(const BitArray &b)
+  : bits(b.bits ? new uint32_t[length(b._size)] : 0),
+    _size(b._size) {
+    if (b.bits)
+      memcpy(bits, b.bits, sizeof(*bits)*length(_size));
   }
   ~BitArray() { delete[] bits; }
 
