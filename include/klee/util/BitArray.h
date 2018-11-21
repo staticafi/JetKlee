@@ -41,12 +41,13 @@ public:
     uint32_t *oldBits = bits;
     if (newSize)
       bits = new uint32_t[length(newSize)];
-    memcpy(bits, oldBits, sizeof(*bits)*length(std::min(_size, newSize)));
+    if (oldBits) {
+      memcpy(bits, oldBits, sizeof(*bits)*length(std::min(_size, newSize)));
+      delete[] oldBits;
+    }
     for (unsigned i = _size; i < newSize; i++)
       set(i, value);
     _size = newSize;
-    if (oldBits)
-      delete[] oldBits;
   }
 
   bool get(unsigned idx) const { return (bool) ((bits[idx/32]>>(idx&0x1F))&1); }
