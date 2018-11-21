@@ -133,6 +133,30 @@ void ExecutionState::popFrame() {
   stack.pop_back();
 }
 
+void ExecutionState::removeAlloca(const MemoryObject *mo) {
+  StackFrame &sf = stack.back();
+  unsigned idx = 0;
+  for (auto it = sf.allocas.begin(), ie = sf.allocas.end(); it != ie; ++it) {
+    if (*it == mo) {
+        addressSpace.unbindObject(*it);
+        *it = nullptr;
+        break;
+    }
+    ++idx;
+  }
+  assert(sf.allocas[idx] == nullptr);
+  if (idx == sf.allocas.size() - 1) {
+    // if it is the last alloca, just remove it
+    sf.allocas.pop_back();
+  } else if (sf.allocas.size() > 1) {
+    assert(idx < sf.allocas.size());
+    // shrink the allocas -- put the last element inplace of the
+    // deleted element and then remove it
+    sf.allocas[idx] = sf.allocas.back();
+    sf.allocas.pop_back();
+  }
+}
+
 void ExecutionState::addSymbolic(const MemoryObject *mo, const Array *array) {
   symbolics.emplace_back(ref<const MemoryObject>(mo), array);
 }
