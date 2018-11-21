@@ -205,6 +205,7 @@ public:
 
   void pushFrame(KInstIterator caller, KFunction *kf);
   void popFrame();
+  void removeAlloca(const MemoryObject *mo);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
   void addConstraint(ref<Expr> e) { constraints.addConstraint(e); }
