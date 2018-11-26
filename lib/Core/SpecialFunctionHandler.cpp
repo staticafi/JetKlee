@@ -987,7 +987,8 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
           if (replIt->second.size() < instances.size()) {
             executor.terminateStateOnError(*s,
-                                     "Cannot find instance of object in replay nondet",
+                                     "Cannot find instance of '" + name +
+                                     "' in replay nondet",
                                      Executor::User);
             return;
           }
