@@ -98,6 +98,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
 #endif
   add("klee_is_symbolic", handleIsSymbolic, true),
   add("klee_make_symbolic", handleMakeSymbolic, false),
+  add("klee_make_nondet", handleMakeNondet, false),
   add("klee_mark_global", handleMarkGlobal, false),
   add("klee_open_merge", handleOpenMerge, false),
   add("klee_close_merge", handleCloseMerge, false),
@@ -915,6 +916,81 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
     }
   }
 }
+
+void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
+                                              KInstruction *target,
+                                              const std::vector<Cell> &arguments) {
+  std::string name = "";
+
+  if (arguments.size() != 4) {
+    executor.terminateStateOnError(state,
+        "Incorrect number of arguments to klee_make_nondet", Executor::User);
+    return;
+  }
+
+  name = arguments[2].value->isZero() ? "" : readStringAtAddress(state, arguments[2]);
+  if (name.length() == 0) {
+    name = "unnamed";
+    klee_warning("klee_make_nondet: renamed empty name to \"unnamed\"");
+  }
+
+  if (!arguments[3].getSegment()->isZero() ||
+      !isa<ConstantExpr>(arguments[3].getValue())) {
+    executor.terminateStateOnError(
+      state, "klee_make_nondet identifier is not a constant",
+      Executor::User);
+    return;
+  }
+
+  auto identifier = cast<ConstantExpr>(arguments[3].getValue())->getZExtValue();
+
+  // if we already have such a name, attach a number as a suffix
+  // to be able to tell the objects apart
+  if (auto identifiedObjects = state.identifiedNondetObjects.get()) {
+    auto it = identifiedObjects->find(identifier);
+    if (it != identifiedObjects->end()) {
+      name += ":" + std::to_string(it->second.size());
+    }
+  }
+
+  Executor::ExactResolutionList rl;
+  executor.resolveExact(state, arguments[0], rl, "make_nondet");
+
+  for (auto it = rl.begin(), ie = rl.end(); it != ie; ++it) {
+    const MemoryObject *mo = it->first.first;
+    mo->setName(name);
+
+    const ObjectState *old = it->first.second;
+    ExecutionState *s = it->second;
+
+    if (old->readOnly) {
+      executor.terminateStateOnError(*s, "cannot make readonly object symbolic",
+                                     Executor::User);
+      return;
+    }
+
+    // FIXME: Type coercion should be done consistently somewhere.
+    bool res;
+    bool success __attribute__ ((unused)) =
+      executor.solver->mustBeTrue(*s,
+                                  EqExpr::create(ZExtExpr::create(arguments[1].value,
+                                                                  Context::get().getPointerWidth()),
+                                                 mo->getSizeExpr()),
+                                  res);
+    assert(success && "FIXME: Unhandled solver failure");
+
+    if (res) {
+      executor.executeMakeSymbolic(*s, mo, name);
+      auto identifiedObjects = s->identifiedNondetObjects.getWriteable();
+      (*identifiedObjects)[identifier].push_back(mo);
+    } else {
+      executor.terminateStateOnError(*s,
+                                     "wrong size given to klee_make_nondet",
+                                     Executor::User);
+    }
+  }
+}
+
 
 void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
                                               KInstruction *target,

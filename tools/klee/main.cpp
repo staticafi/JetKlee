@@ -769,6 +769,7 @@ static const char *modelledExternals[] = {
   "klee_get_obj_size",
   "klee_is_symbolic",
   "klee_make_symbolic",
+  "klee_make_nondet",
   "klee_mark_global",
   "klee_open_merge",
   "klee_close_merge",
