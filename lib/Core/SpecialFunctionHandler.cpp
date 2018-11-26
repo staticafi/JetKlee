@@ -973,9 +973,31 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
     assert(success && "FIXME: Unhandled solver failure");
 
     if (res) {
-      executor.executeMakeSymbolic(*s, mo, name);
       auto identifiedObjects = s->identifiedNondetObjects.getWriteable();
-      (*identifiedObjects)[identifier].push_back(mo);
+      auto& instances = (*identifiedObjects)[identifier];
+      instances.push_back(mo);
+
+      if (!executor.replayNondet.empty()) {
+          auto replIt = executor.replayNondet.find(identifier);
+          if (replIt == executor.replayNondet.end()) {
+              // do nothing, the object is concrete and
+              // it has some random value
+              return;
+          }
+
+          if (replIt->second.size() < instances.size()) {
+            executor.terminateStateOnError(*s,
+                                     "Cannot find instance of object in replay nondet",
+                                     Executor::User);
+            return;
+          }
+
+          auto& data = replIt->second[instances.size() - 1];
+          executor.executeMakeConcrete(*s, mo, data);
+          klee_warning("Set concrete value for %s", name.c_str());
+      } else {
+        executor.executeMakeSymbolic(*s, mo, name);
+      }
     } else {
       executor.terminateStateOnError(*s,
                                      "wrong size given to klee_make_nondet",

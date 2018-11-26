@@ -3863,6 +3863,18 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
   }
 }
 
+void Executor::executeMakeConcrete(ExecutionState &state, 
+                                   const MemoryObject *mo,
+                                   const std::vector<unsigned char>& data) {
+  // Create a new object state for the memory object (instead of a copy).
+  ObjectState *os = bindObjectInState(state, mo, false);
+  // FIXME: check size of the object
+  unsigned i = 0;
+  for (unsigned char byte : data) 
+    os->write8(i++, 0, byte);
+}
+
+
 /***/
 
 void Executor::runFunctionAsMain(Function *f,
@@ -4019,6 +4031,30 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) {
+
+  if (!replayNondet.empty()) {
+    // we should not have any symbolics, so write out
+    // all objects for which we have name
+    for (auto& it : state.addressSpace.objects) {
+      const MemoryObject *mo = it.first; 
+      if (mo->name.empty() || mo->name == "unnamed")
+        continue;
+
+      const ObjectState *os = it.second; 
+      auto size = os->getSizeBound();
+      std::vector<uint8_t> data;
+      data.reserve(size);
+      for (unsigned i = 0; i < size; ++i) {
+          auto val = cast<ConstantExpr>(os->read8(i).getValue())->getZExtValue();
+          data.push_back(val);
+      }
+
+      res.push_back(std::make_pair(mo->name, data));
+    }
+
+    return true;
+  }
+
   solver->setTimeout(coreSolverTimeout);
 
   ExecutionState tmp(state);
@@ -4277,6 +4313,57 @@ void Executor::dumpStates() {
   }
 
   ::dumpStates = 0;
+}
+
+static std::pair<unsigned, unsigned> getIdentifier(std::string& name) {
+    int num = 0;
+    int start_id = 0, len_id = 0;
+    int start_instance = 0, len_instance = 0;
+    for (size_t i = 0; i < name.size(); ++i) {
+        if (name[i] == ':')
+            ++num;
+
+        if (num == 3) {
+            if (start_id > 0)
+                ++len_id;
+            else
+                start_id = i + 1;
+        } else if (num == 4) {
+            if (start_instance > 0)
+                ++len_instance;
+            else
+                start_instance = i + 1;
+        }
+    }
+
+    assert(start_id != 0 && len_id > 0);
+
+    unsigned instance = 0;
+    if (start_instance != 0) {
+        assert(len_instance > 0);
+        instance = stoi(name.substr(start_instance, len_instance));
+    }
+
+    return std::make_pair(stoi(name.substr(start_id, len_id)), instance);
+}
+
+void Executor::setReplayNondet(const struct KTest *out) {
+  assert(!replayPath && !replayKTest && "cannot replay both buffer and path");
+
+
+  for (unsigned i = 0; i < out->numObjects; ++i) {
+      std::string name = out->objects[i].name;
+      unsigned identifier, instance;
+      std::tie(identifier, instance) = getIdentifier(name);
+
+      auto& instances = replayNondet[identifier];
+      instances.resize(instance + 1);
+      auto& bytes = instances[instance];
+
+      bytes.reserve(out->objects[i].numBytes);
+      for (unsigned n = 0; n < out->objects[i].numBytes; ++n)
+          bytes.push_back(out->objects[i].bytes[n]);
+  }
 }
 
 ///
