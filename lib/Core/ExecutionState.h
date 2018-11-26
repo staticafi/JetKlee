@@ -188,10 +188,6 @@ public:
 
   // Execution - Control Flow specific
 
-  /// @brief A set of symbolic names assigned using klee_make_symbolic.
-  /// A counter is associated to every name to allow numbering the same names.
-  cow_shared_ptr<std::map<const std::string, unsigned int>> symbolicNames;
-
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
   KInstIterator pc;
