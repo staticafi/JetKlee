@@ -934,6 +934,9 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
   auto identifier = cast<ConstantExpr>(arguments[3].getValue())->getZExtValue();
 
+  // add the identifier as a suffix
+  name += ":" + std::to_string(identifier);
+
   // if we already have such a name, attach a number as a suffix
   // to be able to tell the objects apart
   if (auto identifiedObjects = state.identifiedNondetObjects.get()) {
