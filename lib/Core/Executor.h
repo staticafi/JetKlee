@@ -153,6 +153,13 @@ private:
   /// klee_make_symbolic in order replay.
   const struct KTest *replayKTest;
 
+  // values for replaying nondet values -- for each object
+  // with a given name, line, col and sequence number we have
+  // a concrete value -- this is a sequence of the values
+  // as they appear on the path being replayed
+  std::vector<std::tuple<std::string, unsigned, unsigned,
+                         ConcreteValue>> replayNondet;
+
   /// When non-null a list of branch decisions to be used for replay.
   const std::vector<bool> *replayPath;
 
@@ -342,6 +349,10 @@ private:
   void executeMakeSymbolic(ExecutionState &state, const MemoryObject *mo,
                            const std::string &name);
 
+  void executeMakeConcrete(ExecutionState &state,
+                           const MemoryObject *mo,
+                           const std::vector<unsigned char>& data);
+
   /// Create a new state where each input condition has been added as
   /// a constraint and return the results. The input state is included
   /// as one of the results. Note that the output vector may include
@@ -529,6 +540,8 @@ public:
     replayPath = path;
     replayPosition = 0;
   }
+
+  void setReplayNondet(const struct KTest *out) override;
 
   llvm::Module *setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
                           const ModuleOptions &opts) override;

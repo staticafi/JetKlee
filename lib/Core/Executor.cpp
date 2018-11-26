@@ -4320,7 +4320,7 @@ ref<Expr> Executor::createNondetValue(ExecutionState &state,
 
   auto& nv = state.addNondetValue(expr, isSigned, name);
   nv.kinstruction = kinst;
-  nv.seqNum = id;
+  //nv.seqNum = id;
 
   return expr;
 }
@@ -4410,6 +4410,18 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
     }
   }
 }
+
+void Executor::executeMakeConcrete(ExecutionState &state,
+                                   const MemoryObject *mo,
+                                   const std::vector<unsigned char>& data) {
+  // Create a new object state for the memory object (instead of a copy).
+  ObjectState *os = bindObjectInState(state, mo, false);
+  // FIXME: check size of the object
+  unsigned i = 0;
+  for (unsigned char byte : data)
+    os->write8(i++, 0, byte);
+}
+
 
 /***/
 
@@ -4567,6 +4579,27 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) {
+
+  for (auto& nv : replayNondet) {
+    // we should not have any symbolics, so write out
+    // all objects for which we have name
+    std::vector<uint8_t> data;
+    auto& val = std::get<3>(nv).getValue();
+    size_t size = val.getBitWidth()/8;
+    data.reserve(size);
+
+    // convert to bytes
+    const unsigned char *rawData
+      = reinterpret_cast<const unsigned char *>(val.getRawData());
+    for (unsigned n = 0; n < size; ++n) {
+        data.push_back(rawData[size - n - 1]);
+    }
+    std::string name = std::get<0>(nv) + ":" +
+                       std::to_string(std::get<1>(nv)) + ":" +
+                       std::to_string(std::get<2>(nv));
+    res.push_back(std::make_pair(name, data));
+  }
+
   solver->setTimeout(coreSolverTimeout);
 
   ConstraintSet extendedConstraints(state.constraints);
@@ -4652,11 +4685,12 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       auto *info = it.kinstruction->info;
       if (!info->file.empty()) {
           descr += ":" + llvm::sys::path::filename(info->file).str() +
-                   ":" + std::to_string(info->line);
+                   ":" + std::to_string(info->line) +
+                   ":" + std::to_string(info->column);
       }
-      if (it.seqNum > 0) {
-          descr += " (" + std::to_string(it.seqNum) + ")";
-      }
+     //if (it.seqNum > 0) {
+     //    descr += " (" + std::to_string(it.seqNum) + ")";
+     //}
     }
     res.push_back(std::make_pair(descr, data));
   }
@@ -4880,6 +4914,87 @@ void Executor::dumpStates() {
   }
 
   ::dumpStates = 0;
+}
+
+static std::tuple<std::string, unsigned, unsigned>
+parseNondetName(const std::string& name) {
+    std::string fun;
+    unsigned line = 0, col = 0;//, seq = 0;
+
+    int num = 0;
+    int last_semicol = 0;
+    for (size_t i = 0; i < name.size(); ++i) {
+      if (name[i] != ':')
+          continue;
+
+      switch (++num) {
+        case 1: // function/obj name
+          fun = name.substr(0, i);
+          break;
+        case 2: break; // file name
+        case 3: // line
+          line = stoi(name.substr(last_semicol + 1, i));
+          break;
+          line = stoi(name.substr(last_semicol + 1, i));
+          break;
+        default:
+          klee_warning("Invalid nondet object name: %s", name.c_str());
+          return {fun, line, col};//, seq};
+      };
+
+      last_semicol = i;
+    }
+
+    assert(num == 3);
+    // parse the column and instance number
+    unsigned inst_start = 0, inst_end = 0;
+    for (size_t i = last_semicol + 1; i < name.size(); ++i) {
+        if (name[i] == '(')
+            inst_start = i + 1;
+        else if (name[i] == ')')
+            inst_end = i;
+    }
+
+    if (inst_start > 0) {
+        assert(inst_end > 0);
+        //seq = stoi(name.substr(inst_start, inst_end));
+        col = stoi(name.substr(last_semicol + 1, inst_start));
+    } else {
+        col = stoi(name.substr(last_semicol + 1));
+    }
+    return {fun, line, col};
+}
+
+static ConcreteValue getConcreteValue(unsigned bytesNum,
+                                      const unsigned char *bytes) {
+
+  // create it as unsigned value
+  llvm::APInt val(bytesNum*8, 0, false);
+  for (unsigned n = 0; n < bytesNum; ++n) {
+      val <<= 8;
+      val |= bytes[n];
+  }
+
+  return ConcreteValue(std::move(val), false);
+}
+
+void Executor::setReplayNondet(const struct KTest *out) {
+  assert(out && "No ktest file given");
+  assert(!replayPath && !replayKTest && "cannot replay both nondets and path");
+
+  for (unsigned i = 0; i < out->numObjects; ++i) {
+      std::string name = out->objects[i].name;
+      llvm::errs() << "Parsing: " << name << "\n";
+      std::string fun;
+      unsigned line, col;
+      std::tie(fun, line, col) = parseNondetName(name);
+
+      auto val = getConcreteValue(out->objects[i].numBytes,
+                                  out->objects[i].bytes);
+      klee_warning("Input vector: %s:%u:%u = %lu",
+                    fun.c_str(), line, col, val.getZExtValue());
+      replayNondet.emplace_back(std::move(fun), line, col, std::move(val));
+  }
 }
 
 ///

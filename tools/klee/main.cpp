@@ -242,6 +242,11 @@ namespace {
                   cl::value_desc("ktest file"),
                   cl::cat(ReplayCat));
 
+  cl::opt<std::string>
+      ReplayNondets("replay-nondets",
+                    cl::desc("Specify a ktest file to use for replay of nondets"),
+                    cl::value_desc("ktest file"));
+
   cl::list<std::string>
   ReplayKTestDir("replay-ktest-dir",
                  cl::desc("Specify a directory to replay ktest files from"),
@@ -1481,6 +1486,13 @@ int main(int argc, char **argv, char **envp) {
     interpreter->setReplayPath(&replayPath);
   }
 
+  if (!ReplayNondets.empty()) {
+    klee_message("Replaying nondets from file '%s'", ReplayNondets.c_str());
+    auto ktest = kTest_fromFile(ReplayNondets.c_str());
+    assert(ktest && "Failed parsing ktest");
+    interpreter->setReplayNondet(ktest);
+    kTest_free(ktest);
+  }
 
   auto startTime = std::time(nullptr);
   { // output clock info and start time

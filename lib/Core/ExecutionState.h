@@ -15,6 +15,7 @@
 
 #include "klee/ADT/ImmutableSet.h"
 #include "klee/ADT/TreeStream.h"
+#include "klee/Core/ConcreteValue.h"
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Expr.h"
 #include "klee/Module/KInstIterator.h"
@@ -191,6 +192,7 @@ public:
   struct NondetValue {
     ref<Expr> expr;
     // info about name and where the object was created...
+    NondetValue() : expr(nullptr) {}
     NondetValue(const ref<Expr> &e, const std::string& n) : expr(e), name(n) {}
     NondetValue(const ref<Expr> &e, KInstruction *ki, const std::string& n)
         : expr(e), kinstruction(ki), name(n) {}
@@ -202,11 +204,16 @@ public:
 
     bool isSigned{false};
     KInstruction *kinstruction{nullptr};
-    const std::string name;
+    const std::string name{};
     // when an instruction that creates a nondet value is called
     // several times, we can assign a sequential number to each
     // of the values here
-    size_t seqNum{0};
+    //size_t seqNum{0};
+
+    // concrete value
+    //MaybeConcreteValue concreteValue;
+    //
+    //bool hasConcreteValue() const { return concreteValue.hasValue(); }
   };
 
   // FIXME: wouldn't unique_ptr be more efficient (no ref<> copying)
