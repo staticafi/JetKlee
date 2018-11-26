@@ -102,7 +102,6 @@ ExecutionState::~ExecutionState() {
 }
 
 ExecutionState::ExecutionState(const ExecutionState& state):
-    symbolicNames(state.symbolicNames),
     identifiedNondetObjects(state.identifiedNondetObjects),
     pc(state.pc),
     prevPC(state.prevPC),

@@ -870,16 +870,6 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
     klee_warning("klee_make_symbolic: renamed empty name to \"unnamed\"");
   }
 
-  // if we already have such a name, attach a number as a suffix
-  // to be able to tell the objects apart
-  auto symNames = state.symbolicNames.getWriteable();
-  auto it = symNames->find(name);
-  if (it == symNames->end()) {
-      symNames->emplace_hint(it, name, 0);
-  } else {
-      name += ":" + std::to_string(++it->second);
-  }
-
   Executor::ExactResolutionList rl;
   executor.resolveExact(state, arguments[0], rl, "make_symbolic");
   
