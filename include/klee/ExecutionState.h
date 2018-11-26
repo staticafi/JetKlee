@@ -111,6 +111,8 @@ public:
   // A counter is associated to every name to allow numbering the same names.
   cow_shared_ptr<std::map<const std::string, unsigned int>> symbolicNames;
 
+  cow_shared_ptr<std::map<unsigned int, std::vector<const MemoryObject *>>> identifiedNondetObjects;
+
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
   KInstIterator pc;
