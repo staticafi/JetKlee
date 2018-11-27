@@ -995,7 +995,16 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
           auto& data = replIt->second[instances.size() - 1];
           executor.executeMakeConcrete(*s, mo, data);
-          klee_warning("Set concrete value for %s", name.c_str());
+
+          std::string value = "[";
+          int n = 0;
+          for (auto byte : data) {
+              if (n++ > 0)
+                  value += " ";
+              value += std::to_string(byte);
+          }
+          value += "]";
+          klee_warning("Set value %s for %s", value.c_str(), name.c_str());
       } else {
         executor.executeMakeSymbolic(*s, mo, name);
       }
