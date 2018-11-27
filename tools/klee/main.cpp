@@ -1386,7 +1386,9 @@ int main(int argc, char **argv, char **envp) {
 
   if (!ReplayNondets.empty()) {
     klee_message("Replaying nondets from file '%s'", ReplayNondets.c_str());
-    interpreter->setReplayNondet(kTest_fromFile(ReplayNondets.c_str()));
+    auto ktest = kTest_fromFile(ReplayNondets.c_str());
+    interpreter->setReplayNondet(ktest);
+    kTest_free(ktest);
   }
 
   auto startTime = std::time(nullptr);
