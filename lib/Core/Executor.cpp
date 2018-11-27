@@ -3949,7 +3949,6 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) {
-
   if (!replayNondet.empty()) {
     // we should not have any symbolics, so write out
     // all objects for which we have name

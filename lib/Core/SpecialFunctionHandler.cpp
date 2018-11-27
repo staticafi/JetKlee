@@ -899,6 +899,7 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
     return;
   }
 
+  unsigned instance = 0;
   auto identifier = cast<ConstantExpr>(arguments[3].getValue())->getZExtValue();
 
   // add the identifier as a suffix
@@ -906,11 +907,13 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
   // if we already have such a name, attach a number as a suffix
   // to be able to tell the objects apart
-  if (auto identifiedObjects = state.identifiedNondetObjects.get()) {
-    auto it = identifiedObjects->find(identifier);
-    if (it != identifiedObjects->end()) {
-      name += ":" + std::to_string(it->second.size());
+  auto it = state.identifiedNondetObjects.find(identifier);
+  if (it != state.identifiedNondetObjects.end()) {
+    for (auto mo : it->second) {
+      klee_warning("  Already have %s", mo ? mo->name.c_str() : nullptr);
     }
+    instance = it->second.size();
+    name += ":" + std::to_string(it->second.size());
   }
 
   Executor::ExactResolutionList rl;
@@ -940,9 +943,8 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
     assert(success && "FIXME: Unhandled solver failure");
 
     if (res) {
-      auto identifiedObjects = s->identifiedNondetObjects.getWriteable();
-      auto& instances = (*identifiedObjects)[identifier];
-      instances.push_back(mo);
+      size_t current_num = s->addIdentifiedSymbolic(identifier, mo);
+      assert(current_num > 0);
 
       if (!executor.replayNondet.empty()) {
           auto replIt = executor.replayNondet.find(identifier);
@@ -952,7 +954,7 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
               return;
           }
 
-          if (replIt->second.size() < instances.size()) {
+          if (replIt->second.size() < current_num) {
             executor.terminateStateOnError(*s,
                                      "Cannot find instance of '" + name +
                                      "' in replay nondet",
@@ -960,7 +962,7 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
             return;
           }
 
-          auto& data = replIt->second[instances.size() - 1];
+          auto& data = replIt->second[current_num - 1];
           executor.executeMakeConcrete(*s, mo, data);
 
           std::string value = "[";
@@ -973,7 +975,25 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
           value += "]";
           klee_warning("Set value %s for %s", value.c_str(), name.c_str());
       } else {
+        if (instance > 0) {
+        klee_warning("------");
+            klee_warning("Adding symbolic %s", mo->name.c_str());
+            for (unsigned i = 0; i != state.symbolics.size(); ++i) {
+              const MemoryObject *mo = state.symbolics[i].first;
+              if (!mo->name.empty() && mo->name != "unnamed")
+                klee_warning(" B : Symbolics: %s", mo->name.c_str());
+            }
+        }
+
         executor.executeMakeSymbolic(*s, mo, name);
+        if (instance > 0) {
+        for (unsigned i = 0; i != state.symbolics.size(); ++i) {
+          const MemoryObject *mo = state.symbolics[i].first;
+          if (!mo->name.empty() && mo->name != "unnamed")
+            klee_warning(" A : Symbolics: %s", mo->name.c_str());
+        }
+        klee_warning("------");
+        }
       }
     } else {
       executor.terminateStateOnError(*s,

@@ -107,8 +107,7 @@ private:
 public:
   // Execution - Control Flow specific
 
-  cow_shared_ptr<std::map<unsigned int,
-                         std::vector<const MemoryObject *>>> identifiedNondetObjects;
+  std::map<unsigned int, std::vector<const MemoryObject *>> identifiedNondetObjects;
 
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
@@ -207,6 +206,7 @@ public:
   void removeAlloca(const MemoryObject *mo);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
+  size_t addIdentifiedSymbolic(unsigned identifier, const MemoryObject *mo);
   void addConstraint(ref<Expr> e) { constraints.addConstraint(e); }
 
   bool merge(const ExecutionState &b);
