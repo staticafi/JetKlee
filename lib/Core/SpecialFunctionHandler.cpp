@@ -993,7 +993,7 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
           auto& data = replIt->second[current_num - 1];
           executor.executeMakeConcrete(*s, mo, data);
-
+/*
           std::string value = "[";
           int n = 0;
           for (auto byte : data) {
@@ -1003,6 +1003,7 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
           }
           value += "]";
           klee_warning("Set value %s for %s", value.c_str(), name.c_str());
+*/
       } else {
         executor.executeMakeSymbolic(*s, mo, name);
       }
