@@ -4032,14 +4032,18 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::vector<unsigned char> > >
                                    &res) {
   if (!replayNondet.empty()) {
+    std::set<const MemoryObject *> objects;
+
     // we should not have any symbolics, so write out
-    // all objects for which we have name
+    // all objects for which we have name + those from replayNondet
     for (auto& it : state.addressSpace.objects) {
-      const MemoryObject *mo = it.first; 
+      const MemoryObject *mo = it.first;
       if (mo->name.empty() || mo->name == "unnamed")
         continue;
 
-      const ObjectState *os = it.second; 
+      objects.insert(mo);
+
+      const ObjectState *os = it.second;
       auto size = os->getSizeBound();
       std::vector<uint8_t> data;
       data.reserve(size);
@@ -4049,6 +4053,26 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       }
 
       res.push_back(std::make_pair(mo->name, data));
+    }
+    for (auto& it : state.identifiedNondetObjects) {
+      auto identifier = it.first;
+
+      unsigned n = 0;
+      for (auto mo : it.second) {
+        if (mo->name.empty() || mo->name == "unnamed")
+          continue;
+
+        if (!objects.insert(mo).second)
+          continue;
+
+        auto rit = replayNondet.find(identifier);
+        if (rit == replayNondet.end())
+          continue;
+
+        auto& data = rit->second[n];
+        res.push_back(std::make_pair(mo->name, data));
+        ++n;
+      }
     }
 
     return true;
