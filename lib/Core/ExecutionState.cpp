@@ -95,6 +95,15 @@ ExecutionState::~ExecutionState() {
       delete mo;
   }
 
+  for (unsigned int i=0; i<inputVector.size(); i++)
+  {
+    const MemoryObject *mo = inputVector[i].first;
+    assert(mo->refCount > 0);
+    mo->refCount--;
+    if (mo->refCount == 0)
+      delete mo;
+  }
+
   for (auto cur_mergehandler: openMergeStack){
     cur_mergehandler->removeOpenState(this);
   }
@@ -127,12 +136,17 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     coveredLines(state.coveredLines),
     ptreeNode(state.ptreeNode),
     symbolics(state.symbolics),
+    inputVector(state.inputVector),
+    dummyInputs(state.dummyInputs),
     arrayNames(state.arrayNames),
     openMergeStack(state.openMergeStack),
     steppedInstructions(state.steppedInstructions)
 {
   for (unsigned int i=0; i<symbolics.size(); i++)
     symbolics[i].first->refCount++;
+
+  for (unsigned int i=0; i<inputVector.size(); i++)
+    inputVector[i].first->refCount++;
 
   for (auto& it : identifiedNondetObjects)
     for (auto mo : it.second)
@@ -192,8 +206,15 @@ void ExecutionState::removeAlloca(const MemoryObject *mo) {
 }
 
 void ExecutionState::addSymbolic(const MemoryObject *mo, const Array *array) { 
-  mo->refCount++;
+  mo->refCount += 2;
   symbolics.push_back(std::make_pair(mo, array));
+  inputVector.push_back({mo, array});
+}
+
+void ExecutionState::addDummyInput(const MemoryObject *mo, uint64_t i) { 
+  mo->refCount++;
+  inputVector.push_back({mo, nullptr});
+  dummyInputs.push_back(i);
 }
 
 size_t ExecutionState::addIdentifiedSymbolic(unsigned identifier,

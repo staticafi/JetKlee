@@ -108,6 +108,10 @@ public:
   // Execution - Control Flow specific
 
   std::map<unsigned int, std::vector<const MemoryObject *>> identifiedNondetObjects;
+  ///
+  // Symbolic values as they appear on the path
+  std::vector<std::pair<const MemoryObject *, const Array *>> inputVector;
+  std::vector<uint64_t> dummyInputs;
 
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
@@ -206,6 +210,7 @@ public:
   void removeAlloca(const MemoryObject *mo);
 
   void addSymbolic(const MemoryObject *mo, const Array *array);
+  void addDummyInput(const MemoryObject *mo, uint64_t i);
   size_t addIdentifiedSymbolic(unsigned identifier, const MemoryObject *mo);
   void addConstraint(ref<Expr> e) { constraints.addConstraint(e); }
 

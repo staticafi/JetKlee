@@ -960,6 +960,12 @@ void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
 
           auto& data = replIt->second[current_num - 1];
           executor.executeMakeConcrete(*s, mo, data);
+          if (data.size() > 8) {
+            (*s).addDummyInput(mo, 0);
+          } else {
+            data.resize(sizeof(uint64_t));
+            (*s).addDummyInput(mo, *((uint64_t *)data.data()));
+          }
 /*
           std::string value = "[";
           int n = 0;

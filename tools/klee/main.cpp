@@ -474,6 +474,38 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       delete[] b.objects;
     }
 
+    if (auto f = openTestFile("xml", id)) {
+      *f << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n";
+      *f << "<!DOCTYPE testcase PUBLIC \"+//IDN sosy-lab.org//DTD test-format testcase 1.0//EN\" \"https://sosy-lab.org/test-format/testcase-1.0.dtd\">\n";
+      *f << "<testcase";
+      if (errorSuffix && strcmp(errorSuffix, "assert.err") == 0)
+          *f << " coversError=\"true\">\n";
+      else
+          *f << ">\n";
+
+      for (auto& input : out) {
+        *f << "<input>";
+        if (input.second.size() > 8) {
+           //*f << "bytes ";
+           //for (auto byte : input.second)
+           //    *f << byte;
+            *f << "0";
+        } else {
+            if (input.second.size() == 4) {
+                *f << *((int32_t*) input.second.data());
+            } else if (input.second.size() == 8) {
+                *f << *((int64_t*) input.second.data());
+            } else {
+                input.second.resize(8);
+                *f << *((uint64_t*) input.second.data());
+            }
+        }
+        *f << "</input>\n";
+      }
+      *f << "</testcase>\n";
+    } else
+      klee_warning("unable to write .xml test-case, losing it");
+
     if (errorMessage) {
       auto f = openTestFile(errorSuffix, id);
       if (f)

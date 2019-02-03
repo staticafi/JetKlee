@@ -3713,7 +3713,6 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
     const Array *array = arrayCache.CreateArray(uniqueName, size);
     bindObjectInState(state, mo, false, array);
     state.addSymbolic(mo, array);
-    
     std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it = 
       seedMap.find(&state);
     if (it!=seedMap.end()) { // In seed mode we need to add this as a
@@ -3949,53 +3948,6 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) {
-  if (!replayNondet.empty()) {
-    std::set<const MemoryObject *> objects;
-
-    // we should not have any symbolics, so write out
-    // all objects for which we have name + those from replayNondet
-    for (auto& it : state.addressSpace.objects) {
-      const MemoryObject *mo = it.first;
-      if (mo->name.empty() || mo->name == "unnamed")
-        continue;
-
-      objects.insert(mo);
-
-      const ObjectState *os = it.second;
-      auto size = os->getSizeBound();
-      std::vector<uint8_t> data;
-      data.reserve(size);
-      for (unsigned i = 0; i < size; ++i) {
-          auto val = cast<ConstantExpr>(os->read8(i).getValue())->getZExtValue();
-          data.push_back(val);
-      }
-
-      res.push_back(std::make_pair(mo->name, data));
-    }
-    for (auto& it : state.identifiedNondetObjects) {
-      auto identifier = it.first;
-
-      unsigned n = 0;
-      for (auto mo : it.second) {
-        if (mo->name.empty() || mo->name == "unnamed")
-          continue;
-
-        if (!objects.insert(mo).second)
-          continue;
-
-        auto rit = replayNondet.find(identifier);
-        if (rit == replayNondet.end())
-          continue;
-
-        auto& data = rit->second[n];
-        res.push_back(std::make_pair(mo->name, data));
-        ++n;
-      }
-    }
-
-    return true;
-  }
-
   solver->setTimeout(coreSolverTimeout);
 
   ExecutionState tmp(state);
@@ -4007,8 +3959,8 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   // the preferred constraints.  See test/Features/PreferCex.c for
   // an example) While this process can be very expensive, it can
   // also make understanding individual test cases much easier.
-  for (unsigned i = 0; i != state.symbolics.size(); ++i) {
-    const MemoryObject *mo = state.symbolics[i].first;
+  for (unsigned i = 0; i < state.inputVector.size(); ++i) {
+    const MemoryObject *mo = state.inputVector[i].first;
     std::vector< ref<Expr> >::const_iterator pi = 
       mo->cexPreferences.begin(), pie = mo->cexPreferences.end();
     for (; pi != pie; ++pi) {
@@ -4030,9 +3982,9 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 
   // try to minimize sizes of symbolic-size objects
   std::vector<uint64_t> sizes;
-  sizes.reserve(state.symbolics.size());
-  for (unsigned i = 0; i != state.symbolics.size(); ++i) {
-    const MemoryObject *mo = state.symbolics[i].first;
+  sizes.reserve(state.inputVector.size());
+  for (unsigned i = 0; i < state.inputVector.size(); ++i) {
+    const MemoryObject *mo = state.inputVector[i].first;
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size)) {
       sizes.push_back(CE->getZExtValue());
     } else {
@@ -4044,7 +3996,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 
   std::vector< std::vector<unsigned char> > values;
   std::shared_ptr<const Assignment> assignment(0);
-  if (!state.symbolics.empty()) {
+  if (!state.inputVector.empty()) {
     bool success = solver->getInitialValues(tmp, assignment);
     solver->setTimeout(time::Span());
     if (!success) {
@@ -4054,13 +4006,19 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       return false;
     }
   }
-  for (unsigned i = 0; i != state.symbolics.size(); ++i) {
-    const MemoryObject *mo = state.symbolics[i].first;
-    const Array *array = state.symbolics[i].second;
+  size_t dummies = 0;
+  for (unsigned i = 0; i < state.inputVector.size(); ++i) {
+    const MemoryObject *mo = state.inputVector[i].first;
+    const Array *array = state.inputVector[i].second;
     std::vector<uint8_t> data;
     data.reserve(sizes[i]);
-    if (auto vals = assignment->getBindingsOrNull(array)) {
-      data = vals->asVector();
+    if (!array) {
+        data.resize(sizeof(uint64_t));
+        *((uint64_t *)data.data()) = state.dummyInputs[dummies++];
+    } else {
+        if (auto vals = assignment->getBindingsOrNull(array)) {
+          data = vals->asVector();
+        }
     }
     data.resize(sizes[i]);
     res.push_back(std::make_pair(mo->name, data));
