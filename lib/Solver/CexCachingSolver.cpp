@@ -99,11 +99,11 @@ public:
 ///
 
 struct NullAssignment {
-  bool operator()(std::shared_ptr<const Assignment> a) const { return !a; }
+  bool operator()(const std::shared_ptr<const Assignment>& a) const { return !a; }
 };
 
 struct NonNullAssignment {
-  bool operator()(std::shared_ptr<const Assignment> a) const { return a!=0; }
+  bool operator()(const std::shared_ptr<const Assignment>& a) const { return a!=0; }
 };
 
 struct NullOrSatisfyingAssignment {
@@ -111,7 +111,7 @@ struct NullOrSatisfyingAssignment {
   
   NullOrSatisfyingAssignment(KeyType &_key) : key(_key) {}
 
-  bool operator()(std::shared_ptr<const Assignment> a) const {
+  bool operator()(const std::shared_ptr<const Assignment>& a) const {
     return !a || a->satisfies(key.begin(), key.end()); 
   }
 };
