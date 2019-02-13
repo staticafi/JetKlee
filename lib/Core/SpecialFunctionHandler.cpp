@@ -445,7 +445,7 @@ void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
 
 void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
                                             KInstruction *target,
-                                            std::vector<ref<Expr>> &arguments) {
+                                            const std::vector<Cell> &arguments) {
   if (arguments.size() != 2) {
     executor.terminateStateOnError(state,
       "Incorrect number of arguments to memalign(size_t alignment, size_t size)",
@@ -453,8 +453,20 @@ void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
     return;
   }
 
-  std::pair<ref<Expr>, ref<Expr>> alignmentRangeExpr =
-      executor.solver->getRange(state, arguments[0]);
+  if (!arguments[0].getSegment()->isZero()) {
+    executor.terminateStateOnError(state,
+      "memalign: alignment argument is not a number", Executor::User);
+    return;
+  }
+
+  if (!arguments[1].getSegment()->isZero()) {
+    executor.terminateStateOnError(state,
+      "memalign: size argument is not a number", Executor::User);
+    return;
+  }
+
+  auto alignmentRangeExpr
+    = executor.solver->getRange(state, arguments[0].getValue());
   ref<Expr> alignmentExpr = alignmentRangeExpr.first;
   auto alignmentConstExpr = dyn_cast<ConstantExpr>(alignmentExpr);
 
@@ -473,7 +485,7 @@ void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
         0, "Symbolic alignment for memalign. Choosing smallest alignment");
   }
 
-  executor.executeAlloc(state, arguments[1], false, target, false, 0,
+  executor.executeAlloc(state, arguments[1].getValue(), false, target, false, 0,
                         alignment);
 }
 
