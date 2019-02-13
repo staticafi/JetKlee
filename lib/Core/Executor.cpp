@@ -3385,8 +3385,6 @@ void Executor::callExternalFunction(ExecutionState &state,
         bool success;
         state.addressSpace.resolveOne(state, solver, *ai, op, success);
         if (success) {
-            klee_warning("bound: %lu, alloc size: %lu\n",
-                         op.second->getSizeBound(), op.first->allocatedSize);
           if (op.second->getSizeBound() == 0 ||
               (op.second->getSizeBound() > op.first->allocatedSize)) {
             terminateStateOnExecError(state,
