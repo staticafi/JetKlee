@@ -659,29 +659,31 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
 
   if (m->getModuleInlineAsm() != "")
     klee_warning("executable has module level assembly (ignoring)");
+
+  // illegal function (so that we won't collide with nullptr).
+  // The legal functions are numbered from 1
+  legalFunctions.emplace(0, nullptr);
+
   // represent function globals using the address of the actual llvm function
   // object. given that we use malloc to allocate memory in states this also
   // ensures that we won't conflict. we don't need to allocate a memory object
   // since reading/writing via a function pointer is unsupported anyway.
   for (Function &f : *m) {
-    ref<ConstantExpr> addr;
-
     // If the symbol has external weak linkage then it is implicitly
     // not defined in this module; if it isn't resolvable then it
     // should be null.
     if (f.hasExternalWeakLinkage() &&
         !externalDispatcher->resolveSymbol(f.getName().str())) {
-      addr = Expr::createPointer(0);
+      globalAddresses.emplace(&f, KValue(Expr::createPointer(0)));
     } else {
       // We allocate an object to represent each function,
       // its address can be used for function pointers.
       // TODO: Check whether the object is accessed?
       auto mo = memory->allocate(8, false, true, &f, 8);
-      addr = Expr::createPointer(mo->address);
+      auto addr = Expr::createPointer(mo->address);
       legalFunctions.emplace(mo->address, &f);
+      globalAddresses.emplace(&f, KValue(FUNCTIONS_SEGMENT, addr));
     }
-
-    globalAddresses.emplace(&f, KValue(addr));
   }
 
 #ifndef WINDOWS
@@ -2541,7 +2543,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
       executeCall(state, ki, f, arguments);
     } else {
-      ref<Expr> v = eval(ki, 0, state).value;
+      auto pointer = eval(ki, 0, state);
+      // We handle constant segments for now
+      assert((cast<ConstantExpr>(pointer.getSegment())->getZExtValue()
+                == FUNCTIONS_SEGMENT) && "Invalid function pointer");
+      ref<Expr> v = optimizer.optimizeExpr(pointer.getValue(), true);
 
       ExecutionState *free = &state;
       bool hasInvalid = false, first = true;
@@ -2550,7 +2556,6 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
          have already got a value. But in the end the caches should
          handle it for us, albeit with some overhead. */
       do {
-        v = optimizer.optimizeExpr(v, true);
         ref<ConstantExpr> value;
         bool success =
             solver->getValue(free->constraints, v, value, free->queryMetaData);
