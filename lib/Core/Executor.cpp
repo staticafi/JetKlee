@@ -2249,77 +2249,30 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     CmpInst *ci = cast<CmpInst>(i);
     ICmpInst *ii = cast<ICmpInst>(ci);
 
+    const Cell &left = eval(ki, 0, state);
+    const Cell &right = eval(ki, 1, state);
+
     switch(ii->getPredicate()) {
-    case ICmpInst::ICMP_EQ: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Eq(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_NE: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Ne(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_UGT: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Ugt(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_UGE: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Uge(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_ULT: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Ult(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_ULE: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Ule(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_SGT: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Sgt(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_SGE: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Sge(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_SLT: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Slt(right));
-      break;
-    }
-
-    case ICmpInst::ICMP_SLE: {
-      const Cell &left = eval(ki, 0, state);
-      const Cell &right = eval(ki, 1, state);
-      bindLocal(ki, state, left.Sle(right));
-      break;
-    }
-
+    case ICmpInst::ICMP_EQ:
+      bindLocal(ki, state, left.Eq(right)); break;
+    case ICmpInst::ICMP_NE:
+      bindLocal(ki, state, left.Ne(right)); break;
+    case ICmpInst::ICMP_UGT:
+      bindLocal(ki, state, left.Ugt(right)); break;
+    case ICmpInst::ICMP_UGE:
+      bindLocal(ki, state, left.Uge(right)); break;
+    case ICmpInst::ICMP_ULT:
+      bindLocal(ki, state, left.Ult(right)); break;
+    case ICmpInst::ICMP_ULE:
+      bindLocal(ki, state, left.Ule(right)); break;
+    case ICmpInst::ICMP_SGT:
+      bindLocal(ki, state, left.Sgt(right)); break;
+    case ICmpInst::ICMP_SGE:
+      bindLocal(ki, state, left.Sge(right)); break;
+    case ICmpInst::ICMP_SLT:
+      bindLocal(ki, state, left.Slt(right)); break;
+    case ICmpInst::ICMP_SLE:
+      bindLocal(ki, state, left.Sle(right)); break;
     default:
       terminateStateOnExecError(state, "invalid ICmp predicate");
     }
