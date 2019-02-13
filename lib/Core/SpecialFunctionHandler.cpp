@@ -451,8 +451,20 @@ void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
     return;
   }
 
-  std::pair<ref<Expr>, ref<Expr>> alignmentRangeExpr =
-      executor.solver->getRange(state.constraints, arguments[0].value,
+  if (!arguments[0].getSegment()->isZero()) {
+    executor.terminateStateOnUserError(state,
+      "memalign: alignment argument is not a number");
+    return;
+  }
+
+  if (!arguments[1].getSegment()->isZero()) {
+    executor.terminateStateOnUserError(state,
+      "memalign: size argument is not a number");
+    return;
+  }
+
+  auto alignmentRangeExpr =
+      executor.solver->getRange(state.constraints, arguments[0].getValue(),
                                 state.queryMetaData);
   ref<Expr> alignmentExpr = alignmentRangeExpr.first;
   auto alignmentConstExpr = dyn_cast<ConstantExpr>(alignmentExpr);
@@ -470,7 +482,7 @@ void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
         0, "Symbolic alignment for memalign. Choosing smallest alignment");
   }
 
-  executor.executeAlloc(state, arguments[1].value, false, target, false, 0,
+  executor.executeAlloc(state, arguments[1].getValue(), false, target, false, 0,
                         alignment);
 }
 
