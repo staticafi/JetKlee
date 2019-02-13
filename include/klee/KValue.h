@@ -14,6 +14,14 @@
 
 #include "llvm/Support/raw_ostream.h"
 
+// Special segments. Memory allocated via alloca and on heap
+// will have segments that have so higher value.
+enum SpecialSegment {
+    VALUES_SEGMENT = 0,         // an ordinary numbers
+    FUNCTIONS_SEGMENT = 2,      // functions
+    FIRST_ORDINARY_SEGMENT = 10 // allocated memory (on stack, heap and globals)
+};
+
 
 namespace llvm {
   class raw_ostream;
@@ -29,11 +37,14 @@ namespace klee {
     KValue() {}
     KValue(const KValue &other) : value(other.value), pointerSegment(other.pointerSegment) {}
     KValue(ref<Expr> value)
-      : value(value), pointerSegment(ConstantExpr::alloc(0, value->getWidth())) {}
+      : value(value), pointerSegment(ConstantExpr::alloc(VALUES_SEGMENT, value->getWidth())) {}
     KValue(ref<ConstantExpr> value)
-      : value(value), pointerSegment(ConstantExpr::alloc(0, value->getWidth())) {}
+      : value(value), pointerSegment(ConstantExpr::alloc(VALUES_SEGMENT, value->getWidth())) {}
     KValue(ref<Expr> segment, ref<Expr> offset)
       : value(offset), pointerSegment(segment) {}
+
+    KValue(SpecialSegment segment, ref<Expr> offset)
+      : value(offset), pointerSegment(ConstantExpr::alloc(segment, value->getWidth())) {}
 
     ref<Expr> getValue() const { return value; }
     ref<Expr> getOffset() const { return value; }

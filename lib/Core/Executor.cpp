@@ -643,26 +643,28 @@ void Executor::initializeGlobals(ExecutionState &state) {
 
   if (m->getModuleInlineAsm() != "")
     klee_warning("executable has module level assembly (ignoring)");
-  // represent function globals using the address of the actual llvm function
-  // object. given that we use malloc to allocate memory in states this also
-  // ensures that we won't conflict. we don't need to allocate a memory object
-  // since reading/writing via a function pointer is unsupported anyway.
+
+  // illegal function (so that we won't collide with nullptr).
+  // The legal functions are numbered from 1
+  legalFunctions.emplace(0, nullptr);
+
+  uint64_t id;
+
   for (Module::iterator i = m->begin(), ie = m->end(); i != ie; ++i) {
     Function *f = &*i;
-    ref<ConstantExpr> addr(0);
 
     // If the symbol has external weak linkage then it is implicitly
     // not defined in this module; if it isn't resolvable then it
     // should be null.
     if (f->hasExternalWeakLinkage() && 
         !externalDispatcher->resolveSymbol(f->getName())) {
-      addr = Expr::createPointer(0);
+        id = 0;
     } else {
-      addr = Expr::createPointer(reinterpret_cast<std::uint64_t>(f));
-      legalFunctions.insert(reinterpret_cast<std::uint64_t>(f));
+      id = legalFunctions.size();
+      legalFunctions.emplace(id, f);
     }
     
-    globalAddresses.insert(std::make_pair(f, KValue(addr)));
+    globalAddresses.emplace(f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
   }
 
 #ifndef WINDOWS
@@ -2083,7 +2085,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
       executeCall(state, ki, f, arguments);
     } else {
-      ref<Expr> v = eval(ki, 0, state).value;
+      auto pointer = eval(ki, 0, state);
+      // We handle constant segments for now
+      assert((cast<ConstantExpr>(pointer.getSegment())->getZExtValue()
+                == FUNCTIONS_SEGMENT) && "Invalid function pointer");
+      ref<Expr> v = optimizer.optimizeExpr(pointer.getValue(), true);
 
       ExecutionState *free = &state;
       bool hasInvalid = false, first = true;
@@ -2092,22 +2098,22 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
          have already got a value. But in the end the caches should
          handle it for us, albeit with some overhead. */
       do {
-        v = optimizer.optimizeExpr(v, true);
         ref<ConstantExpr> value;
         bool success = solver->getValue(*free, v, value);
         assert(success && "FIXME: Unhandled solver failure");
         (void) success;
         StatePair res = fork(*free, EqExpr::create(v, value), true);
         if (res.first) {
-          uint64_t addr = value->getZExtValue();
-          if (legalFunctions.count(addr)) {
-            f = (Function*) addr;
+          uint64_t id = value->getZExtValue();
+          auto it = legalFunctions.find(id);
+          if (it != legalFunctions.end()) {
+            f = it->second;
 
             // Don't give warning on unique resolution
             if (res.second || !first)
-              klee_warning_once(reinterpret_cast<void*>(addr),
-                                "resolved symbolic function pointer to: %s",
-                                f->getName().data());
+              klee_warning_once(reinterpret_cast<void*>(f),
+                                "resolved symbolic function pointer to id %lu: %s",
+                                id, f->getName().data());
 
             executeCall(*res.first, ki, f, arguments);
           } else {

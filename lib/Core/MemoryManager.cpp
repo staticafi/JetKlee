@@ -215,7 +215,7 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache, unsigned pointerWidth)
                 pointerWidth == 32,
                 DeterministicAllocationSize.getValue() * 1024 * 1024,
                 (void *)DeterministicStartAddress.getValue()),
-      lastSegment(0) {}
+      lastSegment(FIRST_ORDINARY_SEGMENT) {}
 
 MemoryManager::~MemoryManager() {
   while (!objects.empty()) {
