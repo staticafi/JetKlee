@@ -648,8 +648,6 @@ void Executor::initializeGlobals(ExecutionState &state) {
   // The legal functions are numbered from 1
   legalFunctions.emplace(0, nullptr);
 
-  uint64_t id;
-
   for (Module::iterator i = m->begin(), ie = m->end(); i != ie; ++i) {
     Function *f = &*i;
 
@@ -658,13 +656,13 @@ void Executor::initializeGlobals(ExecutionState &state) {
     // should be null.
     if (f->hasExternalWeakLinkage() && 
         !externalDispatcher->resolveSymbol(f->getName())) {
-        id = 0;
+        // insert nullptr
+        globalAddresses.emplace(f, KValue(Expr::createPointer(0)));
     } else {
-      id = legalFunctions.size();
+      auto id = legalFunctions.size();
       legalFunctions.emplace(id, f);
+      globalAddresses.emplace(f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
     }
-    
-    globalAddresses.emplace(f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
   }
 
 #ifndef WINDOWS
