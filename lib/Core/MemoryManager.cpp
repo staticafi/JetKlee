@@ -151,7 +151,7 @@ MemoryAllocator::MemoryAllocator(bool determ,
 
 void *MemoryAllocator::allocate(size_t size, size_t alignment) {
   if (deterministic) {
-    auto address = deterministicMem.allocate(size + RedZoneSpace, alignment);
+    auto address = deterministicMem.allocate(size + RedzoneSize, alignment);
     if (!address) {
       klee_warning_once(0, "Couldn't allocate %" PRIu64
                            " bytes. Not enough deterministic space left.",
