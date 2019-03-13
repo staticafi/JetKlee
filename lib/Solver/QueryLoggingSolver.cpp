@@ -24,7 +24,6 @@ llvm::cl::opt<bool> DumpPartialQueryiesEarly(
     llvm::cl::cat(klee::SolvingCat));
 
 #ifdef HAVE_ZLIB_H
-#include "klee/Internal/Support/CompressionStream.h"
 llvm::cl::opt<bool> CreateCompressedQueryLog(
     "compress-query-log", llvm::cl::init(false),
     llvm::cl::desc("Compress query log files (default=false)"),
