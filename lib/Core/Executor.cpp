@@ -275,6 +275,7 @@ cl::list<Executor::TerminateReason> ExitOnErrorType(
         clEnumValN(Executor::External, "External",
                    "External objects referenced"),
         clEnumValN(Executor::Free, "Free", "Freeing invalid memory"),
+        clEnumValN(Executor::Leak, "Leak", "Leaking heap-allocated memory"),
         clEnumValN(Executor::Model, "Model", "Memory model limit hit"),
         clEnumValN(Executor::Overflow, "Overflow", "An overflow occurred"),
         clEnumValN(Executor::Ptr, "Ptr", "Pointer error"),
