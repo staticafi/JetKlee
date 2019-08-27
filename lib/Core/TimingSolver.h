@@ -14,7 +14,7 @@
 #include "klee/Solver/Solver.h"
 #include "klee/Internal/System/Time.h"
 #include "klee/KValue.h"
-#include "klee/util/Assignment.h"
+#include "klee/Expr/Assignment.h"
 
 #include <vector>
 

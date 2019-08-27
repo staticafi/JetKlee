@@ -15,14 +15,9 @@
 #include "klee/Expr/ExprEvaluator.h"
 #include "klee/Expr/ExprRangeEvaluator.h"
 #include "klee/Expr/ExprVisitor.h"
+#include "klee/Expr/ExprUtil.h"
 #include "klee/Solver/IncompleteSolver.h"
 
-#include "klee/util/ExprEvaluator.h"
-#include "klee/util/ExprRangeEvaluator.h"
-#include "klee/util/ExprVisitor.h"
-#include "klee/util/SizeVisitor.h"
-
-#include "klee/util/ExprUtil.h"
 // FIXME: Use APInt.
 #include "klee/Internal/Support/Debug.h"
 #include "klee/Internal/Support/IntEvaluation.h" // FIXME: Use APInt

@@ -20,11 +20,9 @@
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Assignment.h"
 #include "klee/Expr/ExprUtil.h"
+#include "klee/Expr/ExprVisitor.h"
 #include "klee/Solver/Solver.h"
 #include "klee/Solver/SolverImpl.h"
-#include "klee/util/Assignment.h"
-#include "klee/util/ExprUtil.h"
-#include "klee/util/ExprVisitor.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"

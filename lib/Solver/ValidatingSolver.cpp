@@ -11,7 +11,7 @@
 #include "klee/Solver/Solver.h"
 #include "klee/Solver/SolverImpl.h"
 
-#include "klee/util/ExprUtil.h"
+#include "klee/Expr/ExprUtil.h"
 
 #include <vector>
 

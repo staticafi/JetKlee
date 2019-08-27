@@ -10,7 +10,7 @@
 #ifndef KVALUE_H
 #define KVALUE_H
 
-#include "klee/Expr.h"
+#include "klee/Expr/Expr.h"
 
 #include "llvm/Support/raw_ostream.h"
 

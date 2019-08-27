@@ -9,8 +9,8 @@
 #include "QueryLoggingSolver.h"
 
 #include "klee/Config/config.h"
-#include "klee/Constraints.h"
-#include "klee/util/ExprUtil.h"
+#include "klee/Expr/Constraints.h"
+#include "klee/Expr/ExprUtil.h"
 #include "klee/Internal/Support/ErrorHandling.h"
 #include "klee/Internal/Support/FileHandling.h"
 #include "klee/Internal/System/Time.h"
