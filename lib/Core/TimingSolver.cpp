@@ -16,8 +16,8 @@
 #include "klee/TimerStatIncrementer.h"
 
 #include "CoreStats.h"
-#include "klee/util/Assignment.h"
-#include "klee/util/ExprUtil.h"
+#include "klee/Expr/Assignment.h"
+#include "klee/Expr/ExprUtil.h"
 
 using namespace klee;
 using namespace llvm;
