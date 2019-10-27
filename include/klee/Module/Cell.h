@@ -17,6 +17,8 @@ namespace klee {
   public:
     Cell() {}
     Cell(const KValue &other) : KValue(other) {}
+
+    Cell(const Cell &other) = default;
   };
 }
 

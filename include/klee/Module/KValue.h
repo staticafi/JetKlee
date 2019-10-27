@@ -26,6 +26,8 @@ namespace klee {
     KValue(ref<Expr> segment, ref<Expr> offset)
       : value(offset), pointerSegment(segment) {}
 
+    KValue& operator=(const KValue &other) = default;
+
     ref<Expr> getValue() const { return value; }
     ref<Expr> getOffset() const { return value; }
     ref<Expr> getSegment() const { return pointerSegment; }
