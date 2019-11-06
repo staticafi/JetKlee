@@ -106,7 +106,25 @@ private:
 public:
   // Execution - Control Flow specific
 
+  struct NondetValue {
+      ref<Expr> expr;
+      // info about name and where the object was created...
+      NondetValue(ref<Expr> e, const std::string& n) : expr(e), name(n) {}
+      NondetValue(ref<Expr> e, KInstruction *ki, const std::string& n)
+      : expr(e), kinstruction(ki), name(n) {}
+
+      KInstruction *kinstruction{nullptr};
+      const std::string name;
+      // when an instruction that creates a nodet value is called
+      // several times, we can assign a sequential number to each
+      // of the values here
+      size_t seqNum{0};
+  };
+
   std::map<unsigned int, std::vector<const MemoryObject *>> identifiedNondetObjects;
+
+  // FIXME: wouldn't unique_ptr be more efficient (no ref<> copying)
+  std::vector<NondetValue> nondetValues;
 
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
@@ -179,6 +197,8 @@ public:
 
   // The numbers of times this state has run through Executor::stepInstruction
   std::uint64_t steppedInstructions;
+
+  NondetValue& addNondetValue(ref<Expr> expr, const std::string& name);
 
 private:
   ExecutionState() : ptreeNode(0) {}

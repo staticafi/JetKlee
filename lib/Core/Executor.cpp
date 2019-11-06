@@ -3733,6 +3733,30 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   }
 }
 
+ref<Expr> Executor::createNondetValue(ExecutionState &state,
+                                      unsigned size,
+                                      KInstruction *kinst,
+                                      const std::string &name) {
+  assert(!replayKTest);
+  // Find a unique name for this array.  First try the original name,
+  // or if that fails try adding a unique identifier.
+  unsigned id = 0;
+  std::string uniqueName = name;
+  while (!state.arrayNames.insert(uniqueName).second) {
+    uniqueName = name + "_" + llvm::utostr(++id);
+  }
+
+  const Array *array = arrayCache.CreateArray(uniqueName, size);
+  auto expr = Expr::createTempRead(array, size);
+  auto& nv = state.addNondetValue(expr, name);
+
+  nv.kinstruction = kinst;
+  nv.seqNum = id;
+
+  return expr;
+}
+
+
 void Executor::executeMakeSymbolic(ExecutionState &state, 
                                    const MemoryObject *mo,
                                    const std::string &name) {
@@ -4103,6 +4127,33 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     data.resize(sizes[i]);
     res.push_back(std::make_pair(mo->name, data));
   }
+  for (auto& it : state.nondetValues) {
+    ref<ConstantExpr> value;
+    bool success = solver->getValue(state, it.expr, value);
+    assert(success && "FIXME: Unhandled solver failure");
+    (void) success;
+
+    auto size = it.expr->getWidth()/8;
+    assert(size <= 8 && "Does not support size > 8");
+    std::vector<uint8_t> data;
+    data.resize(size);
+
+    uint64_t val = value->getZExtValue();
+    memcpy(data.data(), &val, size);
+
+    std::string descr = it.name;
+    if (it.kinstruction) {
+      auto *info = it.kinstruction->info;
+      if (!info->file.empty()) {
+          descr += ":" + llvm::sys::path::filename(info->file).str() +
+                   ":" + std::to_string(info->line);
+      }
+      if (it.seqNum > 0) {
+          descr += " (" + std::to_string(it.seqNum) + ")";
+      }
+    }
+    res.push_back(std::make_pair(descr, data));
+  }
   return true;
 }
 
@@ -4181,11 +4232,16 @@ size_t Executor::getAllocationAlignment(const llvm::Value *allocSite) const {
     if (fn)
       allocationSiteName = fn->getName().str();
 
-    klee_warning_once(fn != NULL ? fn : allocSite,
-                      "Alignment of memory from call \"%s\" is not "
-                      "modelled. Using alignment of %zu.",
-                      allocationSiteName.c_str(), forcedAlignment);
-    alignment = forcedAlignment;
+    if (allocationSiteName.compare(0, 17, "__VERIFIER_nondet") == 0) {
+        type = cast<CallInst>(cs.getInstruction())->getType();
+        alignment = 0;
+    } else {
+      klee_warning_once(fn != NULL ? fn : allocSite,
+                        "Alignment of memory from call \"%s\" is not "
+                        "modelled. Using alignment of %zu.",
+                        allocationSiteName.c_str(), forcedAlignment);
+      alignment = forcedAlignment;
+    }
   } else {
     llvm_unreachable("Unhandled allocation site");
   }

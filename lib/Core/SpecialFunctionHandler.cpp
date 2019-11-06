@@ -115,6 +115,10 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("realloc", handleRealloc, true),
   add("__VERIFIER_scope_enter", handleScopeEnter, false),
   add("__VERIFIER_scope_leave", handleScopeLeave, false),
+  // SV-COMP special functions. We could define them using
+  // klee_make_symbolic, but if we handle them here,
+  // it is much easier to generate counter-examples later.
+  add("__VERIFIER_nondet_int", handleVerifierNondetInt, true),
 
   // operator delete[](void*)
   add("_ZdaPv", handleDeleteArray, false),
@@ -903,6 +907,17 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
                                      Executor::User);
     }
   }
+}
+
+void SpecialFunctionHandler::handleVerifierNondetInt(ExecutionState &state,
+                                                     KInstruction *target,
+                                                     const std::vector<Cell> &arguments) {
+  assert(arguments.empty() && "Wrong number of arguments");
+
+  executor.bindLocal(target, state,
+                     // FIXME: get the right size from DataLayout
+                     executor.createNondetValue(state, Expr::Int32, target,
+                                                "__VERIFIER_nondet_int"));
 }
 
 void SpecialFunctionHandler::handleMakeNondet(ExecutionState &state,
