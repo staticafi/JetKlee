@@ -188,6 +188,24 @@ public:
 
   // Execution - Control Flow specific
 
+  struct NondetValue {
+    ref<Expr> expr;
+    // info about name and where the object was created...
+    NondetValue(const ref<Expr> &e, const std::string& n) : expr(e), name(n) {}
+    NondetValue(const ref<Expr> &e, KInstruction *ki, const std::string& n)
+        : expr(e), kinstruction(ki), name(n) {}
+
+    KInstruction *kinstruction{nullptr};
+    const std::string name;
+    // when an instruction that creates a nondet value is called
+    // several times, we can assign a sequential number to each
+    // of the values here
+    size_t seqNum{0};
+  };
+
+  // FIXME: wouldn't unique_ptr be more efficient (no ref<> copying)
+  std::vector<NondetValue> nondetValues;
+
   /// @brief Pointer to instruction to be executed after the current
   /// instruction
   KInstIterator pc;
@@ -302,6 +320,8 @@ public:
 
   std::uint32_t getID() const { return id; };
   void setID() { id = nextID++; };
+
+  NondetValue& addNondetValue(const ref<Expr> &expr, const std::string& name);
 };
 
 struct ExecutionStateIDCompare {

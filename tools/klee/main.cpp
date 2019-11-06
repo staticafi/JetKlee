@@ -813,6 +813,7 @@ static const char *modelledExternals[] = {
   "__ubsan_handle_divrem_overflow",
   "__VERIFIER_scope_enter",
   "__VERIFIER_scope_leave",
+  "__VERIFIER_nondet_int",
 };
 
 // Symbols we aren't going to warn about

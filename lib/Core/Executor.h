@@ -369,6 +369,11 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
+  ref<Expr> createNondetValue(ExecutionState &state,
+                              unsigned size,
+                              KInstruction *instr,
+                              const std::string &name);
+
   const Cell& eval(KInstruction *ki, unsigned index, 
                    ExecutionState &state) const;
 

@@ -85,6 +85,7 @@ ExecutionState::~ExecutionState() {
 }
 
 ExecutionState::ExecutionState(const ExecutionState& state):
+    nondetValues(state.nondetValues),
     pc(state.pc),
     prevPC(state.prevPC),
     stack(state.stack),
@@ -154,6 +155,12 @@ void ExecutionState::removeAlloca(const MemoryObject *mo) {
     sf.allocas[idx] = sf.allocas.back();
     sf.allocas.pop_back();
   }
+}
+
+ExecutionState::NondetValue&
+ExecutionState::addNondetValue(const ref<Expr> &expr, const std::string& name) {
+    nondetValues.emplace_back(expr, name);
+    return nondetValues.back();
 }
 
 void ExecutionState::addSymbolic(const MemoryObject *mo, const Array *array) {

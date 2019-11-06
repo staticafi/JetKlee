@@ -151,6 +151,7 @@ namespace klee {
     HANDLER(handleDivRemOverflow);
     HANDLER(handleScopeEnter);
     HANDLER(handleScopeLeave);
+    HANDLER(handleVerifierNondetInt);
 #undef HANDLER
   };
 } // End klee namespace
