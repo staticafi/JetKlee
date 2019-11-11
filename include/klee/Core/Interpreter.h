@@ -161,6 +161,10 @@ public:
                                    std::vector<unsigned char> > >
                                    &res) = 0;
 
+  // get a sequence of inputs that drive the program to this state
+  virtual std::vector<std::vector<unsigned char>>
+  getTestVector(const ExecutionState &state) = 0;
+
   virtual void getCoveredLines(const ExecutionState &state,
                                std::map<const std::string*, std::set<unsigned> > &res) = 0;
 };

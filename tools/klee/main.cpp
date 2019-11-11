@@ -529,6 +529,41 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         *f << errorMessage;
     }
 
+    if (true/*m_writeTestCase*/) {
+      if (auto f = openTestFile("xml", id)) {
+        // write the header
+        *f <<
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
+        " <!DOCTYPE testcase PUBLIC "
+        "\"+//IDN sosy-lab.org//DTD test-format testcase 1.1//EN\""
+        "\"https://sosy-lab.org/test-format/testcase-1.1.dtd\">\n\n";
+
+        *f << "<testcase>\n";
+
+        auto testvec = m_interpreter->getTestVector(state);
+        for (auto& input : testvec) {
+          *f << "  <input>";
+          if (input.size() == 8) {
+             *f << *reinterpret_cast<uint64_t*>(input.data());
+          } else if (input.size() == 4) {
+             *f << *reinterpret_cast<uint32_t*>(input.data());
+          } else if (input.size() == 2) {
+             *f << *reinterpret_cast<uint16_t*>(input.data());
+          } else if (input.size() == 1) {
+             *f << *reinterpret_cast<uint8_t*>(input.data());
+          } else {
+              klee_warning("Unsupported test input value, using 0");
+              *f << "0";
+          }
+          *f << "</input>\n";
+        }
+
+        *f << "</testcase>\n";
+      } else {
+        klee_warning("unable to write test-case file, losing it");
+      }
+    }
+
     if (m_pathWriter) {
       std::vector<unsigned char> concreteBranches;
       m_pathWriter->readStream(m_interpreter->getPathStreamID(state),

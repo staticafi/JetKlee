@@ -4663,6 +4663,30 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   return true;
 }
 
+// get a sequence of inputs that drive the program to this state
+std::vector<std::vector<unsigned char>>
+Executor::getTestVector(const ExecutionState &state) {
+  std::vector<std::vector<unsigned char>> res;
+
+  for (auto& it : state.nondetValues) {
+    ref<ConstantExpr> value;
+    bool success = solver->getValue(
+        state.constraints, it.expr, value, state.queryMetaData);
+    assert(success && "FIXME: Unhandled solver failure");
+    (void) success;
+
+    auto size = it.expr->getWidth()/8;
+    assert(size <= 8 && "Does not support size > 8");
+    std::vector<uint8_t> data;
+    data.resize(size);
+
+    uint64_t val = value->getZExtValue();
+    memcpy(data.data(), &val, size);
+    res.emplace_back(std::move(data));
+  }
+  return res;
+}
+
 void Executor::getCoveredLines(const ExecutionState &state,
                                std::map<const std::string*, std::set<unsigned> > &res) {
   res = state.coveredLines;

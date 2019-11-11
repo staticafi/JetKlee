@@ -563,6 +563,10 @@ public:
       std::vector<std::pair<std::string, std::vector<unsigned char>>> &res)
       override;
 
+  // get a sequence of inputs that drive the program to this state
+  std::vector<std::vector<unsigned char>>
+  getTestVector(const ExecutionState &state) override;
+
   void getCoveredLines(const ExecutionState &state,
                        std::map<const std::string *, std::set<unsigned>> &res)
       override;
