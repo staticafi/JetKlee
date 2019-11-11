@@ -23,6 +23,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <experimental/optional>
 
 namespace klee {
 class Array;
