@@ -158,8 +158,8 @@ void ExecutionState::removeAlloca(const MemoryObject *mo) {
 }
 
 ExecutionState::NondetValue&
-ExecutionState::addNondetValue(const ref<Expr> &expr, const std::string& name) {
-    nondetValues.emplace_back(expr, name);
+ExecutionState::addNondetValue(const ref<Expr> &expr, bool isSigned, const std::string& name) {
+    nondetValues.emplace_back(expr, isSigned, name);
     return nondetValues.back();
 }
 

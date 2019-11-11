@@ -370,7 +370,7 @@ private:
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
   ref<Expr> createNondetValue(ExecutionState &state,
-                              unsigned size,
+                              unsigned size, bool isSigned,
                               KInstruction *instr,
                               const std::string &name);
 
@@ -564,7 +564,7 @@ public:
       override;
 
   // get a sequence of inputs that drive the program to this state
-  std::vector<std::vector<unsigned char>>
+  std::vector<ConcreteValue>
   getTestVector(const ExecutionState &state) override;
 
   void getCoveredLines(const ExecutionState &state,

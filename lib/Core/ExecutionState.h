@@ -194,7 +194,13 @@ public:
     NondetValue(const ref<Expr> &e, const std::string& n) : expr(e), name(n) {}
     NondetValue(const ref<Expr> &e, KInstruction *ki, const std::string& n)
         : expr(e), kinstruction(ki), name(n) {}
+    NondetValue(const ref<Expr> &e, bool sgned, const std::string& n)
+        : expr(e), isSigned(sgned), name(n) {}
+    NondetValue(const ref<Expr> &e, bool sgned, KInstruction *ki,
+                const std::string& n)
+        : expr(e), isSigned(sgned), kinstruction(ki), name(n) {}
 
+    bool isSigned{false};
     KInstruction *kinstruction{nullptr};
     const std::string name;
     // when an instruction that creates a nondet value is called
@@ -321,7 +327,8 @@ public:
   std::uint32_t getID() const { return id; };
   void setID() { id = nextID++; };
 
-  NondetValue& addNondetValue(const ref<Expr> &expr, const std::string& name);
+  NondetValue& addNondetValue(const ref<Expr> &expr, bool isSigned,
+                              const std::string& name);
 };
 
 struct ExecutionStateIDCompare {
