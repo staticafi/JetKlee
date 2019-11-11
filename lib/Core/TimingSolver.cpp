@@ -135,7 +135,7 @@ bool TimingSolver::getValue(const ExecutionState& state, KValue value,
     offsetResult = cast<ConstantExpr>(assignment->evaluate(offset));
   }
 
-  state.queryCost += timer.check() / 1e6;
+  state.queryCost += timer.delta() / 1e6;
 
   return success;
 }

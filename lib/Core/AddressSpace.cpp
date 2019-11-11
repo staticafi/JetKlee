@@ -248,7 +248,7 @@ bool AddressSpace::resolve(ExecutionState &state,
   // TODO inefficient
   TimerStatIncrementer timer(stats::resolveTime);
   for (const SegmentMap::value_type &res : segmentMap) {
-    if (timeout && timeout < timer.check())
+    if (timeout && timeout < timer.delta())
       return true;
     ref<Expr> segmentExpr = ConstantExpr::create(res.first, pointer.getWidth());
     ref<Expr> expr = EqExpr::create(pointer.getSegment(), segmentExpr);
