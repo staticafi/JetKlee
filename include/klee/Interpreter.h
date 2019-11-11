@@ -30,6 +30,24 @@ class ExecutionState;
 class Interpreter;
 class TreeStreamWriter;
 
+// wrapper around APInt that remembers the signdness
+struct ConcreteValue {
+    llvm::APInt value;
+    bool issigned{false};
+
+    ConcreteValue(unsigned numBits, uint64_t val, bool isSigned)
+    : value(numBits, val, isSigned), issigned(isSigned) {}
+
+    bool isSigned() const { return issigned; }
+    uint64_t getZExtValue() const { return value.getZExtValue(); }
+    // makes sense also for unsigned
+    uint64_t getSExtValue() const { return value.getSExtValue(); }
+
+    unsigned getBitWidth() const { return value.getBitWidth(); }
+    // WARNING: not efficient
+    std::string toString() const { return value.toString(10, issigned); }
+};
+
 class InterpreterHandler {
 public:
   InterpreterHandler() {}
@@ -163,7 +181,7 @@ public:
                                    &res) = 0;
 
   // get a sequence of inputs that drive the program to this state
-  virtual std::vector<std::vector<unsigned char>>
+  virtual std::vector<ConcreteValue>
   getTestVector(const ExecutionState &state) = 0;
 
   virtual void getCoveredLines(const ExecutionState &state,

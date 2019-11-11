@@ -916,7 +916,8 @@ void SpecialFunctionHandler::handleVerifierNondetInt(ExecutionState &state,
 
   executor.bindLocal(target, state,
                      // FIXME: get the right size from DataLayout
-                     executor.createNondetValue(state, Expr::Int32, target,
+                     executor.createNondetValue(state, Expr::Int32,
+                                                /* isSigned =*/ true, target,
                                                 "__VERIFIER_nondet_int"));
 }
 

@@ -113,7 +113,12 @@ public:
       NondetValue(ref<Expr> e, const std::string& n) : expr(e), name(n) {}
       NondetValue(ref<Expr> e, KInstruction *ki, const std::string& n)
       : expr(e), kinstruction(ki), name(n) {}
+      NondetValue(ref<Expr> e, bool sgned, const std::string& n)
+      : expr(e), isSigned(sgned), name(n) {}
+      NondetValue(ref<Expr> e, bool sgned, KInstruction *ki, const std::string& n)
+      : expr(e), isSigned(sgned), kinstruction(ki), name(n) {}
 
+      bool isSigned{false};
       KInstruction *kinstruction{nullptr};
       const std::string name;
       // when an instruction that creates a nodet value is called
@@ -199,7 +204,7 @@ public:
   // The numbers of times this state has run through Executor::stepInstruction
   std::uint64_t steppedInstructions;
 
-  NondetValue& addNondetValue(ref<Expr> expr, const std::string& name);
+  NondetValue& addNondetValue(ref<Expr> expr, bool isSigned, const std::string& name);
 
 private:
   ExecutionState() : ptreeNode(0) {}

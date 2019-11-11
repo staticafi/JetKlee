@@ -92,6 +92,11 @@ namespace {
             cl::cat(TestCaseCat));
 
   cl::opt<bool>
+  WriteTestCases("write-testcases",
+            cl::desc("Write .xml files in the TEST-COMP format (default=false)"),
+            cl::cat(TestCaseCat));
+
+  cl::opt<bool>
   WriteKQueries("write-kqueries",
                 cl::desc("Write .kquery files for each test case (default=false)"),
                 cl::cat(TestCaseCat));
@@ -525,7 +530,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         *f << errorMessage;
     }
 
-    if (true/*m_writeTestCase*/) {
+    if (WriteTestCases) {
       if (auto f = openTestFile("xml", id)) {
         // write the header
         *f <<
@@ -538,20 +543,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
         auto testvec = m_interpreter->getTestVector(state);
         for (auto& input : testvec) {
-          *f << "  <input>";
-          if (input.size() == 8) {
-             *f << *reinterpret_cast<uint64_t*>(input.data());
-          } else if (input.size() == 4) {
-             *f << *reinterpret_cast<uint32_t*>(input.data());
-          } else if (input.size() == 2) {
-             *f << *reinterpret_cast<uint16_t*>(input.data());
-          } else if (input.size() == 1) {
-             *f << *reinterpret_cast<uint8_t*>(input.data());
-          } else {
-              klee_warning("Unsupported test input value, using 0");
-              *f << "0";
-          }
-          *f << "</input>\n";
+          *f << "  <input>" << input.toString() << "</input>\n";
         }
 
         *f << "</testcase>\n";
