@@ -96,7 +96,13 @@ namespace klee {
     /* Convenience routines */
 
     std::string readStringAtAddress(ExecutionState &state, const Cell &address);
-    
+
+    void handleVerifierNondetType(ExecutionState &state,
+                                  KInstruction *target,
+                                  unsigned size,
+                                  bool isSigned,
+                                  const std::string& name);
+ 
     /* Handlers */
 
 #define HANDLER(name) void name(ExecutionState &state, \
@@ -148,6 +154,24 @@ namespace klee {
     HANDLER(handleScopeEnter);
     HANDLER(handleScopeLeave);
     HANDLER(handleVerifierNondetInt);
+    HANDLER(handleVerifierNondetUInt);
+    HANDLER(handleVerifierNondetBool);
+    HANDLER(handleVerifierNondetChar);
+    HANDLER(handleVerifierNondetUChar);
+    HANDLER(handleVerifierNondetFloat);
+    HANDLER(handleVerifierNondetDouble);
+    HANDLER(handleVerifierNondetLOffT);
+    HANDLER(handleVerifierNondetLong);
+    HANDLER(handleVerifierNondetULong);
+    HANDLER(handleVerifierNondetPointer);
+    HANDLER(handleVerifierNondetPChar);
+    HANDLER(handleVerifierNondetPthreadT);
+    HANDLER(handleVerifierNondetUShort);
+    HANDLER(handleVerifierNondetShort);
+    HANDLER(handleVerifierNondetSizeT);
+    HANDLER(handleVerifierNondetU32);
+    HANDLER(handleVerifierNondetUnsigned);
+    HANDLER(handleVerifierNondetSectorT);
 #undef HANDLER
   };
 } // End klee namespace

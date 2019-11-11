@@ -835,6 +835,22 @@ static const char *modelledExternals[] = {
   "__VERIFIER_scope_enter",
   "__VERIFIER_scope_leave",
   "__VERIFIER_nondet_int",
+  "__VERIFIER_nondet_float",
+  "__VERIFIER_nondet_double",
+  "__VERIFIER_nondet_loff_t",
+  "__VERIFIER_nondet_long",
+  "__VERIFIER_nondet_pchar",
+  "__VERIFIER_nondet_pointer",
+  "__VERIFIER_nondet_pthread_t",
+  "__VERIFIER_nondet_sector_t",
+  "__VERIFIER_nondet_short",
+  "__VERIFIER_nondet_size_t",
+  "__VERIFIER_nondet_u32",
+  "__VERIFIER_nondet_uchar",
+  "__VERIFIER_nondet_uint",
+  "__VERIFIER_nondet_ulong",
+  "__VERIFIER_nondet_unsigned",
+  "__VERIFIER_nondet_ushort",
 };
 
 // Symbols we aren't going to warn about
