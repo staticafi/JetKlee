@@ -362,8 +362,15 @@ KleeHandler::KleeHandler(int argc, char **argv)
 
   if (dir_given) {
     // OutputDir
-    if (mkdir(directory.c_str(), 0775) < 0)
-      klee_error("cannot create \"%s\": %s", directory.c_str(), strerror(errno));
+    if (mkdir(directory.c_str(), 0775) < 0) {
+      // this is not fatal, it is the problem of the user that (s)he
+      // specified an existing directory where the files may be re-writtne
+      if (errno == EEXIST && dir_given) {
+        klee_warning("cannot create \"%s\": %s", directory.c_str(), strerror(errno));
+      } else {
+        klee_error("cannot create \"%s\": %s", directory.c_str(), strerror(errno));
+      }
+    }
 
     m_outputDirectory = directory;
   } else {
