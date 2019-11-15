@@ -494,43 +494,44 @@ void KleeHandler::processTestCase(const ExecutionState &state,
                                   const char *errorMessage,
                                   const char *errorSuffix) {
   if (!WriteNone) {
-    std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
-    bool success = m_interpreter->getSymbolicSolution(state, out);
-
-    if (!success)
-      klee_warning("unable to get symbolic solution, losing test case");
-
     const auto start_time = time::getWallTime();
-
     unsigned id = ++m_numTotalTests;
 
-    if (success) {
-      KTest b;
-      b.numArgs = m_argc;
-      b.args = m_argv;
-      b.symArgvs = 0;
-      b.symArgvLen = 0;
-      b.numObjects = out.size();
-      b.objects = new KTestObject[b.numObjects];
-      assert(b.objects);
-      for (unsigned i=0; i<b.numObjects; i++) {
-        KTestObject *o = &b.objects[i];
-        o->name = const_cast<char*>(out[i].first.c_str());
-        o->numBytes = out[i].second.size();
-        o->bytes = new unsigned char[o->numBytes];
-        assert(o->bytes);
-        std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
-      }
+    if (!WriteTestCases) {
+      std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
+      bool success = m_interpreter->getSymbolicSolution(state, out);
 
-      if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
-        klee_warning("unable to write output test case, losing it");
-      } else {
-        ++m_numGeneratedTests;
-      }
+      if (!success)
+        klee_warning("unable to get symbolic solution, losing test case");
 
-      for (unsigned i=0; i<b.numObjects; i++)
-        delete[] b.objects[i].bytes;
-      delete[] b.objects;
+      if (success) {
+        KTest b;
+        b.numArgs = m_argc;
+        b.args = m_argv;
+        b.symArgvs = 0;
+        b.symArgvLen = 0;
+        b.numObjects = out.size();
+        b.objects = new KTestObject[b.numObjects];
+        assert(b.objects);
+        for (unsigned i=0; i<b.numObjects; i++) {
+          KTestObject *o = &b.objects[i];
+          o->name = const_cast<char*>(out[i].first.c_str());
+          o->numBytes = out[i].second.size();
+          o->bytes = new unsigned char[o->numBytes];
+          assert(o->bytes);
+          std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
+        }
+
+        if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
+          klee_warning("unable to write output test case, losing it");
+        } else {
+          ++m_numGeneratedTests;
+        }
+
+        for (unsigned i=0; i<b.numObjects; i++)
+          delete[] b.objects[i].bytes;
+        delete[] b.objects;
+      }
     }
 
     if (errorMessage) {
@@ -548,7 +549,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         "\"+//IDN sosy-lab.org//DTD test-format testcase 1.1//EN\""
         "\"https://sosy-lab.org/test-format/testcase-1.1.dtd\">\n\n";
 
-        *f << "<testcase>\n";
+        if (errorMessage) {
+          *f << "<testcase coversError=\"true\">\n";
+        } else {
+          *f << "<testcase>\n";
+        }
 
         auto testvec = m_interpreter->getTestVector(state);
         for (auto& input : testvec) {
@@ -556,6 +561,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         }
 
         *f << "</testcase>\n";
+
+        ++m_numGeneratedTests;
       } else {
         klee_warning("unable to write test-case file, losing it");
       }
