@@ -2711,6 +2711,20 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     const Cell &left = eval(ki, 0, state);
     const Cell &right = eval(ki, 1, state);
 
+    // check whether the value may be pointer (to be sure,
+    // we would need to issue the solver
+    bool lp = !isa<ConstantExpr>(left.getSegment()) ||
+              !cast<ConstantExpr>(left.getSegment())->isZero();
+    bool rp = !isa<ConstantExpr>(right.getSegment()) ||
+              !cast<ConstantExpr>(right.getSegment())->isZero();
+    if (lp || rp) {
+        if (lp && rp) {
+            klee_warning("comparison of two pointers, may loose paths");
+        } else {
+            klee_warning("comparison of pointer to integer");
+        }
+    }
+
     switch(ii->getPredicate()) {
     case ICmpInst::ICMP_EQ:
       bindLocal(ki, state, left.Eq(right)); break;
