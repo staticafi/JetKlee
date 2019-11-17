@@ -4712,9 +4712,9 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 }
 
 // get a sequence of inputs that drive the program to this state
-std::vector<ConcreteValue>
+std::vector<NamedConcreteValue>
 Executor::getTestVector(const ExecutionState &state) {
-  std::vector<ConcreteValue> res;
+  std::vector<NamedConcreteValue> res;
   res.reserve(state.nondetValues.size());
 
   for (auto& it : state.nondetValues) {
@@ -4729,7 +4729,7 @@ Executor::getTestVector(const ExecutionState &state) {
     // XXX: SExtValue for signed types?
     uint64_t val = value->getZExtValue();
 
-    res.emplace_back(size, val, it.isSigned);
+    res.emplace_back(size, val, it.isSigned, it.name);
   }
   return res;
 }

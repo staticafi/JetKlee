@@ -168,7 +168,7 @@ public:
                                    &res) = 0;
 
   // get a sequence of inputs that drive the program to this state
-  virtual std::vector<ConcreteValue>
+  virtual std::vector<NamedConcreteValue>
   getTestVector(const ExecutionState &state) = 0;
 
   virtual void getCoveredLines(const ExecutionState &state,

@@ -93,6 +93,11 @@ namespace {
             cl::cat(TestCaseCat));
 
   cl::opt<bool>
+  WriteWitness("write-witness",
+            cl::desc("Write .graphml files in the SV-COMP format (default=false)"),
+            cl::cat(TestCaseCat));
+
+  cl::opt<bool>
   WriteKQueries("write-kqueries",
                 cl::desc("Write .kquery files for each test case (default=false)"),
                 cl::cat(TestCaseCat));
@@ -561,10 +566,54 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         }
 
         *f << "</testcase>\n";
-
-        ++m_numGeneratedTests;
       } else {
         klee_warning("unable to write test-case file, losing it");
+      }
+    }
+
+    if (WriteWitness) {
+      if (auto witness = openTestFile("graphml", id)) {
+          klee_warning("Generating violation witness");
+
+        *witness << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" ;
+        *witness << "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" "
+                             "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n"
+                    "<graph edgedefault=\"directed\">\n";
+
+        //entry node
+        *witness <<
+            "<node id=\"0\">\n"
+            "<data key=\"entry\">true</data>\n"
+            "</node>";
+
+        auto testvec = m_interpreter->getTestVector(state);
+
+        int node = 0;
+        for (auto& input : testvec) {
+            *witness <<
+                "<node id=\""<< node + 1 << "\"></node>\n"
+                "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
+                "<data key=\"assumption\">\\result==" << input.toString() << "</data>\n"
+                "<data key=\"assumption.resultfunction\">" << input.getName() << "</data>\n"
+                "</edge>";
+            node++;
+        }
+
+        //error
+        *witness <<
+            "<node id=\"error\">\n"
+            "<data key=\"violation\">true</data>\n"
+            "</node>\n";
+
+        //last edge
+        *witness <<
+            "<edge source=\"" << node <<"\" target=\"error\"></edge>\n";
+
+        *witness << "</graph>\n"
+                    "</graphml>\n";
+
+      } else {
+        klee_warning("unable to write witness file, losing it");
       }
     }
 

@@ -577,7 +577,7 @@ public:
       override;
 
   // get a sequence of inputs that drive the program to this state
-  std::vector<ConcreteValue>
+  std::vector<NamedConcreteValue>
   getTestVector(const ExecutionState &state) override;
 
   void getCoveredLines(const ExecutionState &state,

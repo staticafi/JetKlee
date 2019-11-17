@@ -20,10 +20,11 @@
 
 namespace klee {
 // wrapper around APInt that remembers the signdness
-struct ConcreteValue {
+class ConcreteValue {
     llvm::APInt value;
     bool issigned{false};
 
+public:
     ConcreteValue(unsigned numBits, uint64_t val, bool isSigned)
     : value(numBits, val, isSigned), issigned(isSigned) {}
 
@@ -56,6 +57,27 @@ struct MaybeConcreteValue {
     llvm::Optional<ConcreteValue> value;
 
     bool hasValue() const { return static_cast<bool>(value); }
+};
+
+class NamedConcreteValue : public ConcreteValue {
+    const std::string name;
+
+public:
+
+    NamedConcreteValue(unsigned numBits, uint64_t val,
+                       bool isSigned, const std::string& nm = "")
+    : ConcreteValue(numBits, val, isSigned), name(nm) {}
+
+    NamedConcreteValue(const llvm::APInt& val, bool isSigned,
+                       const std::string& nm = "")
+    : ConcreteValue(val, isSigned), name(nm) {}
+
+    NamedConcreteValue(llvm::APInt&& val, bool isSigned,
+                       const std::string& nm = "")
+    : ConcreteValue(std::move(val), isSigned), name(nm) {}
+
+    const std::string& getName() const { return name; }
+    // maybe add also debug info here?
 };
 
 } // namespace klee
