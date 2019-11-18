@@ -1081,10 +1081,12 @@ public:
   }
 
   static ref<ConstantExpr> create(uint64_t v, Width w) {
+/*
 #ifndef NDEBUG
     if (w <= 64)
       assert(v == bits64::truncateToNBits(v, w) && "invalid constant");
 #endif
+*/
     return alloc(v, w);
   }
 
