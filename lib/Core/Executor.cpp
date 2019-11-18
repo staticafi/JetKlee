@@ -2721,7 +2721,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         if (lp && rp) {
             klee_warning("comparison of two pointers, may loose paths");
         } else {
-            klee_warning("comparison of pointer to integer");
+            auto val = lp ? dyn_cast<ConstantExpr>(right.getValue()) :
+                            dyn_cast<ConstantExpr>(left.getValue());
+            if (!val || !val->isZero()) {
+              klee_warning("comparison of pointer to integer");
+            }
         }
     }
 
