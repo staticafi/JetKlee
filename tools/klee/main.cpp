@@ -573,7 +573,6 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
     if (WriteWitness) {
       if (auto witness = openTestFile("graphml", id)) {
-          klee_warning("Generating violation witness");
 
         *witness << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" ;
         *witness << "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" "
