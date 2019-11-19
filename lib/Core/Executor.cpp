@@ -4000,8 +4000,8 @@ void Executor::callExternalFunction(ExecutionState &state,
 
     auto retTy = function->getReturnType();
     if (retTy->isVoidTy()) {
-        klee_warning_once(target, "Skipping call of undefined function: %s",
-                          function->getName().str().c_str());
+        //klee_warning_once(target, "Skipping call of undefined function: %s",
+        //                  function->getName().str().c_str());
         return;
     }
 
@@ -4025,8 +4025,8 @@ void Executor::callExternalFunction(ExecutionState &state,
                                         target, function->getName().str()+"off");
         bindLocal(target, state, {nv, offset});
     } else {
-        klee_warning_once(target, "Undefined function called, returning nondet: %s",
-                          function->getName().str().c_str());
+        //klee_warning_once(target, "Undefined function called, returning nondet: %s",
+        //                  function->getName().str().c_str());
         bindLocal(target, state, nv);
     }
 
