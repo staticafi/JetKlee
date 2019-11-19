@@ -3982,6 +3982,7 @@ void Executor::terminateStateOnSolverError(ExecutionState &state,
 static const char *okExternalsList[] = { "printf", 
                                          "fprintf", 
                                          "puts",
+                                         "__ctype_b_loc",
                                          "getpid" };
 static std::set<std::string> okExternals(okExternalsList,
                                          okExternalsList + 
