@@ -184,6 +184,8 @@ cl::opt<bool>
 
 enum class ExternalCallPolicy {
   None,     // No external calls allowed
+  Pure,     // All external calls are taken as having no side-effects and
+            // returning nondet value
   Concrete, // Only external calls with concrete arguments allowed
   All,      // All external calls allowed
 };
@@ -197,6 +199,9 @@ cl::opt<ExternalCallPolicy> ExternalCalls(
             "No external function calls are allowed.  Note that KLEE always "
             "allows some external calls with concrete arguments to go through "
             "(in particular printf and puts), regardless of this option."),
+        clEnumValN(ExternalCallPolicy::Pure, "pure",
+                   "Allow all external function calls but assume that they have "
+                   "no side-effects and return nondet values"),
         clEnumValN(ExternalCallPolicy::Concrete, "concrete",
                    "Only external function calls with concrete arguments are "
                    "allowed (default)"),
@@ -3989,6 +3994,44 @@ void Executor::callExternalFunction(ExecutionState &state,
   // check if specialFunctionHandler wants it
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
+
+  if (ExternalCalls == ExternalCallPolicy::Pure &&
+      !okExternals.count(function->getName().str())) {
+
+    auto retTy = function->getReturnType();
+    if (retTy->isVoidTy()) {
+        klee_warning_once(target, "Skipping call of undefined function: %s",
+                          function->getName().str().c_str());
+        return;
+    }
+
+    // the function returns something
+
+    DataLayout& DL = *kmodule->targetData;
+    auto size = DL.getTypeAllocSizeInBits(retTy);
+    if (size > 64) {
+        klee_warning_once(target, "Undefined function returns > 64bit object: %s",
+                          function->getName().str().c_str());
+        terminateStateOnUserError(state, "external call failed");
+        return;
+    }
+
+    auto nv = createNondetValue(state, size, false,
+                                target, function->getName().str());
+    if (retTy->isPointerTy()) {
+        klee_warning_once(target, "Returning nondet pointer: %s",
+                         function->getName().str().c_str());
+        auto offset = createNondetValue(state, size, false,
+                                        target, function->getName().str()+"off");
+        bindLocal(target, state, {nv, offset});
+    } else {
+        klee_warning_once(target, "Undefined function called, returning nondet: %s",
+                          function->getName().str().c_str());
+        bindLocal(target, state, nv);
+    }
+
+    return;
+  }
 
   if (ExternalCalls == ExternalCallPolicy::None &&
       !okExternals.count(function->getName().str())) {
