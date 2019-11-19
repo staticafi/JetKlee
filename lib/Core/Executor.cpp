@@ -3737,14 +3737,12 @@ Executor::getReachableMemoryObjects(ExecutionState &state) {
     std::set<const MemoryObject *> reachable;
     std::set<ObjectPair> queue;
 
-    assert(state.stack.size() == 1 && "Wrong stack");
-
     DataLayout& DL = *kmodule->targetData;
 
     for (auto& object : state.addressSpace.objects) {
       // the only objects that are still left are those that
       // are either local to main or global (or heap-allocated,
-      // but we do not care about those)
+      // but we do not care about those while initializing queue)
       if (object.first->isLocal || object.first->isGlobal) {
 
         reachable.insert(object.first);
