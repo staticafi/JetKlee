@@ -1079,6 +1079,10 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
           klee_warning("undefined reference to %s: %s",
                        it->second ? "variable" : "function",
                        ext.c_str());
+          if (it->second && (ext == "optarg" || ext == "optind")) {
+            // getopt is fatal, we really cannot handle that
+            klee_error("Unhandled getopt stuff");
+          }
         }
       }
     }
