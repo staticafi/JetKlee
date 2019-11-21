@@ -89,6 +89,12 @@ namespace {
             cl::cat(TestCaseCat));
 
   cl::opt<bool>
+  WriteKTests("write-ktests",
+              cl::desc("Write .ktest files (default=true)"),
+              cl::init(true),
+              cl::cat(TestCaseCat));
+
+  cl::opt<bool>
   WriteTestCases("write-testcases",
             cl::desc("Write .xml files in the TEST-COMP format (default=false)"),
             cl::cat(TestCaseCat));
@@ -548,7 +554,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     const auto start_time = time::getWallTime();
     unsigned id = ++m_numTotalTests;
 
-    if (!WriteTestCases) {
+    if (WriteKTests) {
       std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
       bool success = m_interpreter->getSymbolicSolution(state, out);
 
