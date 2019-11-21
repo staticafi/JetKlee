@@ -596,8 +596,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         // write the header
         *f <<
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n"
-        " <!DOCTYPE testcase PUBLIC "
-        "\"+//IDN sosy-lab.org//DTD test-format testcase 1.1//EN\""
+        "<!DOCTYPE testcase PUBLIC "
+        "\"+//IDN sosy-lab.org//DTD test-format testcase 1.1//EN\" "
         "\"https://sosy-lab.org/test-format/testcase-1.1.dtd\">\n\n";
 
         if (errorMessage) {
