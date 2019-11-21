@@ -40,6 +40,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Signals.h"
@@ -96,6 +97,13 @@ namespace {
   WriteWitness("write-witness",
             cl::desc("Write .graphml files in the SV-COMP format (default=false)"),
             cl::cat(TestCaseCat));
+
+  cl::opt<bool>
+  WriteHarness("write-harness",
+            cl::desc("Write .C file with definitions of nondeterministic functions (default=false)"),
+            cl::cat(TestCaseCat));
+
+
 
   cl::opt<bool>
   WriteKQueries("write-kqueries",
@@ -326,10 +334,15 @@ private:
   // used for writing .ktest files
   int m_argc;
   char **m_argv;
+  llvm::Module *module;
 
 public:
   KleeHandler(int argc, char **argv);
   ~KleeHandler();
+
+  llvm::Module *getModule() { return module; }
+  const llvm::Module *getModule() const { return module; }
+  void setModule(llvm::Module *m) { module = m; }
 
   llvm::raw_ostream &getInfoStream() const { return *m_infoFile; }
   /// Returns the number of test cases successfully generated so far
@@ -493,6 +506,39 @@ KleeHandler::openTestFile(const std::string &suffix, unsigned id) {
   return openOutputFile(getTestFilename(suffix, id));
 }
 
+static std::string getDecl(const std::string& fun, unsigned bitwidth,
+                           bool isSigned, llvm::Module *module) {
+    auto F = module->getFunction(fun);
+    assert(F && "Wrong function");
+    /*
+    if (auto subprog = F->getSubprogram()) {
+        // this is just quick hack, we should reconstruct the type properly
+        auto line = subprog->getLine();
+    }
+    */
+    std::string rettype = "";
+    if (!isSigned && bitwidth > 1)
+        rettype ="unsigned ";
+
+    // FIXME: we should check 32/64 bits
+    switch (bitwidth) {
+        case 1:
+        case 8: rettype += "_Bool "; break;
+        case 16: rettype += "short "; break;
+        case 32: rettype += "int "; break;
+        case 64: rettype += "long "; break;
+        default: assert(false && "Wrong bitwidth");
+    }
+
+    std::string args;
+    auto FTy = F->getFunctionType();
+    if (FTy->getNumParams() == 0)
+        args = "void";
+    else
+        args = "...";
+    return rettype + fun + "(" + args + ")";
+}
+
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
 void KleeHandler::processTestCase(const ExecutionState &state,
@@ -613,6 +659,44 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
       } else {
         klee_warning("unable to write witness file, losing it");
+      }
+    }
+
+    if (WriteHarness) {
+      if (auto harness = openTestFile("harness.c", id)) {
+
+        *harness << "void abort(void) __attribute__((noreturn));\n" ;
+        *harness << "void exit(int) __attribute__((noreturn));\n" ;
+        *harness << "void __VERIFIER_error(void) { abort(); }\n" ;
+        *harness << "void __VERIFIER_assume(int c) { if (!c) exit(0); }\n\n" ;
+
+        auto testvec = m_interpreter->getTestVector(state);
+        // group the values according to functions
+        std::map<std::string, std::vector<ConcreteValue>> functions;
+
+        for (auto& input : testvec) {
+            functions[input.getName()].push_back(input);
+        }
+
+        for (auto& func : functions) {
+            auto& val = *func.second.begin();
+            *harness << getDecl(func.first, val.getBitWidth(),
+                                    val.isSigned(), getModule()) << " {\n";
+
+            *harness << "\tstatic int pos = 0;\n";
+            *harness << "\tswitch(pos++) {\n";
+            int n = 0;
+            for (auto& val : func.second) {
+                *harness << "\t\tcase " << n++ << ": return "
+                                            << val.toString() << ";\n";
+            }
+            *harness << "\t\tdefault: return 0;\n";
+            *harness << "\t}\n";
+            *harness << "}\n\n";
+        }
+
+      } else {
+        klee_warning("unable to write harness file, losing it");
       }
     }
 
@@ -1540,6 +1624,8 @@ int main(int argc, char **argv, char **envp) {
   if (!mainFn) {
     klee_error("Entry function '%s' not found in module.", EntryPoint.c_str());
   }
+
+  handler->setModule(finalModule);
 
   externalsAndGlobalsCheck(finalModule);
 
