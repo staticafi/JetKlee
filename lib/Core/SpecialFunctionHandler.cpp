@@ -123,6 +123,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   // klee_make_symbolic, but if we handle them here,
   // it is much easier to generate counter-examples later.
   add("__VERIFIER_nondet_bool", handleVerifierNondetBool, true),
+  add("__VERIFIER_nondet__Bool", handleVerifierNondet_Bool, true),
   add("__VERIFIER_nondet_char", handleVerifierNondetChar, true),
   add("__VERIFIER_nondet_int", handleVerifierNondetInt, true),
   add("__VERIFIER_nondet_float", handleVerifierNondetFloat, true),
@@ -1053,8 +1054,17 @@ void SpecialFunctionHandler::handleVerifierNondetBool(ExecutionState &state,
                                                       const std::vector<Cell> &arguments) {
   assert(arguments.empty() && "Wrong number of arguments");
 
-  handleVerifierNondetType(state, target, Expr::Int8, // XXX: should we use i1?
+  handleVerifierNondetType(state, target, Expr::Bool, // XXX: should we use i1?
                            /* isSigned = */ false, "__VERIFIER_nondet_bool");
+}
+
+void SpecialFunctionHandler::handleVerifierNondet_Bool(ExecutionState &state,
+                                                      KInstruction *target,
+                                                      const std::vector<Cell> &arguments) {
+  assert(arguments.empty() && "Wrong number of arguments");
+
+  handleVerifierNondetType(state, target, Expr::Bool, // XXX: should we use i1?
+                           /* isSigned = */ false, "__VERIFIER_nondet__Bool");
 }
 
 void SpecialFunctionHandler::handleVerifierNondetChar(ExecutionState &state,

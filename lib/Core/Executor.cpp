@@ -4865,7 +4865,8 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
 
-    auto size = it.expr->getWidth()/8;
+    auto size = std::max(static_cast<unsigned>(it.expr->getWidth()/8), 1U);
+    assert(size > 0 && "Invalid size");
     assert(size <= 8 && "Does not support size > 8");
     std::vector<uint8_t> data;
     data.resize(size);
