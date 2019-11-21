@@ -964,6 +964,18 @@ void SpecialFunctionHandler::handleMakeSymbolic(ExecutionState &state,
   }
 }
 
+void SpecialFunctionHandler::putConcreteValue(ExecutionState& state,
+                                              const std::string& name,
+                                              bool isSigned,
+                                              KInstruction *target,
+                                              ref<Expr> expr) {
+  // bind the new concrete value
+  executor.bindLocal(target, state, expr);
+  // store it in the vector of nondets, so that we have them in the test output
+  auto& nnv = state.addNondetValue(expr, isSigned, name);
+  nnv.kinstruction = target;
+}
+
 void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
                                                       KInstruction *target,
                                                       unsigned size,
@@ -998,7 +1010,8 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
    //                                              isSigned, target, name));
 
     klee_warning("Got out of nondet values while replaying, using 0");
-    executor.bindLocal(target, state, ConstantExpr::alloc(0, size));
+    putConcreteValue(state, name, isSigned,
+                     target, ConstantExpr::alloc(0, size));
     return;
   }
 
@@ -1009,13 +1022,15 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
       std::get<1>(nondet) == info->line &&
       std::get<2>(nondet) == info->column) {
       auto& val = std::get<3>(nondet);
-      executor.bindLocal(target, state,
-                         ConstantExpr::alloc(val.getZExtValue(),
-                                             val.getBitWidth()));
 
-   //klee_warning("Matched nondet value for: %s:%u:%u to %lu",
-   //             std::get<0>(nondet).c_str(), std::get<1>(nondet),
-   //             std::get<2>(nondet), val.getZExtValue());
+     //klee_warning("Matched nondet value for: %s:%u:%u to %lu",
+     //             std::get<0>(nondet).c_str(), std::get<1>(nondet),
+     //             std::get<2>(nondet), val.getZExtValue());
+
+      putConcreteValue(state, name, val.isSigned(), target,
+                       ConstantExpr::alloc(val.getZExtValue(),
+                                           val.getBitWidth()));
+
     ++position; // matched, move on
   } else {
     klee_warning("Did not match nondet value for: %s:%u:%u, "
@@ -1027,7 +1042,8 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
    //executor.bindLocal(target, state,
    //                   executor.createNondetValue(state, size,
    //                                              isSigned, target, name));
-    executor.bindLocal(target, state, ConstantExpr::alloc(0, size));
+    putConcreteValue(state, name, isSigned,
+                     target, ConstantExpr::alloc(0, size));
   }
 }
 

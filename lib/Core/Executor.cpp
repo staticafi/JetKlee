@@ -4773,26 +4773,6 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::vector<unsigned char> > >
                                    &res) {
 
-  for (auto& nv : replayNondet) {
-    // we should not have any symbolics, so write out
-    // all objects for which we have name
-    std::vector<uint8_t> data;
-    auto& val = std::get<3>(nv).getValue();
-    size_t size = val.getBitWidth()/8;
-    data.reserve(size);
-
-    // convert to bytes
-    const unsigned char *rawData
-      = reinterpret_cast<const unsigned char *>(val.getRawData());
-    for (unsigned n = 0; n < size; ++n) {
-        data.push_back(rawData[size - n - 1]);
-    }
-    std::string name = std::get<0>(nv) + ":" +
-                       std::to_string(std::get<1>(nv)) + ":" +
-                       std::to_string(std::get<2>(nv));
-    res.push_back(std::make_pair(name, data));
-  }
-
   solver->setTimeout(coreSolverTimeout);
 
   ConstraintSet extendedConstraints(state.constraints);
@@ -5178,7 +5158,6 @@ void Executor::setReplayNondet(const struct KTest *out) {
 
   for (unsigned i = 0; i < out->numObjects; ++i) {
       std::string name = out->objects[i].name;
-      llvm::errs() << "Parsing: " << name << "\n";
       std::string fun;
       unsigned line, col;
       std::tie(fun, line, col) = parseNondetName(name);
