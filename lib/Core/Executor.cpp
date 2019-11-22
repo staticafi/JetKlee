@@ -5157,7 +5157,14 @@ parseNondetName(const std::string& name) {
       last_semicol = i;
     }
 
-    assert(num == 3);
+    if (num != 3) {
+        if (num == 0) {
+            // we got just name and no information,
+            // this is probably a nondet global
+            fun = name;
+        }
+        return {fun, line, col};
+    }
     // parse the column and instance number
     unsigned inst_start = 0, inst_end = 0;
     for (size_t i = last_semicol + 1; i < name.size(); ++i) {
