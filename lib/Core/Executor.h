@@ -380,10 +380,11 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
-  ref<Expr> createNondetValue(ExecutionState &state,
-                              unsigned size, bool isSigned,
-                              KInstruction *instr,
-                              const std::string &name);
+  KValue createNondetValue(ExecutionState &state,
+                           unsigned size, bool isSigned,
+                           KInstruction *instr,
+                           const std::string &name,
+                           bool isPointer = false);
 
   const Cell& eval(KInstruction *ki, unsigned index, 
                    ExecutionState &state) const;

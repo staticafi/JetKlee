@@ -21,7 +21,13 @@
 namespace klee {
 // wrapper around APInt that remembers the signdness
 class ConcreteValue {
+
+    // FIXME: turn this info an identifier like: (line, col, seq),
+    // so that we can use that in sliced programs
+    llvm::Optional<llvm::APInt> pointer; // if set, value is offset
+
     llvm::APInt value;
+
     bool issigned{false};
 
 public:
@@ -33,6 +39,12 @@ public:
 
     ConcreteValue(llvm::APInt&& val, bool isSigned)
     : value(std::move(val)), issigned(isSigned) {}
+
+    ConcreteValue(const llvm::APInt& obj, const llvm::APInt& off)
+    : pointer(obj), value(off) {}
+
+    ConcreteValue(const llvm::APInt&& obj, const llvm::APInt&& off)
+    : pointer(std::move(obj)), value(std::move(off)) {}
 
     bool isSigned() const { return issigned; }
     uint64_t getZExtValue() const { return value.getZExtValue(); }
@@ -49,14 +61,18 @@ public:
 #endif
     }
 
+    bool isPointer() const { return static_cast<bool>(pointer); }
+    llvm::APInt& getPointer() { return *pointer; }
+    const llvm::APInt& getPointer() const { return *pointer; }
+
     llvm::APInt& getValue() { return value; }
     const llvm::APInt& getValue() const { return value; }
-};
 
-struct MaybeConcreteValue {
-    llvm::Optional<ConcreteValue> value;
+    void setValue(const llvm::APInt& v) { value = v; }
+    void setValue(llvm::APInt&& v) { value = std::move(v); }
 
-    bool hasValue() const { return static_cast<bool>(value); }
+    void setPointer(const llvm::APInt& p) { pointer = p; }
+    void setPointer(llvm::APInt&& p) { pointer = std::move(p); }
 };
 
 class NamedConcreteValue : public ConcreteValue {
@@ -75,6 +91,14 @@ public:
     NamedConcreteValue(llvm::APInt&& val, bool isSigned,
                        const std::string& nm = "")
     : ConcreteValue(std::move(val), isSigned), name(nm) {}
+
+    NamedConcreteValue(const llvm::APInt& obj, const llvm::APInt& off,
+                       const std::string& nm = "")
+    : ConcreteValue(obj, off), name(nm) {}
+
+    NamedConcreteValue(const llvm::APInt&& obj, const llvm::APInt&& off,
+                       const std::string& nm = "")
+    : ConcreteValue(std::move(obj), std::move(off)), name(nm) {}
 
     const std::string& getName() const { return name; }
     // maybe add also debug info here?

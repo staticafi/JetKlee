@@ -969,10 +969,11 @@ void SpecialFunctionHandler::putConcreteValue(ExecutionState& state,
                                               bool isSigned,
                                               KInstruction *target,
                                               ref<Expr> expr) {
+  assert(isa<ConstantExpr>(expr) && "Assumed constant expression");
   // bind the new concrete value
   executor.bindLocal(target, state, expr);
   // store it in the vector of nondets, so that we have them in the test output
-  auto& nnv = state.addNondetValue(expr, isSigned, name);
+  auto& nnv = state.addNondetValue(KValue(expr), isSigned, name);
   nnv.kinstruction = target;
 }
 
@@ -980,12 +981,14 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
                                                       KInstruction *target,
                                                       unsigned size,
                                                       bool isSigned,
-                                                      const std::string& name) {
+                                                      const std::string& name,
+                                                      bool isPointer) {
   // create nondet value if we are not replaying
   if (executor.replayNondet.empty()) {
     executor.bindLocal(target, state,
                        executor.createNondetValue(state, size,
-                                                  isSigned, target, name));
+                                                  isSigned, target,
+                                                  name, isPointer));
     return;
   }
 
@@ -996,7 +999,8 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
                  "using nondet value instead of concrete");
     executor.bindLocal(target, state,
                        executor.createNondetValue(state, size,
-                                                  isSigned, target, name));
+                                                  isSigned, target,
+                                                  name, isPointer));
     return;
   }
 
@@ -1152,7 +1156,8 @@ void SpecialFunctionHandler::handleVerifierNondetPointer(ExecutionState &state,
   assert(arguments.empty() && "Wrong number of arguments");
 
   handleVerifierNondetType(state, target, Expr::Int64, // XXX: fixme
-                           /* isSigned = */ false, "__VERIFIER_nondet_pointer");
+                           /* isSigned = */ false, "__VERIFIER_nondet_pointer",
+                           /* isPointer = */ true);
 }
 
 void SpecialFunctionHandler::handleVerifierNondetPChar(ExecutionState &state,
@@ -1161,7 +1166,8 @@ void SpecialFunctionHandler::handleVerifierNondetPChar(ExecutionState &state,
   assert(arguments.empty() && "Wrong number of arguments");
 
   handleVerifierNondetType(state, target, Expr::Int64, // XXX: fixme
-                           /* isSigned = */ false, "__VERIFIER_nondet_pchar");
+                           /* isSigned = */ false, "__VERIFIER_nondet_pchar",
+                           /* isPointer = */ true);
 }
 
 void SpecialFunctionHandler::handleVerifierNondetPthreadT(ExecutionState &state,

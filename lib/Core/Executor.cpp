@@ -4015,20 +4015,16 @@ void Executor::callExternalFunction(ExecutionState &state,
         return;
     }
 
-    auto nv = createNondetValue(state, size, false,
-                                target, function->getName().str());
+    bool isPointer = false;
     if (retTy->isPointerTy()) {
+        isPointer = true;
         klee_warning_once(target, "Returning nondet pointer: %s",
                          function->getName().str().c_str());
-        auto offset = createNondetValue(state, size, false,
-                                        target, function->getName().str()+"off");
-        bindLocal(target, state, {nv, offset});
-    } else {
-        //klee_warning_once(target, "Undefined function called, returning nondet: %s",
-        //                  function->getName().str().c_str());
-        bindLocal(target, state, nv);
     }
-
+    auto nv = createNondetValue(state, size, false,
+                                target, function->getName().str(),
+                                isPointer);
+    bindLocal(target, state, nv);
     return;
   }
 
@@ -4495,10 +4491,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   }
 }
 
-ref<Expr> Executor::createNondetValue(ExecutionState &state,
-                                      unsigned size, bool isSigned,
-                                      KInstruction *kinst,
-                                      const std::string &name) {
+KValue Executor::createNondetValue(ExecutionState &state,
+                                   unsigned size, bool isSigned,
+                                   KInstruction *kinst,
+                                   const std::string &name,
+                                   bool isPointer) {
   assert(!replayKTest);
   // Find a unique name for this array.  First try the original name,
   // or if that fails try adding a unique identifier.
@@ -4508,14 +4505,29 @@ ref<Expr> Executor::createNondetValue(ExecutionState &state,
     uniqueName = name + "_" + llvm::utostr(++id);
   }
 
+  KValue kval;
   const Array *array = arrayCache.CreateArray(uniqueName, size);
   auto expr = Expr::createTempRead(array, size);
 
-  auto& nv = state.addNondetValue(expr, isSigned, name);
-  nv.kinstruction = kinst;
-  //nv.seqNum = id;
+  if (isPointer) {
+    assert(!isSigned && "Got signed pointer");
+    std::string offName = uniqueName + "_off";
+    bool had = state.arrayNames.insert(offName).second;
+    assert(had && "Already had a unique name");
+    (void)had;
 
-  return expr;
+    const Array *offarray
+        = arrayCache.CreateArray(offName, Context::get().getPointerWidth());
+    auto offexpr = Expr::createTempRead(offarray, size);
+    kval = {expr, offexpr};
+  } else {
+    kval = expr;
+  }
+
+  auto& nv = state.addNondetValue(kval, isSigned, name);
+  nv.kinstruction = kinst;
+
+  return kval;
 }
 
 
@@ -4841,18 +4853,14 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   for (auto& it : state.nondetValues) {
     ref<ConstantExpr> value;
     bool success = solver->getValue(
-        state.constraints, it.expr, value, state.queryMetaData);
+        state.constraints, it.value.getValue(), value, state.queryMetaData);
+    assert(success && "FIXME: Unhandled solver failure");
+
+    ref<ConstantExpr> segment;
+    success = solver->getValue(
+        state.constraints, it.value.getSegment(), segment, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
-
-    auto size = std::max(static_cast<unsigned>(it.expr->getWidth()/8), 1U);
-    assert(size > 0 && "Invalid size");
-    assert(size <= 8 && "Does not support size > 8");
-    std::vector<uint8_t> data;
-    data.resize(size);
-
-    uint64_t val = value->getZExtValue();
-    memcpy(data.data(), &val, size);
 
     std::string descr = it.name;
     if (it.kinstruction) {
@@ -4862,10 +4870,29 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                    ":" + std::to_string(info->line) +
                    ":" + std::to_string(info->column);
       }
-     //if (it.seqNum > 0) {
-     //    descr += " (" + std::to_string(it.seqNum) + ")";
-     //}
     }
+
+    std::vector<uint8_t> data;
+
+    // FIXME: store the pointers as pairs too, not in two objects
+    if (auto seg = segment->getZExtValue()) {
+        auto w = Context::get().getPointerWidth();
+        auto size = static_cast<unsigned>(w)/8;
+        data.resize(size);
+        memcpy(data.data(), &seg, size);
+        res.emplace_back(descr, data);
+
+        descr += " (offset)";
+        data.clear();
+    }
+
+    auto size = std::max(static_cast<unsigned>(it.value.getValue()->getWidth()/8), 1U);
+    assert(size > 0 && "Invalid size");
+    assert(size <= 8 && "Does not support size > 8");
+    data.resize(size);
+
+    uint64_t val = value->getZExtValue();
+    memcpy(data.data(), &val, size);
     res.push_back(std::make_pair(descr, data));
   }
   return true;
@@ -4880,16 +4907,27 @@ Executor::getTestVector(const ExecutionState &state) {
   for (auto& it : state.nondetValues) {
     ref<ConstantExpr> value;
     bool success = solver->getValue(
-        state.constraints, it.expr, value, state.queryMetaData);
+        state.constraints, it.value.getValue(), value, state.queryMetaData);
+    assert(success && "FIXME: Unhandled solver failure");
+
+    ref<ConstantExpr> segment;
+    success = solver->getValue(
+        state.constraints, it.value.getSegment(), segment, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
 
-    auto size = it.expr->getWidth();
+    auto size = it.value.getValue()->getWidth();
     assert(size <= 64 && "Does not support bitwidth > 64");
     // XXX: SExtValue for signed types?
     uint64_t val = value->getZExtValue();
+    uint64_t seg = segment->getZExtValue();
 
-    res.emplace_back(size, val, it.isSigned, it.name);
+    if (seg > 0) {
+        auto w = Context::get().getPointerWidth();
+        res.emplace_back(APInt(w, seg), APInt(w, val), it.name);
+    } else {
+        res.emplace_back(size, val, it.isSigned, it.name);
+    }
   }
   return res;
 }
@@ -5152,9 +5190,13 @@ static ConcreteValue getConcreteValue(unsigned bytesNum,
   return ConcreteValue(std::move(val), false);
 }
 
+///
+// FIXME: we completely ignore pointers here
 void Executor::setReplayNondet(const struct KTest *out) {
   assert(out && "No ktest file given");
   assert(!replayPath && !replayKTest && "cannot replay both nondets and path");
+
+  replayNondet.reserve(out->numObjects);
 
   for (unsigned i = 0; i < out->numObjects; ++i) {
       std::string name = out->objects[i].name;
@@ -5164,9 +5206,32 @@ void Executor::setReplayNondet(const struct KTest *out) {
 
       auto val = getConcreteValue(out->objects[i].numBytes,
                                   out->objects[i].bytes);
+
+      if (name.size() > 8 && name.compare(name.size() - 8, 8, "(offset)") == 0 ) {
+        // this is an offset of previous nondet pointer,
+        // so instead of creating a new record, just update the previous one
+        auto& lastNv = replayNondet.back();
+        auto& concreteVal = std::get<3>(lastNv);
+        concreteVal.setPointer(std::move(concreteVal.getValue()));
+        concreteVal.setValue(std::move(val.getValue()));
+      } else {
+        replayNondet.emplace_back(std::move(fun), line, col, std::move(val));
+      }
+  }
+
+  for (auto& nv : replayNondet) {
+    auto& val = std::get<3>(nv);
+    if (val.isPointer()) {
+      klee_warning("Input vector: %s:%u:%u = (%lu:%lu)",
+                    std::get<0>(nv).c_str(), std::get<1>(nv),
+                    std::get<2>(nv),
+                    val.getPointer().getZExtValue(),
+                    val.getValue().getZExtValue());
+    } else {
       klee_warning("Input vector: %s:%u:%u = %lu",
-                    fun.c_str(), line, col, val.getZExtValue());
-      replayNondet.emplace_back(std::move(fun), line, col, std::move(val));
+                    std::get<0>(nv).c_str(), std::get<1>(nv),
+                    std::get<2>(nv), val.getValue().getZExtValue());
+    }
   }
 }
 
