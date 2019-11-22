@@ -528,12 +528,16 @@ static std::string getDecl(const std::string& fun, unsigned bitwidth,
 
     // FIXME: we should check 32/64 bits
     switch (bitwidth) {
+        case 0: rettype = "void "; break;
         case 1:
         case 8: rettype += "_Bool "; break;
         case 16: rettype += "short "; break;
         case 32: rettype += "int "; break;
         case 64: rettype += "long "; break;
-        default: assert(false && "Wrong bitwidth");
+        default:
+            klee_warning("Wrong bitwidth of undef function: %u\n", bitwidth);
+            assert(false && "Wrong bitwidth");
+            abort();
     }
 
     std::string args;
@@ -701,6 +705,30 @@ void KleeHandler::processTestCase(const ExecutionState &state,
             *harness << "}\n\n";
         }
 
+        // define also the rest of the undefined functions,
+        // (they are irrelevant on this path, but we need them
+        // to successfully compile the harness)
+        auto M = getModule();
+        for (auto& F : *M) {
+            if (!F.isDeclaration())
+                continue;
+            const auto& name = F.getName().str();
+            if (functions.find(name) != functions.end())
+                continue;
+
+            // for now, define only the __VERIFIER_ functions,
+            // otherwise we need to filter out the standard C functions
+            // and klee functions, and so on...
+            if (name.compare(0, 17 , "__VERIFIER_nondet") != 0)
+                continue;
+
+            auto retTy = F.getReturnType();
+            auto size = retTy->isVoidTy() ?
+                0U : M->getDataLayout().getTypeAllocSizeInBits(retTy);
+            *harness << getDecl(name, size, false, M) << " {\n";
+            *harness << "\treturn 0;\n";
+            *harness << "}\n\n";
+        }
       } else {
         klee_warning("unable to write harness file, losing it");
       }
