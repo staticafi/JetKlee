@@ -2729,12 +2729,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
               !cast<ConstantExpr>(right.getSegment())->isZero();
     if (lp || rp) {
         if (lp && rp) {
-            klee_warning("comparison of two pointers, may loose paths");
+            klee_warning_once(i, "comparison of two pointers, may loose paths");
         } else {
             auto val = lp ? dyn_cast<ConstantExpr>(right.getValue()) :
                             dyn_cast<ConstantExpr>(left.getValue());
             if (!val || !val->isZero()) {
-              klee_warning("comparison of pointer to integer");
+              klee_warning_once(i, "comparison of pointer to integer");
             }
         }
     }
@@ -4025,6 +4025,9 @@ void Executor::callExternalFunction(ExecutionState &state,
                                 target, function->getName().str(),
                                 isPointer);
     bindLocal(target, state, nv);
+    klee_warning_once(target, "Assume that the undefined function %s is pure",
+                      function->getName().str().c_str());
+
     return;
   }
 
