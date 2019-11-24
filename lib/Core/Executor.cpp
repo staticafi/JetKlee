@@ -4853,17 +4853,28 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     data.resize(sizes[i]);
     res.push_back(std::make_pair(mo->name, data));
   }
-  for (auto& it : state.nondetValues) {
-    ref<ConstantExpr> value;
-    bool success = solver->getValue(
-        extendedConstraints, it.value.getValue(), value, state.queryMetaData);
-    assert(success && "FIXME: Unhandled solver failure");
 
-    ref<ConstantExpr> segment;
-    success = solver->getValue(
-        extendedConstraints, it.value.getSegment(), segment, state.queryMetaData);
-    assert(success && "FIXME: Unhandled solver failure");
-    (void) success;
+  // try to minimize the found values
+  // FIXME: use getTestVector(), do not duplicate the code
+  for (auto& it : state.nondetValues) {
+    //ref<ConstantExpr> value;
+    //bool success = solver->getValue(
+    //    extendedConstraints, it.value.getValue(), value, state.queryMetaData);
+    //assert(success && "FIXME: Unhandled solver failure");
+    auto pair = solver->getRange(
+        extendedConstraints, it.value.getValue(), state.queryMetaData);
+    auto value = pair.first;
+    cm.addConstraint(EqExpr::create(it.value.getValue(), value));
+
+    //ref<ConstantExpr> segment;
+    //success = solver->getValue(
+    //    extendedConstraints, it.value.getSegment(), segment, state.queryMetaData);
+    pair = solver->getRange(
+        extendedConstraints, it.value.getSegment(), state.queryMetaData);
+    auto segment = pair.first;
+    cm.addConstraint(EqExpr::create(it.value.getSegment(), segment));
+    //assert(success && "FIXME: Unhandled solver failure");
+    //(void) success;
 
     std::string descr = it.name;
     if (it.kinstruction) {
