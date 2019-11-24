@@ -1036,9 +1036,8 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
 
     ++position; // matched, move on
   } else {
-    klee_warning("Did not match nondet value for: %s:%u:%u, "
+    klee_warning("Did not match nondet value for: %s:%u:%u, using 0",
    //              "using nondet value",
-                 "using 0",
                  std::get<0>(nondet).c_str(), std::get<1>(nondet),
                  std::get<2>(nondet));
 

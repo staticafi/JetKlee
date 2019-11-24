@@ -4930,26 +4930,18 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   }
 
   // try to minimize the found values
-  // FIXME: use getTestVector(), do not duplicate the code
+  // We cannot use getTestVector(), as the values in .ktest
+  // have different endiandness (byte 0 goes first, then byte 1, etc.)
   for (auto& it : state.nondetValues) {
-    //ref<ConstantExpr> value;
-    //bool success = solver->getValue(
-    //    extendedConstraints, it.value.getValue(), value, state.queryMetaData);
-    //assert(success && "FIXME: Unhandled solver failure");
     auto pair = solver->getRange(
         extendedConstraints, it.value.getValue(), state.queryMetaData);
     auto value = pair.first;
     cm.addConstraint(EqExpr::create(it.value.getValue(), value));
 
-    //ref<ConstantExpr> segment;
-    //success = solver->getValue(
-    //    extendedConstraints, it.value.getSegment(), segment, state.queryMetaData);
     pair = solver->getRange(
         extendedConstraints, it.value.getSegment(), state.queryMetaData);
     auto segment = pair.first;
     cm.addConstraint(EqExpr::create(it.value.getSegment(), segment));
-    //assert(success && "FIXME: Unhandled solver failure");
-    //(void) success;
 
     std::string descr = it.name;
     if (it.kinstruction) {
