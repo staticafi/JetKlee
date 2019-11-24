@@ -4856,12 +4856,12 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   for (auto& it : state.nondetValues) {
     ref<ConstantExpr> value;
     bool success = solver->getValue(
-        state.constraints, it.value.getValue(), value, state.queryMetaData);
+        extendedConstraints, it.value.getValue(), value, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
 
     ref<ConstantExpr> segment;
     success = solver->getValue(
-        state.constraints, it.value.getSegment(), segment, state.queryMetaData);
+        extendedConstraints, it.value.getSegment(), segment, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     (void) success;
 
