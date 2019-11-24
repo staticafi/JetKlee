@@ -4967,21 +4967,29 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     if (auto seg = segment->getZExtValue()) {
         auto w = Context::get().getPointerWidth();
         auto size = static_cast<unsigned>(w)/8;
-        data.resize(size);
-        memcpy(data.data(), &seg, size);
+        data.reserve(size);
+        // put the value into vector putting the lsb first
+        unsigned char *x = reinterpret_cast<unsigned char *>(&seg);
+        for (unsigned i = size; i > 0; --i) {
+            data.push_back(x[i-1]);
+        }
         res.emplace_back(descr, data);
-
         descr += " (offset)";
-        data.clear();
     }
 
     auto size = std::max(static_cast<unsigned>(it.value.getValue()->getWidth()/8), 1U);
     assert(size > 0 && "Invalid size");
     assert(size <= 8 && "Does not support size > 8");
-    data.resize(size);
+    data.clear();
+    data.reserve(size);
 
     uint64_t val = value->getZExtValue();
-    memcpy(data.data(), &val, size);
+    // put the value into vector putting the lsb first
+    unsigned char *x = reinterpret_cast<unsigned char *>(&val);
+    for (unsigned i = size; i > 0; --i) {
+        data.push_back(x[i-1]);
+    }
+
     res.push_back(std::make_pair(descr, data));
   }
   return true;
