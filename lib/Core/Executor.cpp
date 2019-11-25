@@ -4959,12 +4959,8 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     if (auto seg = segment->getZExtValue()) {
         auto w = Context::get().getPointerWidth();
         auto size = static_cast<unsigned>(w)/8;
-        data.reserve(size);
-        // put the value into vector putting the lsb first
-        unsigned char *x = reinterpret_cast<unsigned char *>(&seg);
-        for (unsigned i = size; i > 0; --i) {
-            data.push_back(x[i-1]);
-        }
+        data.resize(size);
+        memcpy(data.data(), &seg, size);
         res.emplace_back(descr, data);
         descr += " (offset)";
     }
@@ -4973,14 +4969,9 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     assert(size > 0 && "Invalid size");
     assert(size <= 8 && "Does not support size > 8");
     data.clear();
-    data.reserve(size);
-
+    data.resize(size);
     uint64_t val = value->getZExtValue();
-    // put the value into vector putting the lsb first
-    unsigned char *x = reinterpret_cast<unsigned char *>(&val);
-    for (unsigned i = size; i > 0; --i) {
-        data.push_back(x[i-1]);
-    }
+    memcpy(data.data(), &val, size);
 
     res.push_back(std::make_pair(descr, data));
   }
@@ -5280,7 +5271,7 @@ static ConcreteValue getConcreteValue(unsigned bytesNum,
   llvm::APInt val(bytesNum*8, 0, false);
   for (unsigned n = 0; n < bytesNum; ++n) {
       val <<= 8;
-      val |= bytes[n];
+      val |= bytes[bytesNum - n - 1];
   }
 
   return ConcreteValue(std::move(val), false);
@@ -5318,13 +5309,13 @@ void Executor::setReplayNondet(const struct KTest *out) {
   for (auto& nv : replayNondet) {
     auto& val = std::get<3>(nv);
     if (val.isPointer()) {
-      klee_warning("Input vector: %s:%u:%u = (%lu:%lu)",
+      klee_message("Input vector: %s:%u:%u = (%lu:%lu)",
                     std::get<0>(nv).c_str(), std::get<1>(nv),
                     std::get<2>(nv),
                     val.getPointer().getZExtValue(),
                     val.getValue().getZExtValue());
     } else {
-      klee_warning("Input vector: %s:%u:%u = %lu",
+      klee_message("Input vector: %s:%u:%u = %lu",
                     std::get<0>(nv).c_str(), std::get<1>(nv),
                     std::get<2>(nv), val.getValue().getZExtValue());
     }
