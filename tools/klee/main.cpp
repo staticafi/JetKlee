@@ -630,7 +630,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     if (WriteWitness) {
       if (auto witness = openTestFile("graphml", id)) {
 
-        *witness << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" ;
+        *witness << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n" ;
         *witness << "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" "
                              "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n"
                     "<graph edgedefault=\"directed\">\n";
