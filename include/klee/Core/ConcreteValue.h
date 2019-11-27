@@ -101,7 +101,9 @@ public:
     : ConcreteValue(std::move(obj), std::move(off)), name(nm) {}
 
     const std::string& getName() const { return name; }
-    // maybe add also debug info here?
+    // debug info (optional)
+    unsigned line{0};
+    unsigned col{0};
 };
 
 } // namespace klee

@@ -1753,6 +1753,22 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
   Instruction *i = ki->inst;
   if (isa_and_nonnull<DbgInfoIntrinsic>(i))
     return;
+
+  // FIXME: hack!
+  if (f->getName().equals("__INSTR_check_nontermination")) {
+    state.lastLoopCheck = ki->inst;
+    // fall-through
+  } else if (f->getName().equals("__INSTR_fail")) {
+    state.lastLoopFail = ki->inst;
+    // fall-through
+  }
+
+  if (f->getName().equals("__INSTR_check_nontermination_header")) {
+    state.lastLoopHead = ki->inst;
+    state.lastLoopHeadId = state.nondetValues.size();
+    return;
+  }
+
   if (f && f->isDeclaration()) {
     switch (f->getIntrinsicID()) {
     case Intrinsic::not_intrinsic:
@@ -5032,6 +5048,13 @@ Executor::getTestVector(const ExecutionState &state) {
         res.emplace_back(APInt(w, seg), APInt(w, val), it.name);
     } else {
         res.emplace_back(size, val, it.isSigned, it.name);
+    }
+    if (it.kinstruction) {
+        const auto& D = it.kinstruction->inst->getDebugLoc();
+        if (D) {
+            res.back().line = D.getLine();
+            res.back().col = D.getCol();
+        }
     }
   }
   return res;

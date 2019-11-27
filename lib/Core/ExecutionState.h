@@ -229,6 +229,12 @@ public:
 
   // FIXME: wouldn't unique_ptr be more efficient (no ref<> copying)
   std::vector<NondetValue> nondetValues;
+  // FIXME: this is a hack to be able to generate termination witnesses for SV-COMP
+  llvm::Instruction *lastLoopHead{nullptr};
+  size_t lastLoopHeadId{0};
+  // so that we do not need to unwind the stack
+  llvm::Instruction *lastLoopCheck{nullptr};
+  llvm::Instruction *lastLoopFail{nullptr};
 
   /// @brief Pointer to instruction to be executed after the current
   /// instruction

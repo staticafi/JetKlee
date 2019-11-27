@@ -24,6 +24,9 @@
 #include "klee/Support/PrintVersion.h"
 #include "klee/System/Time.h"
 
+// FIXME: this is a hack
+#include "../lib/Core/ExecutionState.h"
+
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
@@ -638,31 +641,99 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         //entry node
         *witness <<
             "<node id=\"0\">\n"
-            "<data key=\"entry\">true</data>\n"
-            "</node>";
+            "  <data key=\"entry\">true</data>\n"
+            "</node>\n";
 
         auto testvec = m_interpreter->getTestVector(state);
 
         int node = 0;
+        int cyclehead = 0; // id of cyclehead
+
+        llvm::errs() << "Got last loop:\n";
+        //llvm::errs() << *state.lastLoopHead << "\n";
+        //llvm::errs() << *state.lastLoopCheck << "\n";
         for (auto& input : testvec) {
+          if (state.lastLoopHead && state.lastLoopHeadId == (size_t)node) {
+            cyclehead = node + 1;
             *witness <<
-                "<node id=\""<< node + 1 << "\"></node>\n"
-                "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
-                "<data key=\"assumption\">\\result==" << input.toString() << "</data>\n"
-                "<data key=\"assumption.resultfunction\">" << input.getName() << "</data>\n"
-                "</edge>";
-            node++;
+              "<node id=\""<< node + 1 << "\">\n"
+              "  <data key=\"cyclehead\">true</data>\n"
+              "</node>\n";
+            *witness << "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
+                        "  <data key=\"enterLoopHead\">true</data>\n";
+            if (const auto& D = state.lastLoopHead->getDebugLoc()) {
+              *witness << "  <data key=\"startline\">"<< D.getLine() << "</data>\n";
+            }
+            *witness << "</edge>\n";
+            ++node;
+          }
+
+          *witness <<
+            "<node id=\""<< node + 1 << "\"/>\n";
+          *witness <<
+            "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
+            "  <data key=\"assumption\">\\result==" << input.toString() << "</data>\n"
+            "  <data key=\"assumption.resultfunction\">" << input.getName() << "</data>\n";
+
+            if (input.line > 0) {
+              *witness << "  <data key=\"startline\">"<< input.line << "</data>\n";
+            }
+            *witness << "</edge>\n";
+          node++;
+        }
+
+        // was the loop head after all values?
+        if (state.lastLoopHead && state.lastLoopHeadId == (size_t)node) {
+          cyclehead = node + 1;
+          *witness <<
+            "<node id=\""<< node + 1 << "\">\n"
+            "  <data key=\"cyclehead\">true</data>\n"
+            "</node>\n";
+          *witness << "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
+                      "  <data key=\"enterLoopHead\">true</data>\n";
+          if (const auto& D = state.lastLoopHead->getDebugLoc()) {
+            *witness << "  <data key=\"startline\">"<< D.getLine() << "</data>\n";
+          }
+          *witness << "</edge>\n";
+          ++node;
         }
 
         //error
-        *witness <<
-            "<node id=\"error\">\n"
-            "<data key=\"violation\">true</data>\n"
+        if (state.lastLoopHead) {
+          // create cycle
+          *witness << "<edge source=\"" << node <<"\" target=\"" << cyclehead << "\">\n"
+                      "  <data key=\"enterLoopHead\">true</data>\n";
+          if (state.lastLoopCheck) {
+            if (const auto& D = state.lastLoopCheck->getDebugLoc()) {
+              *witness << "  <data key=\"startline\">"<< D.getLine() << "</data>\n";
+            }
+          }
+          *witness << "</edge>\n";
+        } else if (!state.lastLoopCheck && state.lastLoopFail) {
+          // FIXME: insert loop check (0) to avoid this special case
+            // just generate infinite loop
+          *witness <<
+            "<node id=\""<< node + 1 << "\">\n"
+            "  <data key=\"cyclehead\">true</data>\n"
             "</node>\n";
-
-        //last edge
-        *witness <<
-            "<edge source=\"" << node <<"\" target=\"error\"></edge>\n";
+          *witness << "<edge source=\"" << node <<"\" target=\"" << node + 1 << "\">\n"
+                      "  <data key=\"enterLoopHead\">true</data>\n";
+          if (const auto& D = state.lastLoopFail->getDebugLoc()) {
+            *witness << "  <data key=\"startline\">"<< D.getLine() << "</data>\n";
+          }
+          *witness << "</edge>\n";
+          *witness << "<edge source=\"" << node + 1 <<"\" target=\"" << node + 1 << "\">\n"
+                      "  <data key=\"enterLoopHead\">true</data>\n";
+          if (const auto& D = state.lastLoopFail->getDebugLoc()) {
+            *witness << "  <data key=\"startline\">"<< D.getLine() << "</data>\n";
+          }
+          *witness << "</edge>\n";
+        } else {
+          *witness << "<node id=\""<< node + 1 << "\">\n"
+                      "  <data key=\"violation\">true</data>\n"
+                      "</node>\n";
+          *witness << "<edge source=\"" << node <<"\" target=\"" << node + 1<< "\"/>\n";
+        }
 
         *witness << "</graph>\n"
                     "</graphml>\n";
