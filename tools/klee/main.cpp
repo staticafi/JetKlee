@@ -532,8 +532,8 @@ static std::string getDecl(const std::string& fun, unsigned bitwidth,
     // FIXME: we should check 32/64 bits
     switch (bitwidth) {
         case 0: rettype = "void "; break;
-        case 1:
-        case 8: rettype = "_Bool "; break;
+        case 1: rettype = "_Bool "; break;
+        case 8: rettype += "char "; break;
         case 16: rettype += "short "; break;
         case 32: rettype += "int "; break;
         case 64: rettype += "long "; break;
