@@ -649,7 +649,6 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         int node = 0;
         int cyclehead = 0; // id of cyclehead
 
-        llvm::errs() << "Got last loop:\n";
         //llvm::errs() << *state.lastLoopHead << "\n";
         //llvm::errs() << *state.lastLoopCheck << "\n";
         for (auto& input : testvec) {
