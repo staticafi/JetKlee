@@ -1145,7 +1145,7 @@ void SpecialFunctionHandler::handleVerifierNondetULong(ExecutionState &state,
   assert(arguments.empty() && "Wrong number of arguments");
 
   handleVerifierNondetType(state, target, Expr::Int64,
-                           /* isSigned = */ false, "__VERIFIER_nondet_long");
+                           /* isSigned = */ false, "__VERIFIER_nondet_ulong");
 }
 
 void SpecialFunctionHandler::handleVerifierNondetPointer(ExecutionState &state,
