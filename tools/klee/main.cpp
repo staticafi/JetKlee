@@ -745,10 +745,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     if (WriteHarness) {
       if (auto harness = openTestFile("harness.c", id)) {
 
+        *harness << "#include <assert.h>\n" ;
         *harness << "void abort(void) __attribute__((noreturn));\n" ;
         *harness << "void exit(int) __attribute__((noreturn));\n" ;
-        *harness << "void __VERIFIER_error(void) { abort(); }\n" ;
-        *harness << "void __VERIFIER_assume(int c) { if (!c) exit(0); }\n\n" ;
+        *harness << "void __VERIFIER_error(void) { assert(0 && \"__VERIFIER_error called\"); }\n" ;
+        *harness << "void __VERIFIER_assume(int c) { assert(c && \"__VERIFIER_assume(0) called\"); }\n\n" ;
 
         auto testvec = m_interpreter->getTestVector(state);
         // group the values according to functions
