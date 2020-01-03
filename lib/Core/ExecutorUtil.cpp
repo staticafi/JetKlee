@@ -141,6 +141,10 @@ namespace klee {
     if (numOperands > 2)
       op3 = evalConstant(ce->getOperand(2), ki);
 
+    if (numOperands == 2 && op1.isZero())
+      if (!op2.getSegment().isNull())
+        op1 = op2;
+
     /* Checking for possible errors during constant folding */
     switch (ce->getOpcode()) {
     case Instruction::SDiv:

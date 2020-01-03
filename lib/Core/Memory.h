@@ -49,7 +49,6 @@ private:
 public:
   unsigned id;
   uint64_t segment;
-  uint64_t address;
 
   /// size in bytes
   ref<Expr> size;
@@ -71,6 +70,9 @@ public:
   /// it was allocated for (or whatever else makes sense).
   const llvm::Value *allocSite;
 
+  /// Symbolic address for poiner comparison
+  llvm::Optional<const Array*> symbolicAddress;
+
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);
   MemoryObject &operator=(const MemoryObject &b);
@@ -78,23 +80,21 @@ public:
 public:
   // XXX this is just a temp hack, should be removed
   explicit
-  MemoryObject(uint64_t _address) 
+  MemoryObject()
     : id(counter++),
       segment(0),
-      address(_address),
       size(0),
       isFixed(true),
       parent(NULL),
       allocSite(0) {
   }
 
-  MemoryObject(uint64_t _address, ref<Expr> _size,
+  MemoryObject(ref<Expr> _size,
                bool _isLocal, bool _isGlobal, bool _isFixed,
                const llvm::Value *_allocSite,
                MemoryManager *_parent)
     : id(counter++),
       segment(0),
-      address(_address),
       size(ZExtExpr::create(_size, Context::get().getPointerWidth())),
       name("unnamed"),
       isLocal(_isLocal),
@@ -105,14 +105,13 @@ public:
       allocSite(_allocSite) {
   }
 
-    MemoryObject(uint64_t segment, uint64_t _address, ref<Expr> _size,
+    MemoryObject(uint64_t segment, ref<Expr> _size,
                  uint64_t _allocatedSize,
                  bool _isLocal, bool _isGlobal, bool _isFixed,
                  const llvm::Value *_allocSite,
                  MemoryManager *_parent)
     : id(counter++),
       segment(segment),
-      address(_address),
       size(ZExtExpr::create(_size, Context::get().getPointerWidth())),
       allocatedSize(_allocatedSize),
       name("unnamed"),
@@ -129,6 +128,12 @@ public:
   /// Get an identifying string for this allocation.
   void getAllocInfo(std::string &result) const;
 
+  /// If not initialized, creates symbolic array representing it's address
+  /// and returns ref<Expr> for it
+  /// \param array ArrayCache for creating the symbolic array
+  /// @return symbolic array representing symbolic address of given MO
+  ref<Expr> getSymbolicAddress(klee::ArrayCache &array);
+
   void setName(std::string name) const {
     this->name = name;
   }
@@ -140,19 +145,17 @@ public:
     return ConstantExpr::create(segment, Context::get().getPointerWidth());
   }
   ref<ConstantExpr> getBaseExpr() const {
-    return ConstantExpr::create(address, Context::get().getPointerWidth());
+    return ConstantExpr::create(0, Context::get().getPointerWidth());
   }
   KValue getPointer() const {
     return KValue(getSegmentExpr(), getBaseExpr());
   }
   KValue getPointer(uint64_t offset) const {
     return KValue(getSegmentExpr(),
-                  AddExpr::create(getBaseExpr(),
-                                  ConstantExpr::create(offset,
-                                                       Context::get().getPointerWidth())));
+                  ConstantExpr::create(offset, Context::get().getPointerWidth()));
   }
-  std::string getAddressString() const {
-    return std::to_string(address);
+  std::string getSegmentString() const {
+    return "Segment: [" + std::to_string(segment) + "]";
   }
   std::string getSizeString() const {
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(size)) {
@@ -170,12 +173,12 @@ public:
   ref<Expr> getBoundsCheckPointer(KValue pointer) const {
     return AndExpr::create(
             getBoundsCheckSegment(pointer.getSegment()),
-            getBoundsCheckOffset(getOffsetExpr(pointer.getOffset())));
+            getBoundsCheckOffset(pointer.getOffset()));
   }
   ref<Expr> getBoundsCheckPointer(KValue pointer, unsigned bytes) const {
     return AndExpr::create(
             getBoundsCheckSegment(pointer.getSegment()),
-            getBoundsCheckOffset(getOffsetExpr(pointer.getOffset()), bytes));
+            getBoundsCheckOffset(pointer.getOffset(), bytes));
   }
   ref<Expr> getBoundsCheckOffset(ref<Expr> offset) const {
     if (isa<ConstantExpr>(size) && cast<ConstantExpr>(size)->isZero()) {
@@ -199,8 +202,6 @@ public:
     // Short-cut with id
     if (id == b.id)
       return 0;
-    if (address != b.address)
-      return (address < b.address ? -1 : 1);
 
     if (size != b.size)
       return (size < b.size ? -1 : 1);
@@ -213,9 +214,7 @@ public:
 
 private:
   ref<Expr> getBoundsCheckSegment(ref<Expr> segment) const {
-    return OrExpr::create(
-            EqExpr::create(segment, ConstantExpr::alloc(0, segment->getWidth())),
-            EqExpr::create(getSegmentExpr(), segment));
+    return EqExpr::create(getSegmentExpr(), segment);
   }
 };
 
