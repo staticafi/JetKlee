@@ -141,7 +141,7 @@ namespace klee {
     if (numOperands > 2)
       op3 = evalConstant(ce->getOperand(2), ki);
 
-    if (numOperands == 2 && op1.isZero())
+    if (numOperands == 2 && op1.isZero() && ce->getOpcode() == Instruction::GetElementPtr)
       if (!op2.getSegment().isNull())
         op1 = op2;
 
