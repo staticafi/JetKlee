@@ -1108,6 +1108,7 @@ static const char *modelledExternals[] = {
   "__VERIFIER_nondet_ulong",
   "__VERIFIER_nondet_unsigned",
   "__VERIFIER_nondet_ushort",
+  "__VERIFIER_assume",
 };
 
 // Symbols we aren't going to warn about
