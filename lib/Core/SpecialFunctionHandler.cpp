@@ -296,7 +296,7 @@ SpecialFunctionHandler::readStringAtAddress(ExecutionState &state,
   const ObjectState *os = op.second;
 
   assert(isa<ConstantExpr>(mo->size) && "string must not be symbolic size");
-  unsigned size = cast<ConstantExpr>(mo->size)->getZExtValue();
+  size_t size = cast<ConstantExpr>(mo->size)->getZExtValue();
 
   auto relativeOffset = mo->getOffsetExpr(address.getOffset());
   // the relativeOffset must be concrete as the address is concrete
