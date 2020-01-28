@@ -2717,10 +2717,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::And: {
     const Cell &left = eval(ki, 0, state);
     const Cell &right = eval(ki, 1, state);
-
-    auto newCell = left.And(right);
-    newCell.pointerSegment = left.getSegment();
-    bindLocal(ki, state, newCell);
+    bindLocal(ki, state, left.And(right));
     break;
   }
 

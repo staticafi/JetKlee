@@ -80,6 +80,20 @@ namespace klee {
                     SExtExpr::create(value, w));
     }
 
+#define _op_seg_different(op) \
+     KValue op(const KValue &other) const { \
+      if (getSegment().get()->isZero() && other.getSegment().get()->isZero()) { \
+        return KValue(op##Expr::create(value, other.value)); \
+      } else { \
+        KValue retval = KValue(op##Expr::create(value, other.value)); \
+        if (getSegment().get()->isZero()) { \
+          retval.pointerSegment = other.getSegment(); \
+        } else { \
+          retval.pointerSegment = getSegment(); \
+        } \
+        return retval; \
+      } \
+    }
 #define _op_seg_same(op) \
     KValue op(const KValue &other) const { \
       return KValue(op##Expr::create(pointerSegment, other.pointerSegment), \
@@ -99,12 +113,14 @@ namespace klee {
       return KValue(AddExpr::create(pointerSegment, other.pointerSegment),
                     MulExpr::create(value, other.value));
     }
+
+    _op_seg_different(And);
+    _op_seg_different(Or);
+
     _op_seg_zero(UDiv);
     _op_seg_zero(SDiv);
     _op_seg_zero(URem);
     _op_seg_zero(SRem);
-    _op_seg_zero(And);
-    _op_seg_zero(Or);
     _op_seg_zero(Xor);
     _op_seg_zero(Shl);
     _op_seg_zero(LShr);
