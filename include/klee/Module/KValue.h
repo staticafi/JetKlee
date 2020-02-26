@@ -116,12 +116,12 @@ namespace klee {
 
     _op_seg_different(And);
     _op_seg_different(Or);
+    _op_seg_different(Xor);
 
     _op_seg_zero(UDiv);
     _op_seg_zero(SDiv);
     _op_seg_zero(URem);
     _op_seg_zero(SRem);
-    _op_seg_zero(Xor);
     _op_seg_zero(Shl);
     _op_seg_zero(LShr);
     _op_seg_zero(AShr);
@@ -146,6 +146,10 @@ namespace klee {
     _op_seg_cmp_lexicographic(Sge);
     _op_seg_cmp_lexicographic(Slt);
     _op_seg_cmp_lexicographic(Sle);
+
+    KValue SymbCmp(const KValue &other) const {
+      return KValue(EqExpr::create(value, other.value));
+    }
 
     KValue Eq(const KValue &other) const {
       return KValue(AndExpr::create(
