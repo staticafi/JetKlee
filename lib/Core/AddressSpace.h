@@ -38,6 +38,7 @@ namespace klee {
   typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
   typedef std::map</*address*/ const uint64_t, /*segment*/ const uint64_t> ConcreteAddressMap;
   typedef std::map</*segment*/ const uint64_t, /*address*/ const uint64_t> SegmentAddressMap;
+  typedef std::map</*segment*/ const uint64_t, /*symbolic array*/ const Array*> RemovedObjectsMap;
 
   class AddressSpace {
     friend class ExecutionState;
@@ -62,6 +63,8 @@ namespace klee {
     SegmentMap segmentMap;
 
     ConcreteAddressMap concreteAddressMap;
+
+    RemovedObjectsMap removedObjectsMap;
 
     AddressSpace() : cowKey(1) {}
     AddressSpace(const AddressSpace &b)

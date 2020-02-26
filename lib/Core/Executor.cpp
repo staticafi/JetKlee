@@ -2780,35 +2780,46 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     /// Only use symbolics with Constant values(offsets)
     bool useOriginalValues = true;
 
-    if (leftValue && rightValue) {
+    if (leftValue && rightValue && leftSegment && rightSegment) {
       useOriginalValues = false;
     }
 
     bool success = false;
     const auto &pointerWidth = Context::get().getPointerWidth();
 
-    if (!useOriginalValues && leftSegment && rightSegment &&
+    if (!useOriginalValues &&
         leftSegment->getWidth() == pointerWidth &&
-        rightSegment->getWidth() == pointerWidth && !leftSegment->isZero() &&
+        rightSegment->getWidth() == pointerWidth &&
+        !leftSegment->isZero() &&
         !rightSegment->isZero() &&
         rightSegment->getZExtValue() != leftSegment->getZExtValue()) {
 
       ObjectPair op;
-      bool successRight = false;
-      bool successLeft =
-          state.addressSpace.resolveOneConstantSegment(leftOriginal, op);
-
-      if (successLeft) {
+      bool successRight, successLeft;
+      if (!state.addressSpace.resolveOneConstantSegment(leftOriginal, op)) {
+        successLeft = false;
+        const auto res = state.addressSpace.removedObjectsMap.find(leftSegment->getZExtValue(pointerWidth));
+        if (res != state.addressSpace.removedObjectsMap.end()) {
+          leftArray = Expr::createTempRead(res->second, Context::get().getPointerWidth());
+        }
+      } else {
+        successLeft = true;
         leftArray = const_cast<MemoryObject *>(op.first)->getSymbolicAddress(
             arrayCache);
-        successRight =
-            state.addressSpace.resolveOneConstantSegment(rightOriginal, op);
       }
-      if (successRight) {
+
+      if (!state.addressSpace.resolveOneConstantSegment(rightOriginal, op)) {
+        successRight = false;
+        const auto res = state.addressSpace.removedObjectsMap.find(rightSegment->getZExtValue(pointerWidth));
+        if (res != state.addressSpace.removedObjectsMap.end()) {
+          rightArray = Expr::createTempRead(res->second, Context::get().getPointerWidth());
+        }
+      } else {
+        successRight = true;
         rightArray = const_cast<MemoryObject *>(op.first)->getSymbolicAddress(
             arrayCache);
-        success = true;
       }
+      success = successLeft || successRight;
     }
     KValue left;
     KValue right;
@@ -4556,6 +4567,8 @@ void Executor::executeFree(ExecutionState &state,
                               StateTerminationType::Free,
                               getKValueInfo(*it->second, addressOptim));
       } else {
+        const_cast<MemoryObject*>(mo)->initializeSymbolicArray(arrayCache);
+        it->second->addressSpace.removedObjectsMap.emplace(mo->segment, mo->symbolicAddress.getValue());
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, KValue(Expr::createPointer(0)));

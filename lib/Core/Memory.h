@@ -128,6 +128,10 @@ public:
   /// Get an identifying string for this allocation.
   void getAllocInfo(std::string &result) const;
 
+  /// Initializes symbolic array
+  /// \param array ArrayCache for Creatin the symbolic array
+  void initializeSymbolicArray(klee::ArrayCache &array);
+
   /// If not initialized, creates symbolic array representing it's address
   /// and returns ref<Expr> for it
   /// \param array ArrayCache for creating the symbolic array
