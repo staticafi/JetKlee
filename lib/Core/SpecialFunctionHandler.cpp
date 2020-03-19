@@ -773,8 +773,26 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
   const KValue &address = arguments[0];
   ref<Expr> size = arguments[1].value;
 
-  Executor::StatePair zeroSize =
-      executor.fork(state, Expr::createIsZero(size), true, BranchType::Realloc);
+  // If ptr is NULL, then the call is equivalent to malloc(size), for all
+  // values of size; if size is equal to zero, and ptr is not NULL, then the
+  // call is equivalent to free(ptr).
+
+  auto zeroAddr = executor.fork(
+      state, address.createIsZero(), true, BranchType::Realloc);
+
+  if (zeroAddr.first) { // addr == NULL, behave like a 'malloc' was called
+    executor.executeAlloc(*zeroAddr.first, size, false, target);
+  }
+
+
+  if (!zeroAddr.second) {
+    return;
+  }
+
+  // addr != 0
+  Executor::StatePair zeroSize = executor.fork(*zeroAddr.second,
+                                               Expr::createIsZero(size),
+                                               true, BranchType::Realloc);
 
   if (zeroSize.first) { // size == 0
     executor.executeFree(*zeroSize.first, address, target);

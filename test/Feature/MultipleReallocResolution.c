@@ -46,7 +46,8 @@ int main() {
   buf[i] = realloc(buf[i], new_size);
 
   if (new_size == 0) {
-    assert(!buf[2]); // free(0) is a no-op
+    free(buf[2]); // realloc(NULL, size) ~ malloc(size)
+                  // => the returned pointer is either valid or NULL
     if (i==0) assert(!buf[0] && buf[1]);
     if (i==1) assert(buf[0] && !buf[1]);
     assert(i != 3); // we should have crashed on free of invalid
