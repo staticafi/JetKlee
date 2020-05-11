@@ -5294,7 +5294,7 @@ parseNondetName(const std::string& name) {
           break;
         default:
           klee_warning("Invalid nondet object name: %s", name.c_str());
-          return {fun, line, col};//, seq};
+          return std::make_tuple(fun, line, col);//, seq);
       };
 
       last_semicol = i;
@@ -5306,7 +5306,7 @@ parseNondetName(const std::string& name) {
             // this is probably a nondet global
             fun = name;
         }
-        return {fun, line, col};
+        return std::make_tuple(fun, line, col);
     }
     // parse the column and instance number
     unsigned inst_start = 0, inst_end = 0;
@@ -5324,7 +5324,7 @@ parseNondetName(const std::string& name) {
     } else {
         col = stoi(name.substr(last_semicol + 1));
     }
-    return {fun, line, col};
+    return std::make_tuple(fun, line, col);
 }
 
 static ConcreteValue getConcreteValue(unsigned bytesNum,
