@@ -811,8 +811,16 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
       
       for (Executor::ExactResolutionList::iterator it = rl.begin(), 
              ie = rl.end(); it != ie; ++it) {
-        executor.executeAlloc(*it->second, size, false, target, false, 
-                              it->first.second);
+        if (it->first.second->readOnly) {
+          executor.terminateStateOnError(*it->second,
+                                         "memory error: realloc of read-only object",
+                                         StateTerminationType::Ptr,
+                                         executor.getAddressInfo(
+                                             *it->second, address));
+        } else {
+          executor.executeAlloc(*it->second, size, false, target, false,
+                                it->first.second);
+        }
       }
     }
   }
