@@ -784,7 +784,6 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
     executor.executeAlloc(*zeroAddr.first, size, false, target);
   }
 
-
   if (!zeroAddr.second) {
     return;
   }
@@ -814,6 +813,18 @@ void SpecialFunctionHandler::handleRealloc(ExecutionState &state,
         if (it->first.second->readOnly) {
           executor.terminateStateOnError(*it->second,
                                          "memory error: realloc of read-only object",
+                                         StateTerminationType::Ptr,
+                                         executor.getAddressInfo(
+                                             *it->second, address));
+        } else if (it->first.first->isLocal) {
+          executor.terminateStateOnError(*it->second,
+                                         "memory error: realloc on local object",
+                                         StateTerminationType::Ptr,
+                                         executor.getAddressInfo(
+                                             *it->second, address));
+        } else if (it->first.first->isGlobal) {
+          executor.terminateStateOnError(*it->second,
+                                         "memory error: realloc on global object",
                                          StateTerminationType::Ptr,
                                          executor.getAddressInfo(
                                              *it->second, address));
