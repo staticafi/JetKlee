@@ -3951,6 +3951,18 @@ void Executor::terminateStateOnError(ExecutionState &state,
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
 
+  if (terminationType == StateTerminationType::Abort && CheckMemCleanup) {
+    auto leaks = getMemoryLeaks(state);
+    if (!leaks.empty()) {
+      std::string info = "";
+      for (const auto *mo : leaks) {
+        info += getAddressInfo(state, mo->getPointer());
+      }
+      terminateStateOnError(state, "memory error: memory not cleaned up",
+                            StateTerminationType::Leak, info);
+    }
+  }
+
   if (shouldExitOn(terminationType))
     haltExecution = true;
 
