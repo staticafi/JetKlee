@@ -3951,7 +3951,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
   Instruction * lastInst;
   const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
 
-  if (terminationType == StateTerminationType::Abort && CheckMemCleanup) {
+  if (CheckMemCleanup) {
     auto leaks = getMemoryLeaks(state);
     if (!leaks.empty()) {
       std::string info = "";
