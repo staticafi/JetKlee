@@ -78,6 +78,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   addDNR("__assert", handleAssertFail),
   addDNR("_assert", handleAssert),
   addDNR("abort", handleAbort),
+  addDNR("_Exit", handleExit),
   addDNR("_exit", handleExit),
   { "exit", &SpecialFunctionHandler::handleExit, true, false, true },
   addDNR("klee_abort", handleAbort),
