@@ -502,8 +502,8 @@ private:
                                     ref<Expr> e,
                                     ref<ConstantExpr> value);
 
-  std::set<const MemoryObject *>
-  getReachableMemoryObjects(ExecutionState &state);
+  bool getReachableMemoryObjects(ExecutionState &state,
+                                 std::set<const MemoryObject *>&);
 
   /// check memory usage and terminate states when over threshold of -max-memory + 100MB
   /// \return true if below threshold, false otherwise (states were terminated)
