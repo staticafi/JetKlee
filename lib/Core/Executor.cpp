@@ -3914,6 +3914,35 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
     return retval;
 }
 
+void Executor::reportError(const llvm::Twine &message,
+                           const ExecutionState &state, const llvm::Twine &info,
+                           const char *suffix,
+                           enum StateTerminationType terminationType) {
+  Instruction *lastInst;
+  const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
+
+  std::string MsgString;
+  llvm::raw_string_ostream msg(MsgString);
+  msg << "Error: " << message << '\n';
+  if (!ii.file.empty()) {
+    msg << "File: " << ii.file << '\n'
+        << "Line: " << ii.line << '\n'
+        << "assembly.ll line: " << ii.assemblyLine << '\n'
+        << "State: " << state.getID() << '\n';
+  }
+  msg << "Stack: \n";
+  state.dumpStack(msg);
+
+  std::string info_str = info.str();
+  if (!info_str.empty())
+    msg << "Info: \n" << info_str;
+
+  const std::string ext = terminationTypeFileExtension(terminationType);
+  // use user provided suffix from klee_report_error()
+  const char * file_suffix = suffix ? suffix : ext.c_str();
+  interpreterHandler->processTestCase(state, msg.str().c_str(), file_suffix);
+}
+
 void Executor::terminateStateOnExit(ExecutionState &state) {
   if ((CheckLeaks || CheckMemCleanup) && hasMemoryLeaks(state)) {
     if (CheckMemCleanup) {
@@ -4047,8 +4076,12 @@ void Executor::terminateStateOnError(ExecutionState &state,
       for (const auto *mo : leaks) {
         info += getKValueInfo(state, mo->getPointer());
       }
-      terminateStateOnError(state, "memory error: memory not cleaned up",
-                            StateTerminationType::Leak, info);
+      std::string message = "memory error: memory not cleaned up";
+      bool notemitted = emittedErrors.insert(std::make_pair(lastInst, message)).second;
+      if (EmitAllErrors || notemitted) {
+        klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
+        reportError(message, state, info, suffix, terminationType);
+      }
     }
   }
 
@@ -4072,26 +4105,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
   // for a specific error and this is the error (haltExecution is set to true),
   // or if we do not search for a specific error and we haven't emitted this error yet
   if (EmitAllErrors || haltExecution || (ExitOnErrorType.empty() && notemitted)) {
-    std::string MsgString;
-    llvm::raw_string_ostream msg(MsgString);
-    msg << "Error: " << message << '\n';
-    if (!ii.file.empty()) {
-      msg << "File: " << ii.file << '\n'
-          << "Line: " << ii.line << '\n'
-          << "assembly.ll line: " << ii.assemblyLine << '\n'
-          << "State: " << state.getID() << '\n';
-    }
-    msg << "Stack: \n";
-    state.dumpStack(msg);
-
-    std::string info_str = info.str();
-    if (!info_str.empty())
-      msg << "Info: \n" << info_str;
-
-    const std::string ext = terminationTypeFileExtension(terminationType);
-    // use user provided suffix from klee_report_error()
-    const char * file_suffix = suffix ? suffix : ext.c_str();
-    interpreterHandler->processTestCase(state, msg.str().c_str(), file_suffix);
+    reportError(messaget, state, info, suffix, terminationType);
   }
 
   terminateState(state);

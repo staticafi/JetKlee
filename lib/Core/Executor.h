@@ -505,6 +505,10 @@ private:
   bool getReachableMemoryObjects(ExecutionState &state,
                                  std::set<const MemoryObject *>&);
 
+  void reportError(const llvm::Twine &message, const ExecutionState &state,
+                   const llvm::Twine &info, const char *suffix,
+                   enum StateTerminationType terminationType);
+
   /// check memory usage and terminate states when over threshold of -max-memory + 100MB
   /// \return true if below threshold, false otherwise (states were terminated)
   bool checkMemoryUsage();
