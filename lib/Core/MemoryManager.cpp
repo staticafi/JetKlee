@@ -192,6 +192,11 @@ void MemoryAllocator::useLowMemory(bool lm) {
 }
 
 void *MmapAllocator::allocate(size_t size, size_t alignment) {
+  if (size > blockSize) {
+    klee_error("MmapAllocator: allocating memory of size %zu which is larger than a block(=%zu) is unsupported\n", size, blockSize);
+    return nullptr;
+  }
+
   for (auto& block : blocks) {
     if (block.hasSpace(size, alignment))
       return block.allocate(size, alignment);
