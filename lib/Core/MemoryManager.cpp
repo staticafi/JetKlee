@@ -126,11 +126,29 @@ size_t MmapAllocation::getUsedSize() const {
     return (unsigned char *)nextFreeSlot - (unsigned char *)data;
 }
 
+size_t AllocatorMap::getAppropriateBlockSize(size_t allocationSize) const {
+  return BASE_BLOCK_SIZE * (allocationSize/BASE_BLOCK_SIZE + 1);
+}
+
+MmapAllocator &AllocatorMap::getOrCreateAllocator(size_t blockSize) {
+  auto it = allocators.find(blockSize);
+  if (it == allocators.end()) {
+    it = allocators.emplace_hint(it, blockSize, flags | MAP_32BIT);
+  }
+  return it->second;
+}
+
+void *AllocatorMap::allocate(size_t size, size_t alignment) {
+  size_t blockSize = getAppropriateBlockSize(size);
+  auto &alloc = getOrCreateAllocator(blockSize);
+  return alloc.allocate(size, alignment);
+}
+
 MemoryAllocator::MemoryAllocator(bool determ,
                                  bool lowmem,
                                  size_t determ_size,
                                  void *expectedAddr)
-  : deterministic(determ), lowmemAllocator(4096, MAP_32BIT) {
+  : deterministic(determ) {
   if (deterministic) {
       klee_message("Allocating memory deterministically");
       deterministicMem.initialize(determ_size, expectedAddr);
@@ -151,7 +169,7 @@ void *MemoryAllocator::allocate(size_t size, size_t alignment) {
     }
     return address;
   } else if (lowmem) {
-      return lowmemAllocator.allocate(size, alignment);
+    return lowmemAllocator.allocate(size, alignment);
   } else {
     // Use malloc for the standard case
     if (alignment <= 8)

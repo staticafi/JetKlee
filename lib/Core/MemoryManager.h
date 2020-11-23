@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <set>
+#include <unordered_map>
 #include <vector>
 #include <cstdint>
 
@@ -62,13 +63,27 @@ public:
 };
 
 
+class AllocatorMap {
+  const size_t BASE_BLOCK_SIZE = 4096;
+
+  int flags{0};
+  std::unordered_map<size_t, MmapAllocator> allocators;
+
+  size_t getAppropriateBlockSize(size_t allocationSize) const;
+  MmapAllocator &getOrCreateAllocator(size_t blockSize);
+
+public:
+  AllocatorMap(int flags = 0) : flags(flags) {}
+  void *allocate(size_t size, size_t alignment);
+};
+
 class MemoryAllocator {
     bool deterministic{false};
     // allocate memory on lower 32bit memory space
     bool lowmem{false};
 
     MmapAllocation deterministicMem{};
-    MmapAllocator lowmemAllocator{};
+    AllocatorMap lowmemAllocator{};
 public:
     MemoryAllocator(bool determ, bool lowmem, size_t determ_size, void *expectedAddr);
 
