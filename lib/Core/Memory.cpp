@@ -72,7 +72,11 @@ void MemoryObject::getAllocInfo(std::string &result) const {
 
 void MemoryObject::initializeSymbolicArray(klee::ArrayCache &array) {
   if (!symbolicAddress) {
-    symbolicAddress = array.CreateArray(std::string("mo_addr_for_seg:") + std::to_string(segment), Context::get().getPointerWidth());
+    auto tmparray = array.CreateArray(std::string("mo_addr_for_seg:") +
+                                        std::to_string(segment),
+                                      Context::get().getPointerWidth());
+    symbolicAddress = Expr::createTempRead(tmparray,
+                                           Context::get().getPointerWidth());
   }
 }
 
@@ -80,8 +84,7 @@ ref<Expr> MemoryObject::getSymbolicAddress(klee::ArrayCache &array) {
   if (!symbolicAddress) {
     initializeSymbolicArray(array);
   }
-  return Expr::createTempRead(symbolicAddress.getValue(),
-                              Context::get().getPointerWidth());
+  return symbolicAddress.getValue();
 }
 
 /***/

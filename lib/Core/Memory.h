@@ -71,7 +71,7 @@ public:
   const llvm::Value *allocSite;
 
   /// Symbolic address for poiner comparison
-  llvm::Optional<const Array*> symbolicAddress;
+  llvm::Optional<ref<Expr>> symbolicAddress;
 
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);

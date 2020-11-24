@@ -2196,6 +2196,13 @@ ref<Expr> Executor::getSizeForAlloca(ExecutionState& state, KInstruction *ki) co
   return size;
 }
 
+static inline bool segmentIsDeleted(ExecutionState& state,
+                                    ref<klee::ConstantExpr> segment) {
+  auto& removedObjs = state.addressSpace.removedObjectsMap;
+  return removedObjs.find(segment->getZExtValue()) != removedObjs.end();
+}
+
+
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
   switch (i->getOpcode()) {
@@ -2763,88 +2770,80 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     ICmpInst *ii = cast<ICmpInst>(ci);
     const auto& predicate = ii->getPredicate();
 
-    const Cell &leftOriginal = eval(ki, 0, state);
-    const Cell &rightOriginal = eval(ki, 1, state);
+    KValue left = eval(ki, 0, state);
+    KValue right = eval(ki, 1, state);
 
-    const auto leftSegment =
-        dyn_cast<ConstantExpr>(leftOriginal.getSegment().get());
-    const auto rightSegment =
-        dyn_cast<ConstantExpr>(rightOriginal.getSegment().get());
-    const auto leftValue =
-        dyn_cast<ConstantExpr>(leftOriginal.getValue().get());
-    const auto rightValue =
-        dyn_cast<ConstantExpr>(rightOriginal.getValue().get());
+    // is one of operands pointer and none of them is null?
+    if ((!left.getSegment()->isZero() || !right.getSegment()->isZero())
+        && (!left.isZero() && !right.isZero())) {
 
-    ref<Expr> leftArray;
-    ref<Expr> rightArray;
-
-    /// Only use symbolics with Constant values(offsets)
-    bool useOriginalValues = true;
-
-    if (leftValue && rightValue && leftSegment && rightSegment) {
-      useOriginalValues = false;
-    }
-
-    bool success = false;
-    bool deletedObject = false;
-    const auto &pointerWidth = Context::get().getPointerWidth();
-
-    if (!useOriginalValues &&
-        leftSegment->getWidth() == pointerWidth &&
-        rightSegment->getWidth() == pointerWidth &&
-        !leftSegment->isZero() &&
-        !rightSegment->isZero() &&
-        rightSegment->getZExtValue() != leftSegment->getZExtValue()) {
-
-      ObjectPair op;
-      bool successRight, successLeft;
-      if (!state.addressSpace.resolveOneConstantSegment(leftOriginal, op)) {
-        successLeft = false;
-        const auto res = state.addressSpace.removedObjectsMap.find(leftSegment->getZExtValue(pointerWidth));
-        if (res != state.addressSpace.removedObjectsMap.end()) {
-          leftArray = Expr::createTempRead(res->second, Context::get().getPointerWidth());
-        }
-      } else {
-        successLeft = true;
-        leftArray = const_cast<MemoryObject *>(op.first)->getSymbolicAddress(
-            arrayCache);
-      }
-
-      if (!state.addressSpace.resolveOneConstantSegment(rightOriginal, op)) {
-        successRight = false;
-        const auto res = state.addressSpace.removedObjectsMap.find(rightSegment->getZExtValue(pointerWidth));
-        if (res != state.addressSpace.removedObjectsMap.end()) {
-          rightArray = Expr::createTempRead(res->second, Context::get().getPointerWidth());
-        }
-      } else {
-        successRight = true;
-        rightArray = const_cast<MemoryObject *>(op.first)->getSymbolicAddress(
-            arrayCache);
-      }
-      success = successLeft && successRight;
-      deletedObject = successLeft == !successRight;
-    }
-    KValue left;
-    KValue right;
-
-    if (!success && !deletedObject) {
-      left = static_cast<KValue>(leftOriginal);
-      right = static_cast<KValue>(rightOriginal);
-    } else {
-      klee_warning("Comparing pointers, using symbolic values instead of "
-                   "segment for comparison");
-      left = KValue(leftOriginal.getSegment(), leftArray);
-      right = KValue(rightOriginal.getSegment(), rightArray);
-    }
-
-    if (deletedObject) {
-      switch(predicate) {
-      case ICmpInst::ICMP_EQ:
-      case ICmpInst::ICMP_NE:
-        bindLocal(ki, state, left.SymbCmp(right));
-        return;
-      default:
+      auto *leftSegment = dyn_cast<ConstantExpr>(left.getSegment());
+      auto *rightSegment = dyn_cast<ConstantExpr>(right.getSegment());
+      // for symbolic segments, we now support only the comparison for
+      // equality and inequality. In general, we will must fork.
+      if ((!leftSegment || !rightSegment) &&
+           (predicate != ICmpInst::ICMP_EQ &&
+            predicate != ICmpInst::ICMP_NE)) {
+        terminateStateOnExecError(
+          state, "Comparison other than (in)equality is not implemented"
+                 "for symbolic pointers");
         break;
+      }
+
+      if (leftSegment && rightSegment) {
+        bool leftDeleted = segmentIsDeleted(state, leftSegment);
+        bool rightDeleted = segmentIsDeleted(state, rightSegment);
+        // some of the segments is deleted or
+        // the segments are different and are compared for less or greater
+        // (equal) to?
+        if (leftDeleted || rightDeleted ||
+            ((leftSegment->getZExtValue() != rightSegment->getZExtValue()) &&
+             (predicate != ICmpInst::ICMP_EQ && predicate != ICmpInst::ICMP_NE))) {
+          ObjectPair lookupResult;
+          // left is a pointer (and right is not a null, i.e., it is an integer
+          // value or another pointer)
+          if (!leftSegment->isZero()) {
+            bool success = state.addressSpace.resolveOneConstantSegment(left, lookupResult);
+            if (!success) {
+              auto& removedObjs = state.addressSpace.removedObjectsMap;
+              auto removedIt = removedObjs.find(leftSegment->getZExtValue());
+              if (removedIt == removedObjs.end()) {
+                terminateStateOnExecError(state,
+                                          "Failed resolving constant segment");
+                break;
+              }
+
+              left = KValue(ConstantExpr::alloc(VALUES_SEGMENT,
+                                                leftSegment->getWidth()),
+                            removedIt->second);
+            } else {
+              // FIXME: we should assert that the address does not overlap with any of the
+              // currently allocated objects...
+              left = KValue(ConstantExpr::alloc(VALUES_SEGMENT, leftSegment->getWidth()),
+                            const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache));
+            }
+          }
+          // right is a pointer (and left is not a null?)
+          if (!rightSegment->isZero()) {
+            bool success = state.addressSpace.resolveOneConstantSegment(right, lookupResult);
+            if (!success) {
+              auto& removedObjs = state.addressSpace.removedObjectsMap;
+              auto removedIt = removedObjs.find(rightSegment->getZExtValue());
+              if (removedIt == removedObjs.end()) {
+                terminateStateOnExecError(state,
+                                          "Failed resolving constant segment");
+                break;
+              }
+              right = KValue(ConstantExpr::alloc(VALUES_SEGMENT,
+                                                 rightSegment->getWidth()),
+                             removedIt->second);
+
+            } else {
+              right = KValue(ConstantExpr::alloc(VALUES_SEGMENT, rightSegment->getWidth()),
+                             const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache));
+            }
+          }
+        }
       }
     }
 
@@ -4606,8 +4605,8 @@ void Executor::executeFree(ExecutionState &state,
                               StateTerminationType::Free,
                               getKValueInfo(*it->second, addressOptim));
       } else {
-        const_cast<MemoryObject*>(mo)->initializeSymbolicArray(arrayCache);
-        it->second->addressSpace.removedObjectsMap.emplace(mo->segment, mo->symbolicAddress.getValue());
+        it->second->addressSpace.removedObjectsMap.emplace(
+            mo->segment, const_cast<MemoryObject*>(mo)->getSymbolicAddress(arrayCache));
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, KValue(Expr::createPointer(0)));
