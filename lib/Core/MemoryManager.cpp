@@ -133,7 +133,7 @@ size_t AllocatorMap::getAppropriateBlockSize(size_t allocationSize) const {
 MmapAllocator &AllocatorMap::getOrCreateAllocator(size_t blockSize) {
   auto it = allocators.find(blockSize);
   if (it == allocators.end()) {
-    it = allocators.emplace_hint(it, blockSize, flags | MAP_32BIT);
+    it = allocators.emplace_hint(it, blockSize, flags);
   }
   return it->second;
 }
@@ -148,7 +148,7 @@ MemoryAllocator::MemoryAllocator(bool determ,
                                  bool lowmem,
                                  size_t determ_size,
                                  void *expectedAddr)
-  : deterministic(determ) {
+  : deterministic(determ), lowmemAllocator(MAP_32BIT) {
   if (deterministic) {
       klee_message("Allocating memory deterministically");
       deterministicMem.initialize(determ_size, expectedAddr);
