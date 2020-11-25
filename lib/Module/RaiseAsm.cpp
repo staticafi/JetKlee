@@ -65,6 +65,7 @@ bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
         ia->getFunctionType()->getReturnType()->isVoidTy()) {
       IRBuilder<> Builder(I);
       Builder.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
+      I->replaceAllUsesWith(UndefValue::get(I->getType()));
       I->eraseFromParent();
       return true;
     }
