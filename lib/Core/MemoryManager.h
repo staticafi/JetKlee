@@ -126,6 +126,8 @@ public:
     allocator.useLowMemory(lm);
   }
 
+  uint64_t getLastSegment() const { return lastSegment; }
+
   /*
    * Returns the size used by deterministic allocation in bytes
    */

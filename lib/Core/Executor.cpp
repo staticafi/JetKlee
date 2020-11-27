@@ -3886,8 +3886,11 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
       for (auto segment : segments) {
         segment = toUnique(state, segment);
         if (auto C = dyn_cast<ConstantExpr>(segment)) {
-          if (C->getZExtValue() < FIRST_ORDINARY_SEGMENT)
+          auto segval = C->getZExtValue();
+          if (segval < FIRST_ORDINARY_SEGMENT)
               continue; // ignore functions and special objects
+          if (segval > memory->getLastSegment())
+              continue;  // this cannot be a real pointer
 
           ObjectPair result;
           bool success =
