@@ -34,6 +34,15 @@ Function *RaiseAsmPass::getIntrinsic(llvm::Module &M, unsigned IID, Type **Tys,
                                    llvm::ArrayRef<llvm::Type*>(Tys, NumTys));
 }
 
+static bool isnumber(const std::string& str) {
+  for (unsigned char c : str) {
+    if (!isdigit(c)) {
+        return false;
+    }
+  }
+  return true;
+}
+
 // FIXME: This should just be implemented as a patch to
 // X86TargetAsmInfo.cpp, then everyone will benefit.
 bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
@@ -65,7 +74,42 @@ bool RaiseAsmPass::runOnInstruction(Module &M, Instruction *I) {
         ia->getFunctionType()->getReturnType()->isVoidTy()) {
       IRBuilder<> Builder(I);
       Builder.CreateFence(llvm::AtomicOrdering::SequentiallyConsistent);
-      I->replaceAllUsesWith(UndefValue::get(I->getType()));
+      // try to match the output of asm
+      Value *retval = nullptr;
+      const auto& constraints = ia->ParseConstraints();
+      for (auto& constr : constraints) {
+          if (constr.MatchingInput >= 0) {
+            retval = I->getOperand(constr.MatchingInput);
+            auto bw = I->getType()->getScalarSizeInBits();
+            if (bw == 0)
+                continue;
+
+            if (constraints[constr.MatchingInput].Codes.size() != 1)
+                continue;
+
+            const auto& inputstr = constraints[constr.MatchingInput].Codes[0];
+            if (!isnumber(inputstr))
+                continue;
+
+            APInt inputval(bw,
+                           constraints[constr.MatchingInput].Codes[0],
+                           10);
+            auto opval = inputval.getZExtValue();
+            if (I->getNumOperands() <= opval) {
+                llvm::errs() << I << "\n";
+                llvm::errs() << "Invalid operand num for inline asm: "
+                             << inputval;
+                continue;
+            }
+            retval = I->getOperand(opval);
+            break;
+          }
+      }
+      if (retval) {
+        I->replaceAllUsesWith(retval);
+      } else {
+        I->replaceAllUsesWith(UndefValue::get(I->getType()));
+      }
       I->eraseFromParent();
       return true;
     }
