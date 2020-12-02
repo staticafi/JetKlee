@@ -4551,13 +4551,14 @@ ObjectState *Executor::bindObjectInState(ExecutionState &state,
   return os;
 }
 
-void Executor::executeAlloc(ExecutionState &state,
-                            ref<Expr> size,
-                            bool isLocal,
-                            KInstruction *target,
-                            bool zeroMemory,
-                            const ObjectState *reallocFrom,
-                            size_t allocationAlignment) {
+MemoryObject *
+Executor::executeAlloc(ExecutionState &state,
+                       ref<Expr> size,
+                       bool isLocal,
+                       KInstruction *target,
+                       bool zeroMemory,
+                       const ObjectState *reallocFrom,
+                       size_t allocationAlignment) {
   size = optimizer.optimizeExpr(size, true);
   const llvm::Value *allocSite = state.prevPC->inst;
   if (allocationAlignment == 0) {
@@ -4584,6 +4585,7 @@ void Executor::executeAlloc(ExecutionState &state,
       state.addressSpace.bindObject(mo, os);
     }
   }
+  return mo;
 }
 
 void Executor::executeFree(ExecutionState &state,

@@ -288,13 +288,13 @@ private:
   /// \param allocationAlignment If non-zero, the given alignment is
   /// used. Otherwise, the alignment is deduced via
   /// Executor::getAllocationAlignment
-  void executeAlloc(ExecutionState &state,
-                    ref<Expr> size,
-                    bool isLocal,
-                    KInstruction *target,
-                    bool zeroMemory=false,
-                    const ObjectState *reallocFrom=nullptr,
-                    size_t allocationAlignment=0);
+  MemoryObject* executeAlloc(ExecutionState &state,
+                             ref<Expr> size,
+                             bool isLocal,
+                             KInstruction *target,
+                             bool zeroMemory=false,
+                             const ObjectState *reallocFrom=nullptr,
+                             size_t allocationAlignment=0);
 
   ref<Expr> getSizeForAlloca(ExecutionState& state, KInstruction *ki) const;
 

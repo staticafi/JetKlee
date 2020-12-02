@@ -54,6 +54,12 @@ cl::opt<bool>
                               "condition given to klee_assume() rather than "
                               "emitting an error (default=false)"),
                      cl::cat(TerminationCat));
+
+cl::opt<bool>
+    SymbolicMallocs("malloc-symbolic-contents", cl::init(false),
+                     cl::desc("Make malloc'ed memory symbolic "
+                              "(default=false)"));
+
 } // namespace
 
 /// \todo Almost all of the demands in this file should be replaced
@@ -465,7 +471,11 @@ void SpecialFunctionHandler::handleMalloc(ExecutionState &state,
                                   const std::vector<Cell> &arguments) {
   // XXX should type check args
   assert(arguments.size()==1 && "invalid number of arguments to malloc");
-  executor.executeAlloc(state, arguments[0].value, false, target);
+  auto *mo = executor.executeAlloc(state, arguments[0].value, false, target);
+
+  if (SymbolicMallocs && mo) {
+    executor.executeMakeSymbolic(state, mo, "malloc"+std::to_string(mo->id));
+  }
 }
 
 void SpecialFunctionHandler::handleMemalign(ExecutionState &state,
