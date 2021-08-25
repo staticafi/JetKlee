@@ -181,6 +181,8 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__ubsan_handle_mul_overflow", handleMulOverflow, false),
   add("__ubsan_handle_divrem_overflow", handleDivRemOverflow, false),
 
+  add("pthread_create", handlePthreadCreate, false),
+
 #undef addDNR
 #undef add
 };
@@ -1335,4 +1337,11 @@ void SpecialFunctionHandler::handleDivRemOverflow(
     const std::vector<Cell> &arguments) {
   executor.terminateStateOnError(state, "overflow on division or remainder",
                                  StateTerminationType::Overflow);
+}
+
+void SpecialFunctionHandler::handlePthreadCreate(ExecutionState &state,
+                                                 KInstruction *target,
+                                                 const std::vector<Cell> &arguments) {
+  executor.terminateStateOnExecError(state,
+        "Call to pthread_create.");
 }
