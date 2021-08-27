@@ -181,8 +181,8 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__ubsan_handle_mul_overflow", handleMulOverflow, false),
   add("__ubsan_handle_divrem_overflow", handleDivRemOverflow, false),
 
-  add("pthread_create", handlePthreadCreate, false),
-  add("pthread_join", handlePthreadJoin, false),
+  add("pthread_create", handlePthreadCreate, true),
+  add("pthread_join", handlePthreadJoin, true),
 
 #undef addDNR
 #undef add
