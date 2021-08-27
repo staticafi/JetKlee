@@ -1115,6 +1115,8 @@ static const char *modelledExternals[] = {
   "__VERIFIER_nondet_unsigned",
   "__VERIFIER_nondet_ushort",
   "__VERIFIER_assume",
+  "pthread_create",
+  "pthread_join",
 };
 
 // Symbols we aren't going to warn about
