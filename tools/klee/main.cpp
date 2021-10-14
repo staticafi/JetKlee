@@ -543,24 +543,40 @@ static std::string getCType(unsigned bitwidth, bool isSigned) {
 
 static std::string getDecl(const std::string& fun, unsigned bitwidth,
                            bool isSigned, llvm::Module *module) {
-    auto F = module->getFunction(fun);
-    assert(F && "Wrong function");
-    /*
-    if (auto subprog = F->getSubprogram()) {
-        // this is just quick hack, we should reconstruct the type properly
-        auto line = subprog->getLine();
-    }
-    */
-    std::string rettype = getCType(bitwidth, isSigned);
+  auto F = module->getFunction(fun);
+  assert(F && "Wrong function");
+  /*
+  if (auto subprog = F->getSubprogram()) {
+      // this is just quick hack, we should reconstruct the type properly
+      auto line = subprog->getLine();
+  }
+  */
+  std::string rettype = getCType(bitwidth, isSigned);
 
-    std::string args;
-    auto FTy = F->getFunctionType();
-    if (FTy->getNumParams() == 0) {
-        args = "void";
-    } else {
-        args = "...";
+  std::string args = "";
+  auto FTy = F->getFunctionType();
+  if (FTy->getNumParams() == 0) {
+    args = "void";
+  } else {
+    // FIXME: parse the types from debugging information
+    // if available
+    auto &DL = module->getDataLayout();
+    for (unsigned n = 0; n < FTy->getNumParams(); ++n) {
+        if (n > 0)
+            args += ", ";
+        auto *arg = F->getArg(n);
+        auto *argTy = arg->getType();
+        if (argTy->isPointerTy()) {
+            args += "void *a" + std::to_string(n);
+        } else {
+            args += getCType(DL.getTypeSizeInBits(arg->getType()), false);
+            args += "a" + std::to_string(n);
+        }
     }
-    return rettype + fun + "(" + args + ")";
+    if (F->isVarArg())
+        args += ", ...";
+  }
+  return rettype + fun + "(" + args + ")";
 }
 
 
