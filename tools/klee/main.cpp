@@ -561,17 +561,18 @@ static std::string getDecl(const std::string& fun, unsigned bitwidth,
     // FIXME: parse the types from debugging information
     // if available
     auto &DL = module->getDataLayout();
-    for (unsigned n = 0; n < FTy->getNumParams(); ++n) {
+    unsigned n = 0;
+    for (auto &arg : F->args()) {
         if (n > 0)
             args += ", ";
-        auto *arg = F->getArg(n);
-        auto *argTy = arg->getType();
+        auto *argTy = arg.getType();
         if (argTy->isPointerTy()) {
             args += "void *a" + std::to_string(n);
         } else {
-            args += getCType(DL.getTypeSizeInBits(arg->getType()), false);
+            args += getCType(DL.getTypeSizeInBits(arg.getType()), false);
             args += "a" + std::to_string(n);
         }
+        ++n;
     }
     if (F->isVarArg())
         args += ", ...";
