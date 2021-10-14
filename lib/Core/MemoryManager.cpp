@@ -133,7 +133,7 @@ size_t AllocatorMap::getAppropriateBlockSize(size_t allocationSize) const {
 MmapAllocator &AllocatorMap::getOrCreateAllocator(size_t blockSize) {
   auto it = allocators.find(blockSize);
   if (it == allocators.end()) {
-    it = allocators.emplace_hint(it, blockSize, flags);
+    it = allocators.emplace_hint(it, blockSize, MmapAllocator{blockSize, flags});
   }
   return it->second;
 }
