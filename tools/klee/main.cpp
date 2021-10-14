@@ -520,16 +520,7 @@ KleeHandler::openTestFile(const std::string &suffix, unsigned id) {
   return openOutputFile(getTestFilename(suffix, id));
 }
 
-static std::string getDecl(const std::string& fun, unsigned bitwidth,
-                           bool isSigned, llvm::Module *module) {
-    auto F = module->getFunction(fun);
-    assert(F && "Wrong function");
-    /*
-    if (auto subprog = F->getSubprogram()) {
-        // this is just quick hack, we should reconstruct the type properly
-        auto line = subprog->getLine();
-    }
-    */
+static std::string getCType(unsigned bitwidth, bool isSigned) {
     std::string rettype = "";
     if (!isSigned && bitwidth > 1)
         rettype ="unsigned ";
@@ -547,13 +538,28 @@ static std::string getDecl(const std::string& fun, unsigned bitwidth,
             assert(false && "Wrong bitwidth");
             abort();
     }
+    return rettype;
+}
+
+static std::string getDecl(const std::string& fun, unsigned bitwidth,
+                           bool isSigned, llvm::Module *module) {
+    auto F = module->getFunction(fun);
+    assert(F && "Wrong function");
+    /*
+    if (auto subprog = F->getSubprogram()) {
+        // this is just quick hack, we should reconstruct the type properly
+        auto line = subprog->getLine();
+    }
+    */
+    std::string rettype = getCType(bitwidth, isSigned);
 
     std::string args;
     auto FTy = F->getFunctionType();
-    if (FTy->getNumParams() == 0)
+    if (FTy->getNumParams() == 0) {
         args = "void";
-    else
+    } else {
         args = "...";
+    }
     return rettype + fun + "(" + args + ")";
 }
 
@@ -768,14 +774,14 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         for (auto& func : functions) {
             auto& val = *func.second.begin();
             *harness << getDecl(func.first, val.getBitWidth(),
-                                    val.isSigned(), getModule()) << " {\n";
+                                val.isSigned(), getModule()) << " {\n";
 
             *harness << "\tstatic int pos = 0;\n";
             *harness << "\tswitch(pos++) {\n";
             int n = 0;
             for (auto& val : func.second) {
                 *harness << "\t\tcase " << n++ << ": return "
-                                            << val.toString() << ";\n";
+                                        << val.toString() << ";\n";
             }
             *harness << "\t\tdefault: return 0;\n";
             *harness << "\t}\n";
