@@ -2773,7 +2773,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     KValue left = eval(ki, 0, state);
     KValue right = eval(ki, 1, state);
 
-    // is one of operands pointer and none of them is null?
+    // is one of operands a pointer and none of them is null?
     if ((!left.getSegment()->isZero() || !right.getSegment()->isZero())
         && (!left.isZero() && !right.isZero())) {
 
@@ -2785,7 +2785,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
            (predicate != ICmpInst::ICMP_EQ &&
             predicate != ICmpInst::ICMP_NE)) {
         terminateStateOnExecError(
-          state, "Comparison other than (in)equality is not implemented"
+          state, "Comparison other than (in)equality is not implemented "
                  "for symbolic pointers");
         break;
       }
