@@ -99,6 +99,7 @@ namespace klee {
     ///               (when returning true).
     /// \param[out] offset if resolveOne found OP by address,
     ///               sends back offset value at which it was found.
+    /// \param[out] success is set to true if param result has been set
     /// \return true iff an object was found at \a address.
     bool resolveOne(ExecutionState &state, 
                     TimingSolver *solver,
