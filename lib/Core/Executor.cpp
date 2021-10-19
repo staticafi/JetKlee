@@ -2605,6 +2605,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       executeCall(state, ki, f, arguments);
     } else {
       auto pointer = eval(ki, 0, state);
+      if (pointer.isZero()) {
+        //terminateStateOnExecError(state, "call of nullptr");
+        terminateStateOnError(state, "memory error: calling nullptr",
+                              StateTerminationType::Ptr, getKValueInfo(state, pointer));
+        break;
+      }
       // We handle constant segments for now
       assert((cast<ConstantExpr>(pointer.getSegment())->getZExtValue()
                 == FUNCTIONS_SEGMENT) && "Invalid function pointer");
