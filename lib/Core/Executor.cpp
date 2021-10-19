@@ -5581,9 +5581,15 @@ void Executor::setReplayNondet(const struct KTest *out) {
                     val.getPointer().getZExtValue(),
                     val.getValue().getZExtValue());
     } else {
-      klee_message("Input vector: %s:%u:%u = %lu",
-                    std::get<0>(nv).c_str(), std::get<1>(nv),
-                    std::get<2>(nv), val.getValue().getZExtValue());
+      if (val.getValue().getBitWidth() <= 64) {
+        klee_message("Input vector: %s:%u:%u = %lu",
+                      std::get<0>(nv).c_str(), std::get<1>(nv),
+                      std::get<2>(nv), val.getValue().getZExtValue());
+      } else {
+        klee_message("Input vector: %s:%u:%u = ... %u bits ...",
+                      std::get<0>(nv).c_str(), std::get<1>(nv),
+                      std::get<2>(nv), val.getValue().getBitWidth());
+      }
     }
   }
 }
