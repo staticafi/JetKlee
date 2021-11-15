@@ -183,6 +183,9 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
 
   add("pthread_create", handlePthreadCreate, true),
   add("pthread_join", handlePthreadJoin, true),
+  add("pthread_key_create", handleUnsupportedPthread, true),
+  add("pthread_setspecific", handleUnsupportedPthread, true),
+  add("pthread_getspecific", handleUnsupportedPthread, true),
 
 #undef addDNR
 #undef add
@@ -1352,4 +1355,11 @@ void SpecialFunctionHandler::handlePthreadJoin(ExecutionState &state,
                                                const std::vector<Cell> &arguments) {
   executor.terminateStateOnExecError(state,
         "Call to pthread_join.");
+}
+
+void SpecialFunctionHandler::handleUnsupportedPthread(ExecutionState &state,
+                                                      KInstruction *target,
+                                                      const std::vector<Cell> &arguments) {
+  executor.terminateStateOnExecError(state,
+        "unsupported pthread API.");
 }
