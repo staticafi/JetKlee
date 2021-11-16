@@ -3970,7 +3970,7 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
       auto leaks = getMemoryLeaks(state);
       assert(!leaks.empty() && "hasMemoryLeaks() bug");
 
-      klee_warning("Found unfreed memory, checking if it still can be freed.");
+      klee_warning_once(nullptr, "Found unfreed memory, checking if it still can be freed.");
 
       std::set<const MemoryObject*> reachable;
       bool success = getReachableMemoryObjects(state, reachable);
