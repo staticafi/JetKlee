@@ -650,6 +650,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
         auto testvec = m_interpreter->getTestVector(state);
         for (auto& input : testvec) {
+          if (input.getName().compare(0, 17 , "__VERIFIER_nondet") != 0)
+              continue;
           *f << "  <input>" << input.toString() << "</input>\n";
         }
 
@@ -681,6 +683,10 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         //llvm::errs() << *state.lastLoopHead << "\n";
         //llvm::errs() << *state.lastLoopCheck << "\n";
         for (auto& input : testvec) {
+          const auto& name = input.getName();
+          if (name.compare(0, 17 , "__VERIFIER_nondet") != 0)
+              continue;
+
           if (state.lastLoopHead && state.lastLoopHeadId == (size_t)node) {
             cyclehead = node + 1;
             *witness <<
