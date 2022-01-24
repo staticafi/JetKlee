@@ -378,6 +378,10 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
+  const Array* CreateArrayWithName(ExecutionState &state,
+                                   const Expr::Width& width,
+                                   const std::string& name);
+
   KValue createNondetValue(ExecutionState &state, 
                            unsigned size, bool isSigned,
                            KInstruction *instr,
@@ -495,6 +499,7 @@ private:
   void doDumpStates();
 
   /// Only for debug purposes; enable via debugger or klee-control
+  static void dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es);
   void dumpStates();
   void dumpPTree();
 

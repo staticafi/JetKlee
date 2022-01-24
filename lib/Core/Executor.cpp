@@ -163,10 +163,18 @@ cl::opt<bool>
                        cl::cat(SolvingCat));
 
 cl::opt<bool>
-    EqualitySubstitution("equality-substitution", cl::init(true),
+    EqualitySubstitution("equality-substitution",
+                         cl::init(true),
                          cl::desc("Simplify equality expressions before "
                                   "querying the solver (default=true)"),
                          cl::cat(SolvingCat));
+
+/* Jakub Novak - lazy init pointers*/
+cl::opt<bool>
+    LazyInitialization("lazy-init",
+                       cl::desc("Initialize unbound pointers lazily"),
+                       cl::init(false),
+                       cl::cat(SolvingCat));
 
 
 /*** External call policy options ***/
@@ -1423,7 +1431,6 @@ void Executor::executeLifetimeIntrinsic(ExecutionState &state,
       executeAlloc(state, getSizeForAlloca(state, allocSite), true /* isLocal */,
           allocSite);
     } else {
-      //klee_warning("Could not find allocation for lifetime end");
       terminateStateOnError(state, "Memory object is dead", Ptr);
     }
     return;
@@ -2432,7 +2439,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     // Memory instructions...
   case Instruction::Alloca: {
-    executeAlloc(state, getSizeForAlloca(state, ki), true, ki);
+    executeAlloc(state, getSizeForAlloca(state, ki), true, ki, true);
     break;
   }
 
@@ -3163,7 +3170,7 @@ std::string Executor::getKValueInfo(ExecutionState &state,
                                      const KValue &address) const{
   std::string Str;
   llvm::raw_string_ostream info(Str);
-  info << "\taddress: " << address.getSegment() << ":" << address.getOffset() << "\n";
+  info << "\tsegment: " << address.getSegment() << " offset: " << address.getOffset() << "\n";
   ref<ConstantExpr> segmentValue;
   ref<ConstantExpr> offsetValue;
   if (address.isConstant()) {
@@ -3972,18 +3979,22 @@ ref<Expr> Executor::replaceReadWithSymbolic(ExecutionState &state,
   if (n != 1 && random() % n)
     return e;
 
-  // create a new fresh location, assert it is equal to concrete value in e
-  // and return it.
-  
-  static unsigned id;
-  const Array *array =
-      arrayCache.CreateArray("rrws_arr" + llvm::utostr(++id),
-                             Expr::getMinBytesForWidth(e->getWidth()));
+  const Array* array = CreateArrayWithName(state, e->getWidth(), "rrws_arrr");
   ref<Expr> res = Expr::createTempRead(array, e->getWidth());
   ref<Expr> eq = NotOptimizedExpr::create(EqExpr::create(e, res));
   llvm::errs() << "Making symbolic: " << eq << "\n";
   state.addConstraint(eq);
   return res;
+}
+
+const Array* Executor::CreateArrayWithName(ExecutionState &state,
+                                            const Expr::Width& width, const std::string& name) {
+  // create a new fresh location
+  static unsigned id;
+  const Array *array =
+      arrayCache.CreateArray(name + llvm::utostr(++id),
+                             Expr::getMinBytesForWidth(width));
+  return array;
 }
 
 ObjectState *Executor::bindObjectInState(ExecutionState &state, 
@@ -4127,6 +4138,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                       KInstruction *target /* undef if write */) {
   Expr::Width type = (isWrite ? value.getWidth() :
                      getWidthForLLVMType(target->inst->getType()));
+  bool isPointer = !isWrite && target->inst->getType()->isPointerTy();
   unsigned bytes = Expr::getMinBytesForWidth(type);
 
   if (SimplifySymIndices) {
@@ -4203,10 +4215,10 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
+
         }          
       } else {
         KValue result = os->read(offset, type);
-        
         if (interpreterOpts.MakeConcreteSymbolic) {
           result = KValue(replaceReadWithSymbolic(state, result.getSegment()),
                           replaceReadWithSymbolic(state, result.getOffset()));
@@ -4249,7 +4261,6 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
-          // TODO segment
           wos->write(optimAddress.getOffset(), value);
         }
       } else {
@@ -4268,8 +4279,56 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
-      terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
-                            NULL, getKValueInfo(*unbound, optimAddress));
+      if(LazyInitialization && !isWrite) {
+        const Array* array = nullptr;
+        if (!isPointer){
+          array = CreateArrayWithName(state, type, "lazy_init_arr");
+        }
+        ref<Expr> size = klee::ConstantExpr::alloc(type, Expr::Int64);
+        bool isLocal = false; // only allow the object to exist in the function
+        auto* mo = executeAlloc(state, size, isLocal, target, true);
+        auto* os = bindObjectInState(state, mo, isLocal, array);
+
+        uint64_t addressValue = 0;
+        if (isa<klee::ConstantExpr>(address.getValue())) {
+          addressValue = cast<klee::ConstantExpr>(address.getValue())->getZExtValue();
+        } else {
+          ref<ConstantExpr> result;
+          if (solver->getValue(state, address.getValue(), result)) {
+            addressValue = result->getZExtValue();
+          } else {
+            terminateStateOnError(*unbound, "memory error - lazy init: couldn't resolve address",
+                                  Ptr, nullptr, getKValueInfo(*unbound, optimAddress));
+            return;
+          }
+        }
+
+        auto segment = mo->getSegment();
+        state.addressSpace.concreteAddressMap.insert({reinterpret_cast<uint64_t>(addressValue), segment});
+        state.addressSpace.segmentMap.insert({segment, mo});
+
+        //if this is a value, save the tempRead into object state
+        //so we get the same result next read in a different state
+        KValue result;
+        if (!isPointer) {
+          result = Expr::createTempRead(array, type);
+          ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+
+          auto constantAddress = ConstantExpr::create(addressValue, Context::get().getPointerWidth());
+          //auto constant32bitAddress = cast<klee::ConstantExpr>(ZExtExpr::create(constantAddress, Expr::Int32))->getZExtValue(32);
+
+          wos->write(constantAddress, result);
+        } else {
+          // if this is a pointer, just get the address
+          result = os->read(address.getValue(), type);
+        }
+        bindLocal(target, state, result);
+        return;
+
+      } else {
+        terminateStateOnError(*unbound, "memory error: out of bound pointer",
+                              Ptr, nullptr, getKValueInfo(*unbound, optimAddress));
+      }
     }
   }
 }
@@ -4809,7 +4868,10 @@ size_t Executor::getAllocationAlignment(const llvm::Value *allocSite) const {
                         allocationSiteName.c_str(), forcedAlignment);
       alignment = forcedAlignment;
     }
-  } else {
+  } else if (LazyInitialization) {
+    alignment = forcedAlignment;
+  }
+  else {
     llvm_unreachable("Unhandled allocation site");
   }
 
@@ -4870,6 +4932,43 @@ void Executor::dumpPTree() {
   ::dumpPTree = 0;
 }
 
+void Executor::dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es) {
+  *os << "(" << es << ",";
+  *os << "[";
+  auto next = es->stack.begin();
+  ++next;
+  for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
+       sfIt != sf_ie; ++sfIt) {
+    *os << "('" << sfIt->kf->function->getName().str() << "',";
+    if (next == es->stack.end()) {
+      *os << es->prevPC->info->line << "), ";
+    } else {
+      *os << next->caller->info->line << "), ";
+      ++next;
+    }
+  }
+  *os << "], ";
+
+  StackFrame &sf = es->stack.back();
+  uint64_t md2u = computeMinDistToUncovered(es->pc,
+                                            sf.minDistToUncoveredOnReturn);
+  uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
+                                                       es->pc->info->id);
+  uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
+
+  *os << "{";
+  *os << "'depth' : " << es->depth << ", ";
+  *os << "'weight' : " << es->weight << ", ";
+  *os << "'queryCost' : " << es->queryCost << ", ";
+  *os << "'coveredNew' : " << es->coveredNew << ", ";
+  *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
+  *os << "'md2u' : " << md2u << ", ";
+  *os << "'icnt' : " << icnt << ", ";
+  *os << "'CPicnt' : " << cpicnt << ", ";
+  *os << "}";
+  *os << ")\n";
+}
+
 void Executor::dumpStates() {
   if (!::dumpStates) return;
 
@@ -4877,40 +4976,7 @@ void Executor::dumpStates() {
 
   if (os) {
     for (ExecutionState *es : states) {
-      *os << "(" << es << ",";
-      *os << "[";
-      auto next = es->stack.begin();
-      ++next;
-      for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
-           sfIt != sf_ie; ++sfIt) {
-        *os << "('" << sfIt->kf->function->getName().str() << "',";
-        if (next == es->stack.end()) {
-          *os << es->prevPC->info->line << "), ";
-        } else {
-          *os << next->caller->info->line << "), ";
-          ++next;
-        }
-      }
-      *os << "], ";
-
-      StackFrame &sf = es->stack.back();
-      uint64_t md2u = computeMinDistToUncovered(es->pc,
-                                                sf.minDistToUncoveredOnReturn);
-      uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
-                                                           es->pc->info->id);
-      uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
-
-      *os << "{";
-      *os << "'depth' : " << es->depth << ", ";
-      *os << "'weight' : " << es->weight << ", ";
-      *os << "'queryCost' : " << es->queryCost << ", ";
-      *os << "'coveredNew' : " << es->coveredNew << ", ";
-      *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
-      *os << "'md2u' : " << md2u << ", ";
-      *os << "'icnt' : " << icnt << ", ";
-      *os << "'CPicnt' : " << cpicnt << ", ";
-      *os << "}";
-      *os << ")\n";
+      dumpState(os, es);
     }
   }
 
