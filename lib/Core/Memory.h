@@ -77,6 +77,9 @@ public:
   /// Symbolic address for poiner comparison
   llvm::Optional<ref<Expr>> symbolicAddress;
 
+  /// Tag that the value of MO is lazily initialized (default is false)
+  bool isLazyInitialized = false;
+
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);
   MemoryObject &operator=(const MemoryObject &b);
@@ -108,8 +111,8 @@ public:
       isFixed(_isFixed),
       isUserSpecified(false),
       parent(_parent), 
-      allocSite(_allocSite) {
-  }
+      allocSite(_allocSite),
+      isLazyInitialized(false) { }
 
     MemoryObject(uint64_t segment, ref<Expr> _size,
                  uint64_t _allocatedSize,
