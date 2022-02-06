@@ -3,6 +3,7 @@
 //
 
 #include <assert.h>
+#include <stdlib.h>
 
 typedef struct node {
   int val;
@@ -16,6 +17,24 @@ extern int* val;
 //int get_sign(node_t* node) {}
 
 int main() {
+  node_t* next = node->next;
+  while (next->next) {
+    next = next->next;
+    klee_warning("cycle continues!");
+  }
+
+  node_t* next2 = next;
+  while (next2->next) {
+    next2 = next2->next;
+    klee_warning("cycle2 continues!");
+  }
+
+  node_t* next3 = node->next;
+  while (next3->next) {
+    next3 = next3->next;
+    klee_warning("cycle3 continues!");
+  }
+
   int* value_ptr = &node->val;
   if (*value_ptr == 1) {
     klee_warning("ptr to lazy initiated value check passed");
@@ -24,12 +43,12 @@ int main() {
       }
   }
 
-  //compare pointer values (bc thesis check)
+  //compare pointer values (bc thesis check) - both branches should be reachable
   int * ptr = (int*)malloc(sizeof(int));
   if (&node->next > ptr) {
-    klee_warning("is true");
+    klee_warning("reachable");
   } else {
-    klee_warning("also true");
+    klee_warning("also reachable");
   }
 
   //compare values in multiple reads
@@ -80,11 +99,6 @@ int main() {
       assert(0 && "val2 neq failed");
     }
   }
-
-  //cap the cycle so the run is not infinite
-//  while (node->next) {
-//    klee_warning("try me!");
-//  }
   return 0;
 }
 

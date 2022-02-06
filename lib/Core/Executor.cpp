@@ -172,8 +172,14 @@ cl::opt<bool>
 /* Jakub Novak - lazy init pointers*/
 cl::opt<bool>
     LazyInitialization("lazy-init",
-                       cl::desc("Initialize unbound pointers lazily"),
+                       cl::desc("Initialize external pointers lazily"),
                        cl::init(false),
+                       cl::cat(SolvingCat));
+
+cl::opt<uint64_t>
+    MaxPointerDepth("max-ptr-depth",
+                       cl::desc("max depth of lazy init pointers, default=0 (off)"),
+                       cl::init(0),
                        cl::cat(SolvingCat));
 
 
@@ -1084,7 +1090,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     }
   }
 
-
+  
   // XXX - even if the constraint is provable one way or the other we
   // can probably benefit by adding this constraint and allowing it to
   // reduce the other constraints. For example, if we do a binary
@@ -4311,25 +4317,41 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
   KValue result;
   Expr::Width type = (getWidthForLLVMType(target->inst->getType()));
   bool isPointer = target->inst->getType()->isPointerTy();
+  ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
 
   if (isPointer) {
-    // If this is only a pointer, create/find MO for the value underneath
+    // If target is only a pointer, create/find MO for the value underneath
     shouldReadFromOffset = false;
 
     //TODO:: While cycle? limit the creation of new MOs?
     //write depth of object
     auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
-      result = {pair->second, offset};
+      result = {pair->second, constantZero};
     } else {
-      ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
-      bool isLocal = false; // only allow the object to exist in the function
-      auto *valueMO = executeAlloc(state, size, isLocal, target);
-      valueMO->isLazyInitialized = true;
-      (void)bindObjectInState(state, valueMO, isLocal, nullptr);
-      state.addressSpace.lazyPointersSegmentMap.insert(
-          {mo->getSegment(), valueMO->getSegment()});
-      result = {valueMO->getSegmentExpr(), offset};
+      if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
+        //continue with execution, just return 0 (null) so the cycle stops
+        //and set the depth of object to prevent future allocations in new cycles
+        // TODO: What to do here? if I set it to zero, i can still read the value
+        // but it might loop a bit more (usually twice as much)
+        // cycle1 loops 10 times, cycle2 loops 10 times, vs cycle3 loops 30 times.
+        mo->pointerDepth = 0;
+        klee_warning("MaxPointerDepth reached, stopping the fork");
+        result = {0, constantZero};
+      } else {
+        ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
+        bool isLocal = false; // only allow the object to exist in the function
+        auto *valueMO = executeAlloc(state, size, isLocal, target);
+        valueMO->isLazyInitialized = true;
+        valueMO->pointerDepth = mo->pointerDepth + 1;
+
+        (void)bindObjectInState(state, valueMO, isLocal, nullptr);
+        state.addressSpace.lazyPointersSegmentMap.insert(
+            {mo->getSegment(), valueMO->getSegment()});
+
+
+        result = {valueMO->getSegmentExpr(), constantZero};
+      }
     }
   } else {
     ref<klee::ConstantExpr> offsetExpr;
@@ -4351,12 +4373,11 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
       //If offset was not yet read and therefore is uninitialized, initialize it now
       shouldReadFromOffset = false;
       offsets.emplace_back(offsetValue);
-      //klee_message("creating new temp read for object above");
       const Array* array = CreateArrayWithName(state, type, "lazy_init_arr");
       result = Expr::createTempRead(array, type);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
-      // use exiting value
+      // simple path, value already exists, read it traditionally
       shouldReadFromOffset = true;
     }
   }

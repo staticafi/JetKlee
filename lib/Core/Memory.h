@@ -78,11 +78,13 @@ public:
   llvm::Optional<ref<Expr>> symbolicAddress;
 
   /// Tag that the value of MO is lazily initialized (default is false)
-  bool isLazyInitialized = false;
+  bool isLazyInitialized;
+  /// Pointer depth
+  mutable uint64_t pointerDepth;
 
   // DO NOT IMPLEMENT
-  MemoryObject(const MemoryObject &b);
-  MemoryObject &operator=(const MemoryObject &b);
+  MemoryObject(const MemoryObject &b) = delete;
+  MemoryObject &operator=(const MemoryObject &b) = delete;
 
 public:
   // XXX this is just a temp hack, should be removed
@@ -91,10 +93,12 @@ public:
     : refCount(0),
       id(counter++),
       segment(0),
-      size(0),
+      size(nullptr),
       isFixed(true),
-      parent(NULL),
-      allocSite(0) {
+      parent(nullptr),
+      allocSite(nullptr),
+      isLazyInitialized(false),
+        pointerDepth(0){
   }
 
   MemoryObject(ref<Expr> _size,
@@ -112,7 +116,7 @@ public:
       isUserSpecified(false),
       parent(_parent), 
       allocSite(_allocSite),
-      isLazyInitialized(false) { }
+      isLazyInitialized(false), pointerDepth(0) { }
 
     MemoryObject(uint64_t segment, ref<Expr> _size,
                  uint64_t _allocatedSize,
@@ -130,7 +134,9 @@ public:
       isFixed(_isFixed),
       isUserSpecified(false),
       parent(_parent),
-      allocSite(_allocSite) {
+      allocSite(_allocSite),
+      isLazyInitialized(false),
+        pointerDepth(0) {
   }
 
   ~MemoryObject();
