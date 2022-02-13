@@ -4206,6 +4206,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       segment = address.getSegment();
       offset = address.getOffset();
     }
+    //klee_message("write/read from segment: %lu address: %lu", cast<klee::ConstantExpr>(segment)->getZExtValue(), cast<klee::ConstantExpr>(offset)->getZExtValue());
 
     ref<Expr> isEqualSegment = EqExpr::create(mo->getSegmentExpr(), segment);
 
@@ -4268,6 +4269,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   
   // XXX there is some query wasteage here. who cares?
   ExecutionState *unbound = &state;
+  ExecutionState *bound = nullptr;
   
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
     const MemoryObject *mo = i->first;
@@ -4275,7 +4277,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     ref<Expr> inBounds = mo->getBoundsCheckPointer(optimAddress, bytes);
     
     StatePair branches = fork(*unbound, inBounds, true);
-    ExecutionState *bound = branches.first;
+    bound = branches.first;
 
     // bound can be 0 on failure or overlapped 
     if (bound) {
@@ -4288,7 +4290,15 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           wos->write(optimAddress.getOffset(), value);
         }
       } else {
-        KValue result = os->read(optimAddress.getOffset(), type);
+        bool shouldReadFromOffset = true;
+        KValue result;
+
+        if (mo->isLazyInitialized) {
+          result = handleReadForLazyInit(state, target, mo, os, optimAddress.getOffset(), shouldReadFromOffset);
+        }
+        if (shouldReadFromOffset) {
+          result = os->read(optimAddress.getOffset(), type);
+        }
         bindLocal(target, *bound, result);
       }
     }
@@ -4315,7 +4325,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
                                        const ref<Expr>& offset,
                                        bool &shouldReadFromOffset) {
   KValue result;
-  Expr::Width type = (getWidthForLLVMType(target->inst->getType()));
+
   bool isPointer = target->inst->getType()->isPointerTy();
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
 
@@ -4323,23 +4333,18 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
     // If target is only a pointer, create/find MO for the value underneath
     shouldReadFromOffset = false;
 
-    //TODO:: While cycle? limit the creation of new MOs?
-    //write depth of object
     auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
       result = {pair->second, constantZero};
     } else {
       if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
-        //continue with execution, just return 0 (null) so the cycle stops
-        //and set the depth of object to prevent future allocations in new cycles
-        // TODO: What to do here? if I set it to zero, i can still read the value
-        // but it might loop a bit more (usually twice as much)
-        // cycle1 loops 10 times, cycle2 loops 10 times, vs cycle3 loops 30 times.
-        mo->pointerDepth = 0;
         klee_warning("MaxPointerDepth reached, stopping the fork");
         result = {0, constantZero};
       } else {
-        ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
+        Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+        const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+        ref<Expr> size = Expr::createTempRead(array, typeWidth);
+
         bool isLocal = false; // only allow the object to exist in the function
         auto *valueMO = executeAlloc(state, size, isLocal, target);
         valueMO->isLazyInitialized = true;
@@ -4373,8 +4378,9 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
       //If offset was not yet read and therefore is uninitialized, initialize it now
       shouldReadFromOffset = false;
       offsets.emplace_back(offsetValue);
-      const Array* array = CreateArrayWithName(state, type, "lazy_init_arr");
-      result = Expr::createTempRead(array, type);
+      Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+      result = Expr::createTempRead(array, typeWidth);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
       // simple path, value already exists, read it traditionally
@@ -4544,6 +4550,12 @@ void Executor::runFunctionAsMain(Function *f,
   int envc;
   for (envc=0; envp[envc]; ++envc) ;
 
+  bool entryFunctionHasArguments = false;
+  if (!f->arg_empty() && f->getName() != "main") {
+    entryFunctionHasArguments = true;
+    klee_warning("Entry function %s has arguments", f->getName().data());
+  }
+
   unsigned NumPtrBytes = Context::get().getPointerWidth() / 8;
   KFunction *kf = kmodule->functionMap[f];
   assert(kf);
@@ -4610,6 +4622,10 @@ void Executor::runFunctionAsMain(Function *f,
       }
     }
   }
+
+  if (entryFunctionHasArguments && LazyInitialization) {
+    initializeEntryFunctionArguments(f, *state);
+  }
   
   initializeGlobals(*state);
 
@@ -4626,6 +4642,29 @@ void Executor::runFunctionAsMain(Function *f,
 
   if (statsTracker)
     statsTracker->done();
+}
+void Executor::initializeEntryFunctionArguments(Function *f,
+                                                ExecutionState &state) {
+  KFunction *kf = kmodule->functionMap[f];
+  ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
+  uint8_t index = 0;
+
+  for (auto it = f->arg_begin(), ei = f->arg_end(); it != ei; ++it, ++index) {
+    auto ty = it->getType();
+    static constexpr auto forcedAlignment = 8;
+    if (ty->getTypeID() == Type::PointerTyID) {
+      Expr::Width typeWidth = getWidthForLLVMType(ty);
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_entry_arg");
+      ref<Expr> size = Expr::createTempRead(array, typeWidth);
+      MemoryObject *mo =
+          memory->allocate(size, /*isLocal=*/false,
+                                          /*isGlobal=*/false, /*allocSite=*/state.pc->inst,
+                                          /*alignment=*/forcedAlignment);
+      mo->isLazyInitialized = true;
+      (void)bindObjectInState(state, mo, false);
+      bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
+    }
+  }
 }
 
 unsigned Executor::getPathStreamID(const ExecutionState &state) {

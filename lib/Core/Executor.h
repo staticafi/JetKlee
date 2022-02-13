@@ -585,6 +585,9 @@ public:
                                const ObjectState *os,
                                const ref<Expr>& offset,
                                bool &shouldReadFromOffset);
+  
+  void initializeEntryFunctionArguments(llvm::Function *f,
+                                        ExecutionState &state);
 };
   
 } // End klee namespace
