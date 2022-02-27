@@ -1643,7 +1643,7 @@ void Executor::executeCall(ExecutionState &state,
                               User);
         return;
       }
-    } else {
+    } else /* f->isVarArg() */ {
       Expr::Width WordSize = Context::get().getPointerWidth();
 
       if (callingArgs < funcArgs) {
@@ -4341,9 +4341,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
         klee_warning("MaxPointerDepth reached, stopping the fork");
         result = {0, constantZero};
       } else {
-        Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
-        const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
-        ref<Expr> size = Expr::createTempRead(array, typeWidth);
+        ref<Expr> size = getSymbolicSizeExpr(state);
 
         bool isLocal = false; // only allow the object to exist in the function
         auto *valueMO = executeAlloc(state, size, isLocal, target);
@@ -4378,9 +4376,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
       //If offset was not yet read and therefore is uninitialized, initialize it now
       shouldReadFromOffset = false;
       offsets.emplace_back(offsetValue);
-      Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
-      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
-      result = Expr::createTempRead(array, typeWidth);
+      result = getSymbolicSizeExpr(state);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
       // simple path, value already exists, read it traditionally
@@ -4551,7 +4547,7 @@ void Executor::runFunctionAsMain(Function *f,
   for (envc=0; envp[envc]; ++envc) ;
 
   bool entryFunctionHasArguments = false;
-  if (!f->arg_empty() && f->getName() != "main") {
+  if ((!f->arg_empty() || f->isVarArg()) && f->getName() != "main") {
     entryFunctionHasArguments = true;
     klee_warning("Entry function %s has arguments", f->getName().data());
   }
@@ -4647,15 +4643,13 @@ void Executor::initializeEntryFunctionArguments(Function *f,
                                                 ExecutionState &state) {
   KFunction *kf = kmodule->functionMap[f];
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
-  uint8_t index = 0;
 
+  uint8_t index = 0;
   for (auto it = f->arg_begin(), ei = f->arg_end(); it != ei; ++it, ++index) {
     auto ty = it->getType();
-    static constexpr auto forcedAlignment = 8;
     if (ty->getTypeID() == Type::PointerTyID) {
-      Expr::Width typeWidth = getWidthForLLVMType(ty);
-      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_entry_arg");
-      ref<Expr> size = Expr::createTempRead(array, typeWidth);
+      static constexpr auto forcedAlignment = 8;
+      ref<Expr> size = getSymbolicSizeExpr(state);
       MemoryObject *mo =
           memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/false, /*allocSite=*/state.pc->inst,
@@ -4665,6 +4659,24 @@ void Executor::initializeEntryFunctionArguments(Function *f,
       bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
     }
   }
+  if (f->isVarArg()) {
+    klee_warning("entry function %s has var args", f->getName().data());
+    if (0 == index) {
+      terminateStateOnError(state, "calling function with too few arguments",
+                            User);
+    }
+    MemoryObject** varargs = &state.stack.back().varargs;
+    ref<Expr> size = getSymbolicSizeExpr(state);
+    *varargs = memory->allocate(size, false, false, state.pc->inst, forcedAlignment);
+    (*varargs)->isLazyInitialized = true;
+    (void)bindObjectInState(state, *varargs, false);
+  }
+}
+ref<Expr> Executor::getSymbolicSizeExpr(ExecutionState &state) {
+  Expr::Width width = Context::get().getPointerWidth();
+  const Array* array =
+      CreateArrayWithName(state, width, "lazy_init_entry_arg");
+  return Expr::createTempRead(array, width);
 }
 
 unsigned Executor::getPathStreamID(const ExecutionState &state) {

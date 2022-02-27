@@ -588,6 +588,7 @@ public:
   
   void initializeEntryFunctionArguments(llvm::Function *f,
                                         ExecutionState &state);
+  ref<Expr> getSymbolicSizeExpr(ExecutionState &state);
 };
   
 } // End klee namespace
