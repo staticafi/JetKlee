@@ -4233,6 +4233,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(state, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
         }          
@@ -4286,6 +4289,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(*bound, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, optimAddress.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(optimAddress.getOffset(), value);
         }
@@ -4318,6 +4324,30 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     }
   }
 }
+void Executor::handleWriteForLazyInit(ExecutionState &state,
+                                      const ref<Expr> &offset,
+                                      const uint64_t segment) {
+  ref<ConstantExpr> offsetExpr;
+  bool success = solver->getValue(state, offset, offsetExpr);
+
+  if (!success) {
+    terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+  }
+
+  uint64_t offsetValue = offsetExpr->getZExtValue();
+
+  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segment);
+  if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
+    terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+  }
+
+  auto& offsets = segmentOffsetsPair->second;
+  bool found_result = offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue);
+  if (!found_result) {
+    offsets.emplace_back(offsetValue);
+  }
+}
+
 KValue Executor::handleReadForLazyInit(ExecutionState &state,
                                        KInstruction *target,
                                        const MemoryObject *mo,
@@ -4341,7 +4371,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
         klee_warning("MaxPointerDepth reached, stopping the fork");
         result = {0, constantZero};
       } else {
-        ref<Expr> size = getSymbolicSizeExpr(state);
+        ref<Expr> size = getPointerSymbolicSizeExpr(state);
 
         bool isLocal = false; // only allow the object to exist in the function
         auto *valueMO = executeAlloc(state, size, isLocal, target);
@@ -4359,12 +4389,13 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
   } else {
     ref<klee::ConstantExpr> offsetExpr;
     bool success = solver->getValue(state, offset, offsetExpr);
-    uint64_t offsetValue = offsetExpr->getZExtValue();
-    uint64_t segmentValue = mo->getSegment();
 
     if (!success) {
       terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
     }
+
+    uint64_t offsetValue = offsetExpr->getZExtValue();
+    uint64_t segmentValue = mo->getSegment();
 
     auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
     if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
@@ -4372,11 +4403,14 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
     }
 
     auto& offsets = segmentOffsetsPair->second;
-    if (offsets.end() == std::find(offsets.begin(), offsets.end(), offsetValue)) {
+    bool find_result = offsets.end() == std::find(offsets.begin(), offsets.end(), offsetValue);
+    if (find_result) {
       //If offset was not yet read and therefore is uninitialized, initialize it now
       shouldReadFromOffset = false;
       offsets.emplace_back(offsetValue);
-      result = getSymbolicSizeExpr(state);
+      Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+      result = Expr::createTempRead(array, typeWidth);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
       // simple path, value already exists, read it traditionally
@@ -4643,13 +4677,13 @@ void Executor::initializeEntryFunctionArguments(Function *f,
                                                 ExecutionState &state) {
   KFunction *kf = kmodule->functionMap[f];
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
+  static constexpr auto forcedAlignment = 8;
 
   uint8_t index = 0;
   for (auto it = f->arg_begin(), ei = f->arg_end(); it != ei; ++it, ++index) {
     auto ty = it->getType();
     if (ty->getTypeID() == Type::PointerTyID) {
-      static constexpr auto forcedAlignment = 8;
-      ref<Expr> size = getSymbolicSizeExpr(state);
+      ref<Expr> size = getPointerSymbolicSizeExpr(state);
       MemoryObject *mo =
           memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/false, /*allocSite=*/state.pc->inst,
@@ -4666,13 +4700,13 @@ void Executor::initializeEntryFunctionArguments(Function *f,
                             User);
     }
     MemoryObject** varargs = &state.stack.back().varargs;
-    ref<Expr> size = getSymbolicSizeExpr(state);
+    ref<Expr> size = getPointerSymbolicSizeExpr(state);
     *varargs = memory->allocate(size, false, false, state.pc->inst, forcedAlignment);
     (*varargs)->isLazyInitialized = true;
     (void)bindObjectInState(state, *varargs, false);
   }
 }
-ref<Expr> Executor::getSymbolicSizeExpr(ExecutionState &state) {
+ref<Expr> Executor::getPointerSymbolicSizeExpr(ExecutionState &state) {
   Expr::Width width = Context::get().getPointerWidth();
   const Array* array =
       CreateArrayWithName(state, width, "lazy_init_entry_arg");
