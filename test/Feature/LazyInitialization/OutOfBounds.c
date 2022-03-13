@@ -4,26 +4,20 @@
 
 #include <assert.h>
 
+static const int kSIZE = 5;
+
 typedef struct node {
-  char name[5];
   struct node *next;
+  char* str[kSIZE];
 } node_t;
 
 extern node_t* node;
 
 int main() {
-  if (node->name[0] == 'a') {
-    if (node->name[0] == 'b') {
-      assert("this should be an error");
-    }
-    else {
-      // CHECK: KLEE: WARNING: main: Should be reachable
-      klee_warning("Should be reachable");
-    }
-  }
-  if (node->name[1] == 'b') {
+  if (node->str[kSIZE + 1] == 'a') {
+    assert(0 && "out of range!");
+  } else {
     // CHECK: KLEE: WARNING: main: Should be reachable
     klee_warning("Should be reachable");
   }
-  return 0;
 }
