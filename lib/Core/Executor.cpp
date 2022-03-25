@@ -163,7 +163,8 @@ cl::opt<bool>
                        cl::cat(SolvingCat));
 
 cl::opt<bool>
-    EqualitySubstitution("equality-substitution", cl::init(true),
+    EqualitySubstitution("equality-substitution",
+                         cl::init(true),
                          cl::desc("Simplify equality expressions before "
                                   "querying the solver (default=true)"),
                          cl::cat(SolvingCat));
@@ -3163,7 +3164,7 @@ std::string Executor::getKValueInfo(ExecutionState &state,
                                      const KValue &address) const{
   std::string Str;
   llvm::raw_string_ostream info(Str);
-  info << "\taddress: " << address.getSegment() << ":" << address.getOffset() << "\n";
+  info << "\tsegment: " << address.getSegment() << " offset: " << address.getOffset() << "\n";
   ref<ConstantExpr> segmentValue;
   ref<ConstantExpr> offsetValue;
   if (address.isConstant()) {

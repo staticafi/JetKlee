@@ -241,7 +241,10 @@ void AddressSpace::resolveAddressWithOffset(const ExecutionState &state,
       continue;
 
     op = *objects.lookup(res->second);
-    auto subexpr = SubExpr::alloc(address, ConstantExpr::alloc(resolvedAddress, Context::get().getPointerWidth()));
+    if (value->getWidth() != Context::get().getPointerWidth()) {
+      continue;
+    }
+    auto subexpr = SubExpr::alloc(value, ConstantExpr::alloc(resolvedAddress, Context::get().getPointerWidth()));
     auto check = op.first->getBoundsCheckOffset(subexpr);
     bool mayBeTrue = false;
     if (solver->mayBeTrue(state, check, mayBeTrue)) {
