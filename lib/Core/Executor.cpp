@@ -4317,7 +4317,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
                                        const ref<Expr>& offset,
                                        bool &shouldReadFromOffset) {
   KValue result;
-  Expr::Width type = (getWidthForLLVMType(target->inst->getType()));
+
   bool isPointer = target->inst->getType()->isPointerTy();
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
 
@@ -4333,7 +4333,10 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
         klee_warning("MaxPointerDepth reached, stopping the fork");
         result = {0, constantZero};
       } else {
-        ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
+        Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+        const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+        ref<Expr> size = Expr::createTempRead(array, typeWidth);
+
         bool isLocal = false; // only allow the object to exist in the function
         auto *valueMO = executeAlloc(state, size, isLocal, target);
         valueMO->isLazyInitialized = true;
@@ -4369,8 +4372,9 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
       //If offset was not yet read and therefore is uninitialized, initialize it now
       shouldReadFromOffset = false;
       offsets.emplace_back(offsetValue);
-      const Array* array = CreateArrayWithName(state, type, "lazy_init_arr");
-      result = Expr::createTempRead(array, type);
+      Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+      result = Expr::createTempRead(array, typeWidth);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
       // simple path, value already exists, read it traditionally
