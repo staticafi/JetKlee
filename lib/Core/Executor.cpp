@@ -170,8 +170,14 @@ cl::opt<bool>
 
 cl::opt<bool>
     LazyInitialization("lazy-init",
-                       cl::desc("Initialize unbound pointers lazily"),
+                       cl::desc("Initialize external pointers lazily"),
                        cl::init(false),
+                       cl::cat(SolvingCat));
+
+cl::opt<uint64_t>
+    MaxPointerDepth("max-ptr-depth",
+                       cl::desc("max depth of lazy init pointers, default=0 (off)"),
+                       cl::init(0),
                        cl::cat(SolvingCat));
 
 
@@ -4313,23 +4319,33 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
   KValue result;
   Expr::Width type = (getWidthForLLVMType(target->inst->getType()));
   bool isPointer = target->inst->getType()->isPointerTy();
+  ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
 
   if (isPointer) {
-    // If this is only a pointer, create/find MO for the value underneath
+    // If target is only a pointer, create/find MO for the value underneath
     shouldReadFromOffset = false;
 
     auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
-      result = {pair->second, offset};
+      result = {pair->second, constantZero};
     } else {
-      ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
-      bool isLocal = false; // only allow the object to exist in the function
-      auto *valueMO = executeAlloc(state, size, isLocal, target);
-      valueMO->isLazyInitialized = true;
-      (void)bindObjectInState(state, valueMO, isLocal, nullptr);
-      state.addressSpace.lazyPointersSegmentMap.insert(
-          {mo->getSegment(), valueMO->getSegment()});
-      result = {valueMO->getSegmentExpr(), offset};
+      if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
+        klee_warning("MaxPointerDepth reached, stopping the fork");
+        result = {0, constantZero};
+      } else {
+        ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
+        bool isLocal = false; // only allow the object to exist in the function
+        auto *valueMO = executeAlloc(state, size, isLocal, target);
+        valueMO->isLazyInitialized = true;
+        valueMO->pointerDepth = mo->pointerDepth + 1;
+
+        (void)bindObjectInState(state, valueMO, isLocal, nullptr);
+        state.addressSpace.lazyPointersSegmentMap.insert(
+            {mo->getSegment(), valueMO->getSegment()});
+
+
+        result = {valueMO->getSegmentExpr(), constantZero};
+      }
     }
   } else {
     ref<klee::ConstantExpr> offsetExpr;
@@ -4357,7 +4373,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
       result = Expr::createTempRead(array, type);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
     } else {
-      // use exiting value
+      // simple path, value already exists, read it traditionally
       shouldReadFromOffset = true;
     }
   }
