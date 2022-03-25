@@ -3972,18 +3972,22 @@ ref<Expr> Executor::replaceReadWithSymbolic(ExecutionState &state,
   if (n != 1 && random() % n)
     return e;
 
-  // create a new fresh location, assert it is equal to concrete value in e
-  // and return it.
-  
-  static unsigned id;
-  const Array *array =
-      arrayCache.CreateArray("rrws_arr" + llvm::utostr(++id),
-                             Expr::getMinBytesForWidth(e->getWidth()));
+  const Array* array = CreateArrayWithName(state, e->getWidth(), "rrws_arrr");
   ref<Expr> res = Expr::createTempRead(array, e->getWidth());
   ref<Expr> eq = NotOptimizedExpr::create(EqExpr::create(e, res));
   llvm::errs() << "Making symbolic: " << eq << "\n";
   state.addConstraint(eq);
   return res;
+}
+
+const Array* Executor::CreateArrayWithName(ExecutionState &state,
+                                            const Expr::Width& width, const std::string& name) {
+  // create a new fresh location
+  static unsigned id;
+  const Array *array =
+      arrayCache.CreateArray(name + llvm::utostr(++id),
+                             Expr::getMinBytesForWidth(width));
+  return array;
 }
 
 ObjectState *Executor::bindObjectInState(ExecutionState &state, 
@@ -4870,6 +4874,43 @@ void Executor::dumpPTree() {
   ::dumpPTree = 0;
 }
 
+void Executor::dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es) {
+  *os << "(" << es << ",";
+  *os << "[";
+  auto next = es->stack.begin();
+  ++next;
+  for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
+       sfIt != sf_ie; ++sfIt) {
+    *os << "('" << sfIt->kf->function->getName().str() << "',";
+    if (next == es->stack.end()) {
+      *os << es->prevPC->info->line << "), ";
+    } else {
+      *os << next->caller->info->line << "), ";
+      ++next;
+    }
+  }
+  *os << "], ";
+
+  StackFrame &sf = es->stack.back();
+  uint64_t md2u = computeMinDistToUncovered(es->pc,
+                                            sf.minDistToUncoveredOnReturn);
+  uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
+                                                       es->pc->info->id);
+  uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
+
+  *os << "{";
+  *os << "'depth' : " << es->depth << ", ";
+  *os << "'weight' : " << es->weight << ", ";
+  *os << "'queryCost' : " << es->queryCost << ", ";
+  *os << "'coveredNew' : " << es->coveredNew << ", ";
+  *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
+  *os << "'md2u' : " << md2u << ", ";
+  *os << "'icnt' : " << icnt << ", ";
+  *os << "'CPicnt' : " << cpicnt << ", ";
+  *os << "}";
+  *os << ")\n";
+}
+
 void Executor::dumpStates() {
   if (!::dumpStates) return;
 
@@ -4877,40 +4918,7 @@ void Executor::dumpStates() {
 
   if (os) {
     for (ExecutionState *es : states) {
-      *os << "(" << es << ",";
-      *os << "[";
-      auto next = es->stack.begin();
-      ++next;
-      for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
-           sfIt != sf_ie; ++sfIt) {
-        *os << "('" << sfIt->kf->function->getName().str() << "',";
-        if (next == es->stack.end()) {
-          *os << es->prevPC->info->line << "), ";
-        } else {
-          *os << next->caller->info->line << "), ";
-          ++next;
-        }
-      }
-      *os << "], ";
-
-      StackFrame &sf = es->stack.back();
-      uint64_t md2u = computeMinDistToUncovered(es->pc,
-                                                sf.minDistToUncoveredOnReturn);
-      uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
-                                                           es->pc->info->id);
-      uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
-
-      *os << "{";
-      *os << "'depth' : " << es->depth << ", ";
-      *os << "'weight' : " << es->weight << ", ";
-      *os << "'queryCost' : " << es->queryCost << ", ";
-      *os << "'coveredNew' : " << es->coveredNew << ", ";
-      *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
-      *os << "'md2u' : " << md2u << ", ";
-      *os << "'icnt' : " << icnt << ", ";
-      *os << "'CPicnt' : " << cpicnt << ", ";
-      *os << "}";
-      *os << ")\n";
+      dumpState(os, es);
     }
   }
 
