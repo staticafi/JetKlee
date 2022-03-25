@@ -4232,6 +4232,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(state, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
         }          
@@ -4284,6 +4287,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(*bound, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, optimAddress.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
           wos->write(optimAddress.getOffset(), value);
@@ -4317,6 +4323,30 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     }
   }
 }
+void Executor::handleWriteForLazyInit(ExecutionState &state,
+                                      const ref<Expr> &offset,
+                                      const uint64_t segment) {
+  ref<ConstantExpr> offsetExpr;
+  bool success = solver->getValue(state, offset, offsetExpr);
+
+  if (!success) {
+    terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+  }
+
+  uint64_t offsetValue = offsetExpr->getZExtValue();
+
+  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segment);
+  if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
+    terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+  }
+
+  auto& offsets = segmentOffsetsPair->second;
+  bool found_result = offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue);
+  if (!found_result) {
+    offsets.emplace_back(offsetValue);
+  }
+}
+
 KValue Executor::handleReadForLazyInit(ExecutionState &state,
                                        KInstruction *target,
                                        const MemoryObject *mo,
@@ -4549,6 +4579,12 @@ void Executor::runFunctionAsMain(Function *f,
   int envc;
   for (envc=0; envp[envc]; ++envc) ;
 
+  bool entryFunctionHasArguments = false;
+  if (!f->arg_empty() && f->getName() != "main") {
+    entryFunctionHasArguments = true;
+    klee_warning("Entry function %s has arguments", f->getName().data());
+  }
+
   unsigned NumPtrBytes = Context::get().getPointerWidth() / 8;
   KFunction *kf = kmodule->functionMap[f];
   assert(kf);
@@ -4616,6 +4652,10 @@ void Executor::runFunctionAsMain(Function *f,
       }
     }
   }
+
+  if (entryFunctionHasArguments && LazyInitialization) {
+    initializeEntryFunctionArguments(f, *state);
+  }
   
   initializeGlobals(*state);
 
@@ -4632,6 +4672,29 @@ void Executor::runFunctionAsMain(Function *f,
 
   if (statsTracker)
     statsTracker->done();
+}
+void Executor::initializeEntryFunctionArguments(Function *f,
+                                                ExecutionState &state) {
+  KFunction *kf = kmodule->functionMap[f];
+  ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
+  uint8_t index = 0;
+
+  for (auto it = f->arg_begin(), ei = f->arg_end(); it != ei; ++it, ++index) {
+    auto ty = it->getType();
+    static constexpr auto forcedAlignment = 8;
+    if (ty->getTypeID() == Type::PointerTyID) {
+      Expr::Width typeWidth = getWidthForLLVMType(ty);
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_entry_arg");
+      ref<Expr> size = Expr::createTempRead(array, typeWidth);
+      MemoryObject *mo =
+          memory->allocate(size, /*isLocal=*/false,
+                                          /*isGlobal=*/false, /*allocSite=*/state.pc->inst,
+                                          /*alignment=*/forcedAlignment);
+      mo->isLazyInitialized = true;
+      (void)bindObjectInState(state, mo, false);
+      bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
+    }
+  }
 }
 
 unsigned Executor::getPathStreamID(const ExecutionState &state) {
