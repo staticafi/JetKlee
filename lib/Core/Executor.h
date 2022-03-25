@@ -621,6 +621,8 @@ public:
   
   void initializeEntryFunctionArguments(llvm::Function *f,
                                         ExecutionState &state);
+  ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
+
 };
   
 } // End klee namespace
