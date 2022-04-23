@@ -2869,6 +2869,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
           }
         }
       }
+    } else if (LazyInitialization) {
+      handleICMPForLazyInit(predicate, state, left, right);
     }
 
     switch (predicate) {
@@ -3459,6 +3461,39 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     terminateStateOnExecError(state, "illegal instruction");
     break;
   }
+}
+void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
+                                     ExecutionState &state, KValue &left,
+                                     KValue &right) {
+  bool leftSegmentZero = left.getSegment()->isZero();
+  bool rightSegmentZero = right.getSegment()->isZero();
+  bool isOtherZero = leftSegmentZero ? left.value->isZero() : right.value->isZero();
+  if ((leftSegmentZero && rightSegmentZero) || !isOtherZero || (predicate != CmpInst::ICMP_EQ && predicate != CmpInst::ICMP_NE)) {
+    return;
+  }
+
+  KValue value = leftSegmentZero ? right : left;
+  ObjectPair lookupResult;
+  bool success = state.addressSpace.resolveOneConstantSegment(value, lookupResult);
+  if (!success) {
+    return;
+  }
+
+  uint64_t segment = cast<ConstantExpr>(value.getSegment())->getZExtValue();
+  auto it = state.addressSpace.lazilyInitializedOffsets.find(segment);
+  if (it == state.addressSpace.lazilyInitializedOffsets.end()) {
+    return;
+  }
+  if (!it->second.empty()) {
+    return;
+  }
+
+  const MemoryObject* mo = lookupResult.first;
+  if (!mo->isLazyInitialized) {
+    return;
+  }
+  getSymbolicAddressForConstantSegment(state, value);
+  leftSegmentZero ? right = value : left = value;
 }
 
 void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value) {
