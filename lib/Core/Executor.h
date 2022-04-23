@@ -28,6 +28,7 @@
 
 #include "../Expr/ArrayExprOptimizer.h"
 
+#include <llvm/IR/InstrTypes.h>
 #include <map>
 #include <memory>
 #include <set>
@@ -595,6 +596,9 @@ public:
   ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
 
   void getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value);
+  void handleICMPForLazyInit(const llvm::CmpInst::Predicate &predicate,
+                             ExecutionState &state, KValue &left,
+                             KValue &right);
 };
   
 } // End klee namespace
