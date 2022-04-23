@@ -594,6 +594,7 @@ public:
                                         ExecutionState &state);
   ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
 
+  void getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value);
 };
   
 } // End klee namespace
