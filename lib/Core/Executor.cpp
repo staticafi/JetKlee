@@ -2345,8 +2345,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     KValue left = eval(ki, 0, state);
     KValue right = eval(ki, 1, state);
 
+    bool leftSegmentZero = left.getSegment()->isZero();
+    bool rightSegmentZero = right.getSegment()->isZero();
+
     // is one of operands a pointer and none of them is null?
-    if ((!left.getSegment()->isZero() || !right.getSegment()->isZero())
+    if ((!leftSegmentZero || !rightSegmentZero)
         && (!left.isZero() && !right.isZero())) {
 
       auto *leftSegment = dyn_cast<ConstantExpr>(left.getSegment());
@@ -2365,19 +2368,23 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       if (leftSegment && rightSegment) {
         bool leftDeleted = segmentIsDeleted(state, leftSegment);
         bool rightDeleted = segmentIsDeleted(state, rightSegment);
-        // some of the segments is deleted or
+
+        // one segment is zero and the other is not (comparing MO with segment to address)
+        bool oneIsAddress = leftSegmentZero == !rightSegmentZero;
+
+        // some of the segments is deleted or one of them is address or
         // the segments are different and are compared for less or greater
         // (equal) to?
-        if (leftDeleted || rightDeleted ||
+        if (leftDeleted || rightDeleted || oneIsAddress ||
             ((leftSegment->getZExtValue() != rightSegment->getZExtValue()) &&
              (predicate != ICmpInst::ICMP_EQ && predicate != ICmpInst::ICMP_NE))) {
           // left is a pointer (and right is not a null, i.e., it is an integer
           // value or another poiner)
-          if (!leftSegment->isZero()) {
+          if (!leftSegmentZero) {
             getSymbolicAddressForConstantSegment(state, left);
           }
           // right is a pointer (and left is not a null?)
-          if (!rightSegment->isZero()) {
+          if (!rightSegmentZero) {
             getSymbolicAddressForConstantSegment(state, right);
           }
         }
