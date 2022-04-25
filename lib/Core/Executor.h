@@ -594,6 +594,7 @@ public:
   void initializeEntryFunctionArguments(llvm::Function *f,
                                         ExecutionState &state);
   ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
+  ref<Expr> createTempReadForType(ExecutionState &state, llvm::Type* ty);
 
   void getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value);
   void handleICMPForLazyInit(const llvm::CmpInst::Predicate &predicate,
