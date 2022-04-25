@@ -5277,6 +5277,9 @@ void Executor::initializeEntryFunctionArguments(Function *f,
       mo->isLazyInitialized = true;
       (void)bindObjectInState(state, mo, false);
       bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
+    } else {
+      ref<Expr> value = createTempReadForType(state, ty);
+      bindArgument(kf, index, state, {constantZero, value});
     }
   }
   if (f->isVarArg()) {
@@ -5294,6 +5297,13 @@ void Executor::initializeEntryFunctionArguments(Function *f,
 
 ref<Expr> Executor::getPointerSymbolicSizeExpr(ExecutionState &state) {
   Expr::Width width = Context::get().getPointerWidth();
+  const Array* array =
+      CreateArrayWithName(state, width, "lazy_init_entry_arg");
+  return Expr::createTempRead(array, width);
+}
+
+ref<Expr> Executor::createTempReadForType(ExecutionState &state, Type* ty) {
+  Expr::Width width = getWidthForLLVMType(ty);
   const Array* array =
       CreateArrayWithName(state, width, "lazy_init_entry_arg");
   return Expr::createTempRead(array, width);
