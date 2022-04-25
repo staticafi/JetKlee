@@ -593,6 +593,7 @@ public:
   void initializeEntryFunctionArguments(llvm::Function *f,
                                         ExecutionState &state);
   ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
+  ref<Expr> createTempReadForType(ExecutionState &state, llvm::Type* ty);
 
 };
   
