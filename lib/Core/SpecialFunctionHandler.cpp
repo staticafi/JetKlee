@@ -106,6 +106,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("klee_is_symbolic", handleIsSymbolic, true),
   add("klee_make_symbolic", handleMakeSymbolic, false),
   add("klee_mark_global", handleMarkGlobal, false),
+  add("klee_unmark_global", handleUnmarkGlobal, false),
   add("klee_open_merge", handleOpenMerge, false),
   add("klee_close_merge", handleCloseMerge, false),
   add("klee_prefer_cex", handlePreferCex, false),
@@ -1269,6 +1270,23 @@ void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
     const MemoryObject *mo = it->first.first;
     assert(!mo->isLocal);
     mo->isGlobal = true;
+  }
+}
+
+void SpecialFunctionHandler::handleUnmarkGlobal(ExecutionState &state,
+                                                KInstruction *target,
+                                                const std::vector<Cell> &arguments) {
+  assert(arguments.size()==1 &&
+         "invalid number of arguments to klee_unmark_global");
+
+  Executor::ExactResolutionList rl;
+  executor.resolveExact(state, arguments[0], rl, "unmark_global");
+
+  for (Executor::ExactResolutionList::iterator it = rl.begin(),
+         ie = rl.end(); it != ie; ++it) {
+    const MemoryObject *mo = it->first.first;
+    assert(!mo->isLocal);
+    mo->isGlobal = false;
   }
 }
 

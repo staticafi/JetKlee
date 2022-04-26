@@ -511,6 +511,10 @@ void klee_mark_global(void *object) {
   ;
 }
 
+void klee_unmark_global(void *object) {
+  ;
+}
+
 /*** HELPER FUNCTIONS ***/
 
 static void __emit_error(const char *msg) {

@@ -159,3 +159,21 @@ void klee_init_fds(unsigned n_files, unsigned file_length,
   __exe_env.version = __sym_uint32("model_version");
   klee_assume(__exe_env.version == 1);
 }
+
+void klee_destroy_fds(void) {
+  unsigned k;
+  for (k = 0; k < __exe_fs.n_sym_files; k++) {
+    free(__exe_fs.sym_files[k].contents);
+    free(__exe_fs.sym_files[k].stat);
+  }
+
+  free(__exe_fs.sym_files);
+  free(__exe_fs.sym_stdin);
+  free(__exe_fs.sym_stdout);
+
+  free(__exe_fs.read_fail);
+  free(__exe_fs.write_fail);
+  free(__exe_fs.close_fail);
+  free(__exe_fs.ftruncate_fail);
+  free(__exe_fs.getcwd_fail);
+}

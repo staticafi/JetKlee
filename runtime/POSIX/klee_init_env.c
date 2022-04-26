@@ -235,6 +235,19 @@ usage: (klee_init_env) [options] [program arguments]\n\
                 save_all_writes_flag, fd_fail);
 }
 
+void klee_destroy_env(char **argvPtr) {
+  klee_destroy_fds();
+
+  char **ptr;
+  for (ptr = argvPtr; *ptr; ptr++) {
+    klee_unmark_global(*ptr);
+    free(*ptr);
+  }
+
+  klee_unmark_global(argvPtr);
+  free(argvPtr);
+}
+
 /* The following function represents the main function of the user application
  * and is renamed during POSIX setup */
 int __klee_posix_wrapped_main(int argc, char **argv, char **envp);
@@ -242,5 +255,7 @@ int __klee_posix_wrapped_main(int argc, char **argv, char **envp);
 /* This wrapper gets called instead of main if POSIX setup is used */
 int __klee_posix_wrapper(int argcPtr, char **argvPtr, char** envp) {
   klee_init_env(&argcPtr, &argvPtr);
-  return __klee_posix_wrapped_main(argcPtr, argvPtr, envp);
+  int ret = __klee_posix_wrapped_main(argcPtr, argvPtr, envp);
+  klee_destroy_env(argvPtr);
+  return ret;
 }
