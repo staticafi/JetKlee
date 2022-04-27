@@ -4266,7 +4266,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         bool shouldReadFromOffset = true;
 
         if (mo->isLazyInitialized) {
-          result = handleReadForLazyInit(state, target, mo, os, offset,shouldReadFromOffset);
+          result = handleReadForLazyInit(state, target, mo, os, offset, type,
+                                         shouldReadFromOffset);
         }
         if (shouldReadFromOffset) {
           result = os->read(offset, type);
@@ -4322,7 +4323,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
         KValue result;
 
         if (mo->isLazyInitialized) {
-          result = handleReadForLazyInit(state, target, mo, os, optimAddress.getOffset(), shouldReadFromOffset);
+          result = handleReadForLazyInit(state, target, mo, os,
+                                         optimAddress.getOffset(), type,
+                                         shouldReadFromOffset);
         }
         if (shouldReadFromOffset) {
           result = os->read(optimAddress.getOffset(), type);
@@ -4371,12 +4374,11 @@ void Executor::handleWriteForLazyInit(ExecutionState &state,
   }
 }
 
-KValue Executor::handleReadForLazyInit(ExecutionState &state,
-                                       KInstruction *target,
-                                       const MemoryObject *mo,
-                                       const ObjectState *os,
-                                       const ref<Expr>& offset,
-                                       bool &shouldReadFromOffset) {
+KValue
+Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
+                                const MemoryObject *mo, const ObjectState *os,
+                                const ref<Expr> &offset, Expr::Width type,
+                                bool &shouldReadFromOffset) {
   KValue result;
 
   bool isPointer = target->inst->getType()->isPointerTy();
@@ -4388,7 +4390,7 @@ KValue Executor::handleReadForLazyInit(ExecutionState &state,
 
     auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
-      result = {pair->second, constantZero};
+      result = {pair->second, os->read(offset, type).getValue()};
     } else {
       if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
         klee_warning("MaxPointerDepth reached, stopping the fork");
