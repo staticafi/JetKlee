@@ -96,6 +96,9 @@ void klee_init_fds(unsigned n_files, unsigned file_length,
                    int do_all_writes_flag, unsigned max_failures);
 void klee_init_env(int *argcPtr, char ***argvPtr);
 
+void klee_destroy_fds(void);
+void klee_destroy_env(char **argvPtr);
+
 /* *** */
 
 int __fd_open(const char *pathname, int flags, mode_t mode);

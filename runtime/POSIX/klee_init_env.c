@@ -60,16 +60,18 @@ static int __streq(const char *a, const char *b) {
   return 0;
 }
 
-static char *__get_sym_str(int numChars, char *name) {
+static char *__get_sym_str(int maxSize, char *name) {
   int i;
-  char *s = malloc(numChars+1);
-  klee_mark_global(s);
-  klee_make_symbolic(s, numChars+1, name);
+  int argSize = klee_range(0, maxSize + 1, "argSize");
 
-  for (i=0; i<numChars; i++)
+  char *s = malloc(argSize + 1);
+  klee_mark_global(s);
+  klee_make_symbolic(s, argSize + 1, name);
+
+  for (i = 0; i < argSize; i++)
     klee_posix_prefer_cex(s, __isprint(s[i]));
-  
-  s[numChars] = '\0';
+
+  s[argSize] = '\0';
   return s;
 }
 
@@ -235,6 +237,19 @@ usage: (klee_init_env) [options] [program arguments]\n\
                 save_all_writes_flag, fd_fail);
 }
 
+void klee_destroy_env(char **argvPtr) {
+  klee_destroy_fds();
+
+  char **ptr;
+  for (ptr = argvPtr; *ptr; ptr++) {
+    klee_unmark_global(*ptr);
+    free(*ptr);
+  }
+
+  klee_unmark_global(argvPtr);
+  free(argvPtr);
+}
+
 /* The following function represents the main function of the user application
  * and is renamed during POSIX setup */
 int __klee_posix_wrapped_main(int argc, char **argv, char **envp);
@@ -242,5 +257,7 @@ int __klee_posix_wrapped_main(int argc, char **argv, char **envp);
 /* This wrapper gets called instead of main if POSIX setup is used */
 int __klee_posix_wrapper(int argcPtr, char **argvPtr, char** envp) {
   klee_init_env(&argcPtr, &argvPtr);
-  return __klee_posix_wrapped_main(argcPtr, argvPtr, envp);
+  int ret = __klee_posix_wrapped_main(argcPtr, argvPtr, envp);
+  klee_destroy_env(argvPtr);
+  return ret;
 }
