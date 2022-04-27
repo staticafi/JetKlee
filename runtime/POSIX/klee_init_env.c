@@ -60,16 +60,18 @@ static int __streq(const char *a, const char *b) {
   return 0;
 }
 
-static char *__get_sym_str(int numChars, char *name) {
+static char *__get_sym_str(int maxSize, char *name) {
   int i;
-  char *s = malloc(numChars+1);
-  klee_mark_global(s);
-  klee_make_symbolic(s, numChars+1, name);
+  int argSize = klee_range(0, maxSize + 1, "argSize");
 
-  for (i=0; i<numChars; i++)
+  char *s = malloc(argSize + 1);
+  klee_mark_global(s);
+  klee_make_symbolic(s, argSize + 1, name);
+
+  for (i = 0; i < argSize; i++)
     klee_posix_prefer_cex(s, __isprint(s[i]));
-  
-  s[numChars] = '\0';
+
+  s[argSize] = '\0';
   return s;
 }
 
