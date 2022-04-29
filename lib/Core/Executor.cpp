@@ -4454,6 +4454,7 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
       const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
       result = Expr::createTempRead(array, typeWidth);
       state.addressSpace.getWriteable(mo,os)->write(offset, result);
+      state.addNondetValue(result, true, "lazy_init_value");
     } else {
       // simple path, value already exists, read it traditionally
       shouldReadFromOffset = true;
@@ -4735,8 +4736,10 @@ void Executor::initializeEntryFunctionArguments(Function *f,
       (void)bindObjectInState(state, mo, false);
       bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
     } else {
-      ref<Expr> value = createTempReadForType(state, ty);
-      bindArgument(kf, index, state, {constantZero, value});
+      ref<Expr> symArray = createTempReadForType(state, ty);
+      KValue value = {constantZero, symArray};
+      bindArgument(kf, index, state, value);
+      state.addNondetValue(value, true, "symbolic_function_arg");
     }
   }
   if (f->isVarArg()) {
