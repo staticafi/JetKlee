@@ -4389,12 +4389,20 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
 
   bool isPointer = target->inst->getType()->isPointerTy();
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
+  ref<klee::ConstantExpr> offsetExpr;
+  bool success = solver->getValue(state, offset, offsetExpr);
+  if (!success) {
+    terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+    return result;
+  }
+  uint64_t offsetValue = offsetExpr->getZExtValue();
+  uint64_t segmentValue = mo->getSegment();
 
   if (isPointer) {
     // If target is only a pointer, create/find MO for the value underneath
     shouldReadFromOffset = false;
 
-    auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
+    auto pair = state.addressSpace.lazyPointersSegmentMap.find(segmentValue);
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
       result = {pair->second, os->read(offset, type).getValue()};
     } else {
@@ -4402,8 +4410,19 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
         klee_warning("MaxPointerDepth reached, stopping the fork");
         result = {0, constantZero};
       } else {
-        ref<Expr> size = getPointerSymbolicSizeExpr(state);
+        // in case this offset was already initialized, skip new symbolic value creation
+        auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
+        if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
+          terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+          return result;
+        }
+        auto& offsets = segmentOffsetsPair->second;
+        if (offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue)) {
+          shouldReadFromOffset = true;
+          return result;
+        }
 
+        ref<Expr> size = getPointerSymbolicSizeExpr(state);
         bool isLocal = false; // only allow the object to exist in the function
         auto *valueMO = executeAlloc(state, size, isLocal, target);
         valueMO->isLazyInitialized = true;
@@ -4413,23 +4432,14 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
         state.addressSpace.lazyPointersSegmentMap.insert(
             {mo->getSegment(), valueMO->getSegment()});
 
-
         result = {valueMO->getSegmentExpr(), constantZero};
       }
     }
   } else {
-    ref<klee::ConstantExpr> offsetExpr;
-    bool success = solver->getValue(state, offset, offsetExpr);
-    uint64_t offsetValue = offsetExpr->getZExtValue();
-    uint64_t segmentValue = mo->getSegment();
-
-    if (!success) {
-      terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
-    }
-
     auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
     if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
       terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+      return result;
     }
 
     auto& offsets = segmentOffsetsPair->second;
