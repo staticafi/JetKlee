@@ -169,7 +169,6 @@ cl::opt<bool>
                                   "querying the solver (default=true)"),
                          cl::cat(SolvingCat));
 
-/* Jakub Novak - lazy init pointers*/
 cl::opt<bool>
     LazyInitialization("lazy-init",
                        cl::desc("Initialize external pointers lazily"),
@@ -180,6 +179,13 @@ cl::opt<uint64_t>
     MaxPointerDepth("max-ptr-depth",
                        cl::desc("max depth of lazy init pointers, default=0 (off)"),
                        cl::init(0),
+                       cl::cat(SolvingCat));
+
+cl::opt<bool>
+    IgnoreLazyOOB("ignore-lazy-oob",
+                       cl::desc("Ignore out of bounds error on lazy-init "
+                                "objects and don't generate test"),
+                       cl::init(false),
                        cl::cat(SolvingCat));
 
 
@@ -4302,9 +4308,10 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   
   // XXX there is some query wasteage here. who cares?
   ExecutionState *unbound = &state;
+  const MemoryObject* mo = nullptr;
   
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
-    const MemoryObject *mo = i->first;
+    mo = i->first;
     const ObjectState *os = i->second;
     ref<Expr> inBounds = mo->getBoundsCheckPointer(optimAddress, bytes);
     
@@ -4351,8 +4358,12 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
-      terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
-                            NULL, getKValueInfo(*unbound, optimAddress));
+      if (IgnoreLazyOOB && mo && mo->isLazyInitialized) {
+        terminateState(*unbound);
+      } else {
+        terminateStateOnError(*unbound, "memory error: out of bound pointer",
+                              Ptr, NULL, getKValueInfo(*unbound, optimAddress));
+      }
     }
   }
 }
