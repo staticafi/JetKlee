@@ -191,6 +191,13 @@ cl::opt<uint64_t>
                        cl::init(0),
                        cl::cat(SolvingCat));
 
+cl::opt<bool>
+    IgnoreLazyOOB("ignore-lazy-oob",
+                       cl::desc("Ignore out of bounds error on lazy-init "
+                                "objects and don't generate test"),
+                       cl::init(false),
+                       cl::cat(SolvingCat));
+
 
 /*** External call policy options ***/
 
@@ -4888,9 +4895,10 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   
   // XXX there is some query wasteage here. who cares?
   ExecutionState *unbound = &state;
+  const MemoryObject* mo = nullptr;
   
   for (ResolutionList::iterator i = rl.begin(), ie = rl.end(); i != ie; ++i) {
-    const MemoryObject *mo = i->first;
+    mo = i->first;
     const ObjectState *os = i->second;
     ref<Expr> inBounds = mo->getBoundsCheckPointer(addressOptim, bytes);
     
@@ -4937,9 +4945,13 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateOnSolverError(*unbound, "Query timed out (resolve).");
     } else {
-      terminateStateOnError(*unbound, "memory error: out of bound pointer",
-                            StateTerminationType::Ptr,
-                            getKValueInfo(*unbound, addressOptim));
+
+      if (IgnoreLazyOOB && mo && mo->isLazyInitialized) {
+        terminateState(*unbound);
+      } else {
+        terminateStateOnError(*unbound, "memory error: out of bound pointer",
+                              StateTerminationType::Ptr, getKValueInfo(*unbound, addressOptim));
+      }
     }
   }
 }
@@ -4978,9 +4990,9 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
   bool isPointer = target->inst->getType()->isPointerTy();
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
   ref<klee::ConstantExpr> offsetExpr;
-  bool success = solver->getValue(state, offset, offsetExpr);
+  bool success = solver->getValue(state.constraints, offset, offsetExpr, state.queryMetaData);
   if (!success) {
-    terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+    terminateStateOnError(state, "Couldn't get offset for Lazy Init", StateTerminationType::Execution);
     return result;
   }
   uint64_t offsetValue = offsetExpr->getZExtValue();
@@ -5001,7 +5013,7 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
         // in case this offset was already initialized, skip new symbolic value creation
         auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
         if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
-          terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+          terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", StateTerminationType::Execution);
           return result;
         }
         auto& offsets = segmentOffsetsPair->second;
