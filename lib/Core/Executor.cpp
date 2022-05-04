@@ -4580,9 +4580,8 @@ void Executor::runFunctionAsMain(Function *f,
   for (envc=0; envp[envc]; ++envc) ;
 
   bool entryFunctionHasArguments = false;
-  if (!f->arg_empty() && f->getName() != "main") {
+  if ((!f->arg_empty() || f->isVarArg()) && f->getName() != "main") {
     entryFunctionHasArguments = true;
-    klee_warning("Entry function %s has arguments", f->getName().data());
   }
 
   unsigned NumPtrBytes = Context::get().getPointerWidth() / 8;
@@ -4694,6 +4693,18 @@ void Executor::initializeEntryFunctionArguments(Function *f,
       (void)bindObjectInState(state, mo, false);
       bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
     }
+  }
+  if (f->isVarArg()) {
+    if (0 == index) {
+      terminateStateOnError(state, "calling function with too few arguments",
+                            User);
+      return;
+    }
+    MemoryObject** varargs = &state.stack.back().varargs;
+    ref<Expr> size = getSymbolicSizeExpr(state);
+    *varargs = memory->allocate(size, false, false, state.pc->inst, forcedAlignment);
+    (*varargs)->isLazyInitialized = true;
+    (void)bindObjectInState(state, *varargs, false);
   }
 }
 
