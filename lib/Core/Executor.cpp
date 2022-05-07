@@ -5471,6 +5471,42 @@ void Executor::dumpPTree() {
   ::dumpPTree = 0;
 }
 
+void Executor::dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es) {
+  *os << "(" << es << ",";
+  *os << "[";
+  auto next = es->stack.begin();
+  ++next;
+  for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
+       sfIt != sf_ie; ++sfIt) {
+    *os << "('" << sfIt->kf->function->getName().str() << "',";
+    if (next == es->stack.end()) {
+      *os << es->prevPC->info->line << "), ";
+    } else {
+      *os << next->caller->info->line << "), ";
+      ++next;
+    }
+  }
+  *os << "], ";
+
+  StackFrame &sf = es->stack.back();
+  uint64_t md2u = computeMinDistToUncovered(es->pc,
+                                            sf.minDistToUncoveredOnReturn);
+  uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
+                                                       es->pc->info->id);
+  uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
+
+  *os << "{";
+  *os << "'depth' : " << es->depth << ", ";
+  *os << "'queryCost' : " << es->queryMetaData.queryCost << ", ";
+  *os << "'coveredNew' : " << es->coveredNew << ", ";
+  *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
+  *os << "'md2u' : " << md2u << ", ";
+  *os << "'icnt' : " << icnt << ", ";
+  *os << "'CPicnt' : " << cpicnt << ", ";
+  *os << "}";
+  *os << ")\n";
+}
+
 void Executor::dumpStates() {
   if (!::dumpStates) return;
 
@@ -5478,39 +5514,7 @@ void Executor::dumpStates() {
 
   if (os) {
     for (ExecutionState *es : states) {
-      *os << "(" << es << ",";
-      *os << "[";
-      auto next = es->stack.begin();
-      ++next;
-      for (auto sfIt = es->stack.begin(), sf_ie = es->stack.end();
-           sfIt != sf_ie; ++sfIt) {
-        *os << "('" << sfIt->kf->function->getName().str() << "',";
-        if (next == es->stack.end()) {
-          *os << es->prevPC->info->line << "), ";
-        } else {
-          *os << next->caller->info->line << "), ";
-          ++next;
-        }
-      }
-      *os << "], ";
-
-      StackFrame &sf = es->stack.back();
-      uint64_t md2u = computeMinDistToUncovered(es->pc,
-                                                sf.minDistToUncoveredOnReturn);
-      uint64_t icnt = theStatisticManager->getIndexedValue(stats::instructions,
-                                                           es->pc->info->id);
-      uint64_t cpicnt = sf.callPathNode->statistics.getValue(stats::instructions);
-
-      *os << "{";
-      *os << "'depth' : " << es->depth << ", ";
-      *os << "'queryCost' : " << es->queryMetaData.queryCost << ", ";
-      *os << "'coveredNew' : " << es->coveredNew << ", ";
-      *os << "'instsSinceCovNew' : " << es->instsSinceCovNew << ", ";
-      *os << "'md2u' : " << md2u << ", ";
-      *os << "'icnt' : " << icnt << ", ";
-      *os << "'CPicnt' : " << cpicnt << ", ";
-      *os << "}";
-      *os << ")\n";
+      dumpState(os, es);
     }
   }
 
