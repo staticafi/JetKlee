@@ -499,6 +499,7 @@ private:
   void doDumpStates();
 
   /// Only for debug purposes; enable via debugger or klee-control
+  static void dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es);
   void dumpStates();
   void dumpPTree();
 
