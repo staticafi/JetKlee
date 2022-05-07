@@ -3733,7 +3733,7 @@ std::string Executor::getKValueInfo(ExecutionState &state,
                                     const KValue &address) const{
   std::string Str;
   llvm::raw_string_ostream info(Str);
-  info << "\taddress: " << address.getSegment() << ":" << address.getOffset() << "\n";
+  info << "\tsegment: " << address.getSegment() << " offset: " << address.getOffset() << "\n";
   ref<ConstantExpr> segmentValue;
   ref<ConstantExpr> offsetValue;
   if (address.isConstant()) {
