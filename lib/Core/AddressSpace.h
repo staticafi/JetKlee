@@ -71,10 +71,11 @@ namespace klee {
     AddressSpace() : cowKey(1) {}
     AddressSpace(const AddressSpace &b)
       : cowKey(++b.cowKey),
-      objects(b.objects),
-      segmentMap(b.segmentMap),
-      removedObjectsMap(b.removedObjectsMap) { }
-    ~AddressSpace() {}
+        objects(b.objects),
+        segmentMap(b.segmentMap),
+        concreteAddressMap(b.concreteAddressMap),
+        removedObjectsMap(b.removedObjectsMap) { }
+  ~AddressSpace() {}
 
     /// Looks up constant segment in concreteAddressMap.
     /// \param segment segment to search for
