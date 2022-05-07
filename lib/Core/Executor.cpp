@@ -4574,6 +4574,12 @@ void Executor::runFunctionAsMain(Function *f,
   int envc;
   for (envc=0; envp[envc]; ++envc) ;
 
+  bool entryFunctionHasArguments = false;
+  if (!f->arg_empty() && f->getName() != "main") {
+    entryFunctionHasArguments = true;
+    klee_warning("Entry function %s has arguments", f->getName().data());
+  }
+
   unsigned NumPtrBytes = Context::get().getPointerWidth() / 8;
   KFunction *kf = kmodule->functionMap[f];
   assert(kf);
@@ -4641,6 +4647,10 @@ void Executor::runFunctionAsMain(Function *f,
       }
     }
   }
+
+  if (entryFunctionHasArguments && LazyInitialization) {
+    initializeEntryFunctionArguments(f, *state);
+  }
   
   initializeGlobals(*state);
 
@@ -4657,6 +4667,29 @@ void Executor::runFunctionAsMain(Function *f,
 
   if (statsTracker)
     statsTracker->done();
+}
+void Executor::initializeEntryFunctionArguments(Function *f,
+                                                ExecutionState &state) {
+  KFunction *kf = kmodule->functionMap[f];
+  ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
+  uint8_t index = 0;
+
+  for (auto it = f->arg_begin(), ei = f->arg_end(); it != ei; ++it, ++index) {
+    auto ty = it->getType();
+    static constexpr auto forcedAlignment = 8;
+    if (ty->getTypeID() == Type::PointerTyID) {
+      Expr::Width typeWidth = getWidthForLLVMType(ty);
+      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_entry_arg");
+      ref<Expr> size = Expr::createTempRead(array, typeWidth);
+      MemoryObject *mo =
+          memory->allocate(size, /*isLocal=*/false,
+                                          /*isGlobal=*/false, /*allocSite=*/state.pc->inst,
+                                          /*alignment=*/forcedAlignment);
+      mo->isLazyInitialized = true;
+      (void)bindObjectInState(state, mo, false);
+      bindArgument(kf, index, state, {mo->getSegmentExpr(), constantZero});
+    }
+  }
 }
 
 unsigned Executor::getPathStreamID(const ExecutionState &state) {

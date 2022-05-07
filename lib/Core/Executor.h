@@ -590,6 +590,8 @@ public:
                               const ref<Expr> &offset,
                               const uint64_t segment);
   
+  void initializeEntryFunctionArguments(llvm::Function *f,
+                                        ExecutionState &state);
 };
   
 } // End klee namespace
