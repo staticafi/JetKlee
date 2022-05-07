@@ -578,6 +578,13 @@ public:
 
   /// Returns the errno location in memory of the state
   int *getErrnoLocation(const ExecutionState &state) const;
+
+  KValue handleReadForLazyInit(ExecutionState &state,
+                               KInstruction *target,
+                               const MemoryObject *mo,
+                               const ObjectState *os,
+                               const ref<Expr>& offset,
+                               bool &shouldReadFromOffset);
 };
   
 } // End klee namespace

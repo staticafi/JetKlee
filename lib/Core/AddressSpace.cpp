@@ -24,13 +24,23 @@ void AddressSpace::bindObject(const MemoryObject *mo, ObjectState *os) {
   assert(os->copyOnWriteOwner==0 && "object already has owner");
   os->copyOnWriteOwner = cowKey;
   objects = objects.replace(std::make_pair(mo, os));
-  if (mo->segment != 0)
+  if (mo->segment != 0) {
     segmentMap = segmentMap.replace(std::make_pair(mo->segment, mo));
+    if (mo->isLazyInitialized) {
+      lazilyInitializedOffsets.insert({mo->getSegment(), {}});
+    }
+  }
+
 }
 
 void AddressSpace::unbindObject(const MemoryObject *mo) {
-  if (mo->segment != 0)
+  if (mo->segment != 0) {
     segmentMap = segmentMap.remove(mo->segment);
+    if (mo->isLazyInitialized) {
+      lazilyInitializedOffsets.erase(mo->segment);
+    }
+  }
+
   objects = objects.remove(mo);
   // NOTE MemoryObjects are reference counted, *mo is deleted at this point
 }
