@@ -3972,18 +3972,22 @@ ref<Expr> Executor::replaceReadWithSymbolic(ExecutionState &state,
   if (n != 1 && random() % n)
     return e;
 
-  // create a new fresh location, assert it is equal to concrete value in e
-  // and return it.
-  
-  static unsigned id;
-  const Array *array =
-      arrayCache.CreateArray("rrws_arr" + llvm::utostr(++id),
-                             Expr::getMinBytesForWidth(e->getWidth()));
+  const Array* array = CreateArrayWithName(state, e->getWidth(), "rrws_arrr");
   ref<Expr> res = Expr::createTempRead(array, e->getWidth());
   ref<Expr> eq = NotOptimizedExpr::create(EqExpr::create(e, res));
   llvm::errs() << "Making symbolic: " << eq << "\n";
   state.addConstraint(eq);
   return res;
+}
+
+const Array* Executor::CreateArrayWithName(ExecutionState &state,
+                                            const Expr::Width& width, const std::string& name) {
+  // create a new fresh location
+  static unsigned id;
+  const Array *array =
+      arrayCache.CreateArray(name + llvm::utostr(++id),
+                             Expr::getMinBytesForWidth(width));
+  return array;
 }
 
 ObjectState *Executor::bindObjectInState(ExecutionState &state, 
