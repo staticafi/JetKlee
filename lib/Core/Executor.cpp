@@ -4225,6 +4225,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(state, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
         }          
@@ -4277,6 +4280,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           terminateStateOnError(*bound, "memory error: object read only",
                                 ReadOnly);
         } else {
+          if (mo->isLazyInitialized) {
+            handleWriteForLazyInit(state, optimAddress.getOffset(), mo->getSegment());
+          }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
           wos->write(optimAddress.getOffset(), value);
@@ -4310,6 +4316,30 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     }
   }
 }
+void Executor::handleWriteForLazyInit(ExecutionState &state,
+                                      const ref<Expr> &offset,
+                                      const uint64_t segment) {
+  ref<ConstantExpr> offsetExpr;
+  bool success = solver->getValue(state, offset, offsetExpr);
+
+  if (!success) {
+    terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+  }
+
+  uint64_t offsetValue = offsetExpr->getZExtValue();
+
+  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segment);
+  if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
+    terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
+  }
+
+  auto& offsets = segmentOffsetsPair->second;
+  bool found_result = offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue);
+  if (!found_result) {
+    offsets.emplace_back(offsetValue);
+  }
+}
+
 KValue Executor::handleReadForLazyInit(ExecutionState &state,
                                        KInstruction *target,
                                        const MemoryObject *mo,

@@ -585,6 +585,11 @@ public:
                                const ObjectState *os,
                                const ref<Expr>& offset,
                                bool &shouldReadFromOffset);
+
+  void handleWriteForLazyInit(ExecutionState &state,
+                              const ref<Expr> &offset,
+                              const uint64_t segment);
+  
 };
   
 } // End klee namespace
