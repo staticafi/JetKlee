@@ -804,8 +804,6 @@ void Executor::initializeGlobals(ExecutionState &state) {
           for (unsigned offset=0; offset<size; offset++)
             os->write8(offset, 0, ((unsigned char*)addr)[offset]);
         }
-
-
       }
     } else {
       Type *ty = i->getType()->getElementType();
@@ -871,9 +869,6 @@ void Executor::initializeGlobals(ExecutionState &state) {
       if (i->isConstant()) {
         constantObjects.emplace_back(wos);
       }
-
-
-
     }
   }
 
@@ -4447,6 +4442,16 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
       }
     }
   } else {
+    ref<klee::ConstantExpr> offsetExpr;
+    bool success = solver->getValue(state, offset, offsetExpr);
+    uint64_t offsetValue = offsetExpr->getZExtValue();
+    uint64_t segmentValue = mo->getSegment();
+
+    if (!success) {
+      terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+      return result;
+    }
+
     auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
     if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
       terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
