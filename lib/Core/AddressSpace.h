@@ -72,6 +72,7 @@ public:
       : cowKey(++b.cowKey),
         objects(b.objects),
         segmentMap(b.segmentMap),
+        concreteAddressMap(b.concreteAddressMap),
         removedObjectsMap(b.removedObjectsMap) { }
   ~AddressSpace() {}
 
