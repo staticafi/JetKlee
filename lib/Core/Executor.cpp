@@ -4263,7 +4263,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           if (mo->isLazyInitialized) {
-            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment());
+            auto segment = cast<klee::ConstantExpr>(value.getSegment());
+            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment(),
+                                   segment->getZExtValue());
           }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
@@ -4320,7 +4322,9 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 ReadOnly);
         } else {
           if (mo->isLazyInitialized) {
-            handleWriteForLazyInit(state, optimAddress.getOffset(), mo->getSegment());
+            auto segment = cast<klee::ConstantExpr>(value.getSegment());
+            handleWriteForLazyInit(state, optimAddress.getOffset(),
+                                   mo->getSegment(), segment->getZExtValue());
           }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
@@ -4362,18 +4366,20 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   }
 }
 void Executor::handleWriteForLazyInit(ExecutionState &state,
-                                      const ref<Expr> &offset,
-                                      const uint64_t segment) {
+                                      const ref<Expr> &addressOffset,
+                                      const uint64_t addressSegment,
+                                      const uint64_t valueSegment) {
   ref<ConstantExpr> offsetExpr;
-  bool success = solver->getValue(state, offset, offsetExpr);
+  bool success = solver->getValue(state, addressOffset, offsetExpr);
 
   if (!success) {
     terminateStateOnError(state, "Couldn't get offset for Lazy Init", Unhandled);
+    return;
   }
 
   uint64_t offsetValue = offsetExpr->getZExtValue();
 
-  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segment);
+  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(addressSegment);
   if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
     terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", Unhandled);
     return;
@@ -4384,6 +4390,14 @@ void Executor::handleWriteForLazyInit(ExecutionState &state,
   if (!found_result) {
     offsets.emplace_back(offsetValue);
   }
+
+  auto& lazyPtrSegmentMap = state.addressSpace.lazyPointersSegmentMap;
+
+  auto lazyPointerValuePair = lazyPtrSegmentMap.find(addressSegment);
+  if (lazyPointerValuePair != lazyPtrSegmentMap.end()) {
+    lazyPtrSegmentMap[addressSegment] = {valueSegment, offsetValue};
+  }
+
 }
 
 KValue
@@ -4410,7 +4424,7 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
 
     auto pair = state.addressSpace.lazyPointersSegmentMap.find(segmentValue);
     if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
-      result = {pair->second, os->read(offset, type).getValue()};
+      result = {pair->second.first, os->read(offset, type).getValue()};
     } else {
       if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
         klee_warning("MaxPointerDepth reached, stopping the fork");
@@ -4436,7 +4450,7 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
 
         (void)bindObjectInState(state, valueMO, isLocal, nullptr);
         state.addressSpace.lazyPointersSegmentMap.insert(
-            {mo->getSegment(), valueMO->getSegment()});
+            {mo->getSegment(), {valueMO->getSegment(), 0}});
 
         result = {valueMO->getSegmentExpr(), constantZero};
       }

@@ -40,7 +40,7 @@ typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
 typedef std::map</*address*/ const uint64_t, /*segment*/ const uint64_t> ConcreteAddressMap;
 typedef std::map</*segment*/ const uint64_t, /*address*/ const uint64_t> SegmentAddressMap;
 typedef std::map</*segment*/ const uint64_t, /*symbolic array*/ ref<Expr>> RemovedObjectsMap;
-typedef std::map</*pointer segment*/ const uint64_t, /*value segment*/ const uint64_t> LazyPointersSegmentMap;
+typedef std::map</*pointer segment*/ const uint64_t, /*value segment:offset*/ std::pair<uint64_t, uint64_t>> LazyPointersSegmentMap;
 typedef std::map</*segment*/ const uint64_t, /*lazily initialized offsets*/std::vector<uint64_t>> LazilyInitializedOffsets;
 
 

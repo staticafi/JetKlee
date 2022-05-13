@@ -586,8 +586,9 @@ public:
                                bool &shouldReadFromOffset);
 
   void handleWriteForLazyInit(ExecutionState &state,
-                              const ref<Expr> &offset,
-                              const uint64_t segment);
+                              const ref<Expr> &addressOffset,
+                              const uint64_t addressSegment,
+                              const uint64_t valueSegment);
   
   void initializeEntryFunctionArguments(llvm::Function *f,
                                         ExecutionState &state);
