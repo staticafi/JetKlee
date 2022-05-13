@@ -1246,19 +1246,19 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
        fnIt != fn_ie; ++fnIt) {
     if (fnIt->isDeclaration() && !fnIt->use_empty())
       externals.insert(std::make_pair(fnIt->getName(), false));
-    for (Function::const_iterator bbIt = fnIt->begin(), bb_ie = fnIt->end();
-         bbIt != bb_ie; ++bbIt) {
-      for (BasicBlock::const_iterator it = bbIt->begin(), ie = bbIt->end();
-           it != ie; ++it) {
-        if (const CallInst *ci = dyn_cast<CallInst>(it)) {
-          if (isa<InlineAsm>(ci->getCalledValue())) {
-            klee_warning_once(&*fnIt,
-                              "function \"%s\" has inline asm",
-                              fnIt->getName().data());
-          }
-        }
-      }
-    }
+//    for (Function::const_iterator bbIt = fnIt->begin(), bb_ie = fnIt->end();
+//         bbIt != bb_ie; ++bbIt) {
+//      for (BasicBlock::const_iterator it = bbIt->begin(), ie = bbIt->end();
+//           it != ie; ++it) {
+//        if (const CallInst *ci = dyn_cast<CallInst>(it)) {
+//          if (isa<InlineAsm>(ci->getCalledValue())) {
+//            klee_warning_once(&*fnIt,
+//                              "function \"%s\" has inline asm",
+//                              fnIt->getName().data());
+//          }
+//        }
+//      }
+//    }
   }
 
   for (Module::const_global_iterator
@@ -1286,14 +1286,14 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
                                  !dontCare.count(ext))) {
       if (unsafe.count(ext)) {
         foundUnsafe.insert(*it);
-      } else {
-        klee_warning("undefined reference to %s: %s",
-                     it->second ? "variable" : "function",
-                     ext.c_str());
-       //if (it->second && (ext == "optarg" || ext == "optind")) {
-       //    // getopt is fatal, we really cannot handle that
-       //    klee_error("Unhandled getopt stuff");
-       //}
+//      } else {
+//        klee_warning("undefined reference to %s: %s",
+//                     it->second ? "variable" : "function",
+//                     ext.c_str());
+//       //if (it->second && (ext == "optarg" || ext == "optind")) {
+//       //    // getopt is fatal, we really cannot handle that
+//       //    klee_error("Unhandled getopt stuff");
+//       //}
       }
     }
   }
