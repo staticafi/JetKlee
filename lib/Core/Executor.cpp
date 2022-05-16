@@ -2900,10 +2900,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
           if (!rightSegmentZero) {
             getSymbolicAddressForConstantSegment(state, right);
           }
+          checkWidthMatch(left, right);
         }
       }
     } else if (LazyInitialization) {
       handleICMPForLazyInit(predicate, state, left, right);
+      checkWidthMatch(left, right);
     }
 
     switch (predicate) {
@@ -3493,6 +3495,18 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   default:
     terminateStateOnExecError(state, "illegal instruction");
     break;
+  }
+}
+void Executor::checkWidthMatch(KValue &left, KValue &right) const {
+  const auto& leftWidth = left.getWidth();
+  const auto& rightWidth = right.getWidth();
+  if (leftWidth != rightWidth) {
+    const auto width = rightWidth > leftWidth ? rightWidth : leftWidth;
+    auto& lowerValue = rightWidth > leftWidth ? left.value : right.value;
+    auto* valueCE = dyn_cast<ConstantExpr>(lowerValue);
+    if (valueCE) {
+      lowerValue = ConstantExpr::create(valueCE->getZExtValue(width), width);
+    }
   }
 }
 void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
