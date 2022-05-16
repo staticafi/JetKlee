@@ -599,6 +599,7 @@ public:
   void handleICMPForLazyInit(const llvm::CmpInst::Predicate &predicate,
                              ExecutionState &state, KValue &left,
                              KValue &right);
+  void checkWidthMatch(KValue &left, KValue &right) const;
 };
   
 } // End klee namespace
