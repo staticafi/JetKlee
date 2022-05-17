@@ -236,10 +236,10 @@ private:
   void initializeGlobalObject(ExecutionState &state, ObjectState *os, 
 			      const llvm::Constant *c,
 			      unsigned offset);
-  void initializeGlobals(ExecutionState &state);
-  void allocateGlobalObjects(ExecutionState &state);
+  void initializeGlobals(ExecutionState &state, bool isEntryFunctionMain);
+  void allocateGlobalObjects(ExecutionState &state, bool isEntryFunctionMain);
   void initializeGlobalAliases();
-  void initializeGlobalObjects(ExecutionState &state);
+  void initializeGlobalObjects(ExecutionState &state, bool isEntryFunctionMain);
 
   void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
