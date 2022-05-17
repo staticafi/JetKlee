@@ -674,7 +674,8 @@ MemoryObject *Executor::addExternalObject(ExecutionState &state, void *addr,
 
 extern void *__dso_handle __attribute__((__weak__));
 
-void Executor::initializeGlobals(ExecutionState &state) {
+void Executor::initializeGlobals(ExecutionState &state,
+                                 bool isEntryFunctionMain) {
   Module *m = kmodule->module.get();
 
   if (m->getModuleInlineAsm() != "")
@@ -806,12 +807,23 @@ void Executor::initializeGlobals(ExecutionState &state) {
       }
     } else {
       Type *ty = i->getType()->getElementType();
-      uint64_t size = kmodule->targetData->getTypeStoreSize(ty);
+      ref<Expr> size;
+      if (LazyInitialization && !i->isConstant() && !isEntryFunctionMain) {
+        size = getPointerSymbolicSizeExpr(state);
+      } else {
+        size = ConstantExpr::alloc(kmodule->targetData->getTypeStoreSize(ty), Context::get().getPointerWidth());
+      }
       MemoryObject *mo = memory->allocate(size, /*isLocal=*/false,
                                           /*isGlobal=*/true, /*allocSite=*/v,
                                           /*alignment=*/globalObjectAlignment);
       if (!mo)
         llvm::report_fatal_error("out of memory");
+
+      if (LazyInitialization && !i->isConstant() && !isEntryFunctionMain) {
+        mo->isLazyInitialized = true;
+        state.addressSpace.lazilyInitializedOffsets.insert({mo->segment, {}});
+      }
+
       ObjectState *os = bindObjectInState(state, mo, false);
       globalObjects.insert(std::make_pair(v, mo));
       globalAddresses.insert(std::make_pair(v, mo->getPointer()));
@@ -847,6 +859,9 @@ void Executor::initializeGlobals(ExecutionState &state) {
        i != e; ++i) {
     if (i->hasInitializer()) {
       const GlobalVariable *v = &*i;
+      if (LazyInitialization && !isEntryFunctionMain && !i->isConstant()) {
+        continue;
+      }
       MemoryObject *mo = globalObjects.find(v)->second;
       void *address = memory->allocateMemory(
           mo->allocatedSize, getAllocationAlignment(mo->allocSite));
@@ -4651,7 +4666,8 @@ void Executor::runFunctionAsMain(Function *f,
   for (envc=0; envp[envc]; ++envc) ;
 
   bool entryFunctionHasArguments = false;
-  if ((!f->arg_empty() || f->isVarArg()) && f->getName() != "main") {
+  bool isEntryFunctionMain = f->getName() == "main";
+  if ((!f->arg_empty() || f->isVarArg()) && !isEntryFunctionMain) {
     entryFunctionHasArguments = true;
   }
 
@@ -4726,8 +4742,8 @@ void Executor::runFunctionAsMain(Function *f,
   if (entryFunctionHasArguments && LazyInitialization) {
     initializeEntryFunctionArguments(f, *state);
   }
-  
-  initializeGlobals(*state);
+
+  initializeGlobals(*state, isEntryFunctionMain);
 
   processTree = std::make_unique<PTree>(state);
   run(*state);

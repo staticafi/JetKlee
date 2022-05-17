@@ -250,7 +250,7 @@ private:
   void initializeGlobalObject(ExecutionState &state, ObjectState *os, 
 			      const llvm::Constant *c,
 			      unsigned offset);
-  void initializeGlobals(ExecutionState &state);
+  void initializeGlobals(ExecutionState &state, bool isEntryFunctionMain);
 
   void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
