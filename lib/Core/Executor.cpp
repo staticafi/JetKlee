@@ -4689,7 +4689,7 @@ void Executor::runFunctionAsMain(Function *f,
   KFunction *kf = kmodule->functionMap[f];
   assert(kf);
   Function::arg_iterator ai = f->arg_begin(), ae = f->arg_end();
-  if (ai!=ae) {
+  if (ai!=ae && (isEntryFunctionMain || !LazyInitialization)) {
     arguments.push_back(KValue(ConstantExpr::alloc(argc, Expr::Int32)));
     if (++ai!=ae) {
       Instruction *first = &*(f->begin()->begin());
@@ -4708,6 +4708,12 @@ void Executor::runFunctionAsMain(Function *f,
 
         if (++ai!=ae)
           klee_error("invalid main function (expect 0-3 arguments)");
+      }
+    }
+  } else {
+    if (LazyInitialization) {
+      while (ai++!=ae) {
+        arguments.emplace_back();
       }
     }
   }
