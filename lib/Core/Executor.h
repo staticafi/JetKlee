@@ -629,6 +629,7 @@ public:
                              ExecutionState &state, KValue &left,
                              KValue &right);
   void checkWidthMatch(KValue &left, KValue &right) const;
+  void handleICMPForLazyMO(ExecutionState &state, KValue &value);
 };
   
 } // End klee namespace

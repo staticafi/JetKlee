@@ -2903,7 +2903,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
           checkWidthMatch(left, right);
         }
       }
-    } else if (LazyInitialization) {
+    }
+    if (LazyInitialization) {
       handleICMPForLazyInit(predicate, state, left, right);
       checkWidthMatch(left, right);
     }
@@ -3509,38 +3510,41 @@ void Executor::checkWidthMatch(KValue &left, KValue &right) const {
     }
   }
 }
+
+void Executor::handleICMPForLazyMO(ExecutionState &state,
+                                      KValue &value) {
+  auto segment = value.getSegment();
+
+  if (!isa<ConstantExpr>(segment)) {
+    return;
+  }
+
+  uint64_t segmentConstant = cast<ConstantExpr>(segment)->getZExtValue();
+
+  //look if segment belongs to lazy MO, and if it was never written to
+  auto result = state.addressSpace.lazilyInitializedOffsets.find(segmentConstant);
+  if (result != state.addressSpace.lazilyInitializedOffsets.end()) {
+    if (result->second.empty()) {
+      getSymbolicAddressForConstantSegment(state, value);
+    }
+  }
+}
+
 void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
                                      ExecutionState &state, KValue &left,
                                      KValue &right) {
   bool leftSegmentZero = left.getSegment()->isZero();
   bool rightSegmentZero = right.getSegment()->isZero();
-  bool isOtherZero = leftSegmentZero ? left.value->isZero() : right.value->isZero();
-  if ((leftSegmentZero && rightSegmentZero) || !isOtherZero || (predicate != CmpInst::ICMP_EQ && predicate != CmpInst::ICMP_NE)) {
+
+  bool bothSegmentsAreZero = leftSegmentZero && rightSegmentZero;
+  bool isICMPEqualityComparison = predicate == CmpInst::ICMP_EQ || predicate == CmpInst::ICMP_NE;
+
+  if (bothSegmentsAreZero || !isICMPEqualityComparison) {
     return;
   }
 
-  KValue value = leftSegmentZero ? right : left;
-  ObjectPair lookupResult;
-  bool success = state.addressSpace.resolveOneConstantSegment(value, lookupResult);
-  if (!success) {
-    return;
-  }
-
-  uint64_t segment = cast<ConstantExpr>(value.getSegment())->getZExtValue();
-  auto it = state.addressSpace.lazilyInitializedOffsets.find(segment);
-  if (it == state.addressSpace.lazilyInitializedOffsets.end()) {
-    return;
-  }
-  if (!it->second.empty()) {
-    return;
-  }
-
-  const MemoryObject* mo = lookupResult.first;
-  if (!mo->isLazyInitialized) {
-    return;
-  }
-  getSymbolicAddressForConstantSegment(state, value);
-  leftSegmentZero ? right = value : left = value;
+  handleICMPForLazyMO(state, left);
+  handleICMPForLazyMO(state, right);
 }
 
 void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value) {
