@@ -2857,56 +2857,53 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     KValue left = eval(ki, 0, state);
     KValue right = eval(ki, 1, state);
 
-    bool leftSegmentZero = left.getSegment()->isZero();
-    bool rightSegmentZero = right.getSegment()->isZero();
-
-    // is one of operands a pointer and none of them is null?
-    if ((!leftSegmentZero || !rightSegmentZero)
-        && (!left.isZero() && !right.isZero())) {
-
-      auto *leftSegment = dyn_cast<ConstantExpr>(left.getSegment());
-      auto *rightSegment = dyn_cast<ConstantExpr>(right.getSegment());
-      // for symbolic segments, we now support only the comparison for
-      // equality and inequality. In general, we will must fork.
-      if ((!leftSegment || !rightSegment) &&
-           (predicate != ICmpInst::ICMP_EQ &&
-            predicate != ICmpInst::ICMP_NE)) {
-        terminateStateOnExecError(
-          state, "Comparison other than (in)equality is not implemented "
-                 "for symbolic pointers");
-        break;
-      }
-
-      if (leftSegment && rightSegment) {
-        bool leftDeleted = segmentIsDeleted(state, leftSegment);
-        bool rightDeleted = segmentIsDeleted(state, rightSegment);
-
-        // one segment is zero and the other is not (comparing MO with segment to address)
-        bool oneIsAddress = leftSegmentZero == !rightSegmentZero;
-
-        // some of the segments is deleted or one of them is address or
-        // the segments are different and are compared for less or greater
-        // (equal) to?
-        if (leftDeleted || rightDeleted || oneIsAddress ||
-            ((leftSegment->getZExtValue() != rightSegment->getZExtValue()) &&
-             (predicate != ICmpInst::ICMP_EQ && predicate != ICmpInst::ICMP_NE))) {
-          // left is a pointer (and right is not a null, i.e., it is an integer
-
-          // value or another poiner)
-          if (!leftSegmentZero) {
-            getSymbolicAddressForConstantSegment(state, left);
-          }
-          // right is a pointer (and left is not a null?)
-          if (!rightSegmentZero) {
-            getSymbolicAddressForConstantSegment(state, right);
-          }
-          checkWidthMatch(left, right);
-        }
-      }
-    }
     if (LazyInitialization) {
       handleICMPForLazyInit(predicate, state, left, right);
+      //attempt to match the width of the expressions if they differ
       checkWidthMatch(left, right);
+    }
+
+    bool leftSegmentZero = left.getSegment()->isZero();
+    bool rightSegmentZero = right.getSegment()->isZero();
+    bool leftZero = left.isZero();
+    bool rightZero = right.isZero();
+
+    bool bothNotZero = !(leftZero || rightZero);
+    bool atLeastOneSegNotZero = !leftSegmentZero || !rightSegmentZero;
+
+    auto *leftSegmentConstant = dyn_cast<ConstantExpr>(left.getSegment());
+    auto *rightSegmentConstant = dyn_cast<ConstantExpr>(right.getSegment());
+
+    // only doing this for constant segments for now
+    if (leftSegmentConstant && rightSegmentConstant
+        && bothNotZero && atLeastOneSegNotZero) {
+
+      bool leftDeleted = segmentIsDeleted(state, leftSegmentConstant);
+      bool rightDeleted = segmentIsDeleted(state, rightSegmentConstant);
+
+      // exclusive or operator, address as value must have zero as its segment
+      bool oneIsAddress = leftSegmentZero == !rightSegmentZero;
+      // deleted pointers might point anywhere
+      bool atLeastOneDeleted = leftDeleted || rightDeleted;
+      //are the segment values same?
+      bool segmentValueSame = leftSegmentConstant->getZExtValue() == rightSegmentConstant->getZExtValue();
+      //are we comparing equal/not equal?
+      bool isNotEqualityCmp = predicate != ICmpInst::ICMP_EQ && predicate != ICmpInst::ICMP_NE;
+
+      if (oneIsAddress || atLeastOneDeleted ||
+          (!segmentValueSame && isNotEqualityCmp)) {
+
+        // Only give symbolic addresses to the KValue with assigned segment
+        if (!leftSegmentZero) {
+          getSymbolicAddressForConstantSegment(state, left);
+        }
+        if (!rightSegmentZero) {
+          getSymbolicAddressForConstantSegment(state, right);
+        }
+
+        //attempt to match the width of the expressions if they differ
+        checkWidthMatch(left, right);
+      }
     }
 
     switch (predicate) {
@@ -3498,6 +3495,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     break;
   }
 }
+
 void Executor::checkWidthMatch(KValue &left, KValue &right) const {
   const auto& leftWidth = left.getWidth();
   const auto& rightWidth = right.getWidth();
@@ -3533,18 +3531,26 @@ void Executor::handleICMPForLazyMO(ExecutionState &state,
 void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
                                      ExecutionState &state, KValue &left,
                                      KValue &right) {
+  
   bool leftSegmentZero = left.getSegment()->isZero();
   bool rightSegmentZero = right.getSegment()->isZero();
 
   bool bothSegmentsAreZero = leftSegmentZero && rightSegmentZero;
+
+  //if its not equality comparison, special method does not need to be used
   bool isICMPEqualityComparison = predicate == CmpInst::ICMP_EQ || predicate == CmpInst::ICMP_NE;
 
   if (bothSegmentsAreZero || !isICMPEqualityComparison) {
     return;
   }
 
-  handleICMPForLazyMO(state, left);
-  handleICMPForLazyMO(state, right);
+  if (!leftSegmentZero) {
+    handleICMPForLazyMO(state, left);
+  }
+
+  if (!rightSegmentZero) {
+    handleICMPForLazyMO(state, right);
+  }
 }
 
 void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value) {
