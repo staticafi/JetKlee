@@ -154,9 +154,15 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
     }
 
     static unsigned id = 0;
-    const Array *array = parent->getArrayCache()->CreateArray(
-        "const_arr" + llvm::utostr(++id), sizeBound, &Contents[0],
-        &Contents[0] + Contents.size());
+    const Array *array;
+    if (sizeBound == 0) {
+       array = parent->getArrayCache()->CreateArray(
+          "const_arr" + llvm::utostr(++id), sizeBound);
+    } else {
+      array = parent->getArrayCache()->CreateArray(
+          "const_arr" + llvm::utostr(++id), sizeBound, &Contents[0],
+          &Contents[0] + Contents.size());
+    }
     updates = UpdateList(array, 0);
 
     // Apply the remaining (non-constant) writes.
