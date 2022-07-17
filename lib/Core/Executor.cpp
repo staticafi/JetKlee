@@ -4065,7 +4065,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
 
   // fast path: single in-bounds resolution
   ObjectPair op;
-  bool success;
+  bool success = false;
   solver->setTimeout(coreSolverTimeout);
   if (!state.addressSpace.resolveOne(state, solver, address, op, success)) {
     address = KValue(toConstant(state, address.getSegment(), "resolveOne failure"),
