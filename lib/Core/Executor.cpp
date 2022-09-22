@@ -713,13 +713,11 @@ void Executor::allocateGlobalObjects(ExecutionState &state, bool isEntryFunction
         !externalDispatcher->resolveSymbol(f.getName().str())) {
       globalAddresses.emplace(&f, KValue(Expr::createPointer(0)));
     } else {
-      // We allocate an object to represent each function,
-      // its address can be used for function pointers.
-      // TODO: Check whether the object is accessed?
-      auto mo = memory->allocate(Context::get().getPointerWidth(), false, true, &f, 8);
-      auto addr = Expr::createPointer(mo->segment);
-      legalFunctions.emplace(mo->segment, &f);
-      globalAddresses.emplace(&f, KValue(FUNCTIONS_SEGMENT, addr));
+      auto mo = memory->allocate(8, false, true, &f, 8);
+      ObjectState *os = bindObjectInState(state, mo, false);
+      auto id = mo->segment;
+      legalFunctions.emplace(id, &f);
+      globalAddresses.emplace(&f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
     }
   }
 
@@ -3557,6 +3555,12 @@ void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValu
   auto *segment = dyn_cast<ConstantExpr>(value.getSegment());
   assert(segment && "segment is not ConstantExpr");
   ObjectPair lookupResult;
+
+  if (segment->getZExtValue() == FUNCTIONS_SEGMENT) {
+    uint64_t functionId = cast<ConstantExpr>(value.getValue())->getZExtValue();
+    KValue value_replace = {functionId, ConstantExpr::alloc(0, value.getValue()->getWidth())};
+    value = value_replace;
+  }
 
   bool success = state.addressSpace.resolveOneConstantSegment(value, lookupResult);
   if (!success) {
