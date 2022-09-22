@@ -1,6 +1,6 @@
 // RUN: %clang %s -emit-llvm -g -c -o %t1.bc
 // RUN: rm -rf %t.klee-out
-// RUN: %klee --output-dir=%t.klee-out --write-no-tests --exit-on-error %t1.bc
+// RUN: %klee --output-dir=%t.klee-out --write-no-tests --exit-on-error %t1.bc 2>&1 | FileCheck %s
 
 #include <stdio.h>
 
@@ -25,13 +25,12 @@ int main(int argc, char **argv) {
 
   xx("called via xx");
 
-#if 0
   klee_make_symbolic(&fp, sizeof fp, "fp");
   if(fp == baz) {
-    printf("fp = %p, baz = %p\n", fp, baz);
-    fp("calling via symbolic!");
+    // CHECK: Comparison eq
+    klee_warning("Comparison eq");
+    // fp("calling via symbolic!");
   }
-#endif
 
   return 0;
 }
