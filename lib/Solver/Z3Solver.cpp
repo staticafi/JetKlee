@@ -347,7 +347,7 @@ public:
     // We can't use Z3ASTHandle here so have to do ref counting manually
     ::Z3_ast indexEvaluated;
     success = Z3_model_eval(builder->ctx, model, indexExpr,
-                          /*model_completion=*/Z3_FALSE, &indexEvaluated);
+                          /*model_completion=*/false, &indexEvaluated);
     assert(success && "Failed to evaluate index model");
     Z3_inc_ref(builder->ctx, indexEvaluated);
     if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
@@ -366,7 +366,7 @@ public:
     ::Z3_ast valueEvaluated;
     Z3ASTHandle initialRead = builder->getInitialRead(expr.updates.root, index);
     success = Z3_model_eval(builder->ctx, model, initialRead,
-                           /*model_completion=*/Z3_TRUE, &valueEvaluated);
+                           /*model_completion=*/true, &valueEvaluated);
     assert(success && "Failed to evaluate model");
     Z3_inc_ref(builder->ctx, valueEvaluated);
     assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
@@ -418,7 +418,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       // We can't use Z3ASTHandle here so have to do ref counting manually
       ::Z3_ast indexEvaluated;
       success = Z3_model_eval(builder->ctx, theModel, indexExpr,
-                              /*model_completion=*/Z3_FALSE, &indexEvaluated);
+                              /*model_completion=*/false, &indexEvaluated);
       assert(success && "Failed to evaluate index model");
       Z3_inc_ref(builder->ctx, indexEvaluated);
       if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
@@ -437,7 +437,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       ::Z3_ast valueEvaluated;
       Z3ASTHandle initialRead = builder->getInitialRead(read->updates.root, index);
       success = Z3_model_eval(builder->ctx, theModel, initialRead,
-                              /*model_completion=*/Z3_TRUE, &valueEvaluated);
+                              /*model_completion=*/true, &valueEvaluated);
       assert(success && "Failed to evaluate model");
       Z3_inc_ref(builder->ctx, valueEvaluated);
       assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
@@ -504,7 +504,7 @@ bool Z3SolverImpl::validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel)
     __attribute__((unused))
     bool successfulEval =
         Z3_model_eval(builder->ctx, theModel, constraint,
-                      /*model_completion=*/Z3_TRUE, &rawEvaluatedExpr);
+                      /*model_completion=*/true, &rawEvaluatedExpr);
     assert(successfulEval && "Failed to evaluate model");
 
     // Use handle to do ref-counting.
