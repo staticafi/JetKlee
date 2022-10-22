@@ -3962,16 +3962,21 @@ void Executor::callExternalFunction(ExecutionState &state,
       } else {
         arg = toUnique(state, ai->getValue());
       }
-      if (ConstantExpr *ce = dyn_cast<ConstantExpr>(arg)) {
-        // XXX kick toMemory functions from here
-        ce->toMemory(&args[wordIndex]);
-        wordIndex += (ce->getWidth() + 63) / 64;
-      } else {
-        terminateStateOnExecError(state,
-                                  "external call with symbolic argument: " +
-                                      function->getName());
-        return;
+
+      ref<ConstantExpr> ce = dyn_cast<ConstantExpr>(arg);
+      if (nullptr == ce.get()) {
+
+        bool result = solver->getValue(state, arg, ce);
+        if (!result) {
+          terminateStateOnExecError(state,
+                                    "external call with symbolic argument: " +
+                                        function->getName());
+          return;
+        }
       }
+      // XXX kick toMemory functions from here
+      ce->toMemory(&args[wordIndex]);
+      wordIndex += (ce->getWidth() + 63) / 64;
     }
   }
 
