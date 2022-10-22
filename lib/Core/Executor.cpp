@@ -4544,20 +4544,22 @@ void Executor::callExternalFunction(ExecutionState &state,
       } else {
         arg = toUnique(state, ai->getValue());
       }
-      if (ConstantExpr *ce = dyn_cast<ConstantExpr>(arg)) {
-        // fp80 must be aligned to 16 according to the System V AMD 64 ABI
-        if (ce->getWidth() == Expr::Fl80 && wordIndex & 0x01)
-          wordIndex++;
-
-        // XXX kick toMemory functions from here
-        ce->toMemory(&args[wordIndex]);
-        wordIndex += (ce->getWidth()+63)/64;
-      } else {
-        terminateStateOnExecError(state,
-                                  "external call with symbolic argument: " +
-                                  function->getName());
-        return;
+      ref<ConstantExpr> ce = dyn_cast<ConstantExpr>(arg);
+      if (nullptr == ce.get()) {
+        bool result = solver->getValue(state.constraints, arg, ce, state.queryMetaData);
+        if (!result) {
+          terminateStateOnExecError(state,
+                                    "external call with symbolic argument: " +
+                                        function->getName());
+          return;
+        }
       }
+      // fp80 must be aligned to 16 according to the System V AMD 64 ABI
+      if (ce->getWidth() == Expr::Fl80 && wordIndex & 0x01)
+        wordIndex++;
+      // XXX kick toMemory functions from here
+      ce->toMemory(&args[wordIndex]);
+      wordIndex += (ce->getWidth() + 63) / 64;
     }
   }
 
