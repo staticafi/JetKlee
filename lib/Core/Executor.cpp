@@ -696,7 +696,10 @@ void Executor::initializeGlobals(ExecutionState &state,
         // insert nullptr
         globalAddresses.emplace(f, KValue(Expr::createPointer(0)));
     } else {
-      auto id = legalFunctions.size();
+
+      auto mo = memory->allocate(Context::get().getPointerWidth(), false, true, f, 8);
+      ObjectState *os = bindObjectInState(state, mo, false);
+      auto id = mo->segment;
       legalFunctions.emplace(id, f);
       globalAddresses.emplace(f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
     }
@@ -2193,9 +2196,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                               nullptr, getKValueInfo(state, pointer));
         break;
       }
-      // We handle constant segments for now
-      assert((cast<ConstantExpr>(pointer.getSegment())->getZExtValue()
-                == FUNCTIONS_SEGMENT) && "Invalid function pointer");
+
       ref<Expr> v = optimizer.optimizeExpr(pointer.getValue(), true);
 
       ExecutionState *free = &state;
@@ -2975,8 +2976,16 @@ void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
 
 void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value) {
   auto *segment = dyn_cast<ConstantExpr>(value.getSegment());
+  auto valueBackup = value.getValue();
   assert(segment && "segment is not ConstantExpr");
   ObjectPair lookupResult;
+  bool isFunction = segment->getZExtValue() == FUNCTIONS_SEGMENT;
+
+  if (isFunction) {
+    uint64_t functionId = cast<ConstantExpr>(value.getValue())->getZExtValue();
+    KValue value_replace = {functionId, ConstantExpr::alloc(0, value.getValue()->getWidth())};
+    value = value_replace;
+  }
 
   bool success = state.addressSpace.resolveOneConstantSegment(value, lookupResult);
   if (!success) {
@@ -2991,8 +3000,13 @@ void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValu
                    removedIt->second);
 
   } else {
-    value = KValue(ConstantExpr::alloc(VALUES_SEGMENT, segment->getWidth()),
-                   const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache));
+    if (isFunction) {
+      value = KValue(ConstantExpr::alloc(VALUES_SEGMENT, segment->getWidth()), valueBackup);
+    } else {
+      value = KValue(ConstantExpr::alloc(VALUES_SEGMENT, segment->getWidth()),
+                     const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache));
+    }
+
   }
 }
 
