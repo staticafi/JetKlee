@@ -878,7 +878,7 @@ void Executor::initializeGlobalObjects(ExecutionState &state, bool isEntryFuncti
           mo->isLazyInitialized = true;
           state.addressSpace.lazilyInitializedOffsets.insert({mo->getSegment(), {}});
         } else {
-          klee_error("unable to load symbol(%s) while initializing globals.",
+          klee_error("Unable to load symbol(%s) while initializing globals.",
                      v.getName().data());
         }
       } else {
