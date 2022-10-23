@@ -381,6 +381,11 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
+
+  const Array* CreateArrayWithName(ExecutionState &state,
+                                   const Expr::Width& width,
+                                   const std::string& name);
+
   KValue createNondetValue(ExecutionState &state,
                            unsigned size, bool isSigned,
                            KInstruction *instr,
