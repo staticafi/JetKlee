@@ -5166,7 +5166,7 @@ void Executor::runFunctionAsMain(Function *f,
   for (envc=0; envp[envc]; ++envc) ;
 
   bool entryFunctionHasArguments = false;
-  if (!f->arg_empty() && f->getName() != "main") {
+  if ((!f->arg_empty() || f->isVarArg()) && f->getName() != "main") {
     entryFunctionHasArguments = true;
   }
 
