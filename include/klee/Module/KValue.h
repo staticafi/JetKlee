@@ -41,6 +41,8 @@ namespace klee {
       : value(value), pointerSegment(ConstantExpr::alloc(VALUES_SEGMENT, value->getWidth())) {}
     KValue(ref<Expr> segment, ref<Expr> offset)
       : value(offset), pointerSegment(segment) {}
+    KValue(uint64_t segment, ref<Expr> offset)
+      : value(offset), pointerSegment(ConstantExpr::alloc(segment, value->getWidth())) {}
     KValue(SpecialSegment segment, const ref<Expr> &offset)
         : value(offset), pointerSegment(ConstantExpr::alloc(segment, value->getWidth())) {}
 

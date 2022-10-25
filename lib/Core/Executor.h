@@ -607,6 +607,13 @@ public:
 
   MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
   void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
+
+  KValue handleReadForLazyInit(ExecutionState &state,
+                               KInstruction *target,
+                               const MemoryObject *mo,
+                               const ObjectState *os,
+                               const ref<Expr>& offset,
+                               bool &shouldReadFromOffset);
 };
   
 } // End klee namespace

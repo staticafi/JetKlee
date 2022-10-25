@@ -179,6 +179,12 @@ cl::opt<bool>
                                   "querying the solver (default=true)"),
                          cl::cat(SolvingCat));
 
+cl::opt<bool>
+    LazyInitialization("lazy-init",
+                       cl::desc("Initialize unbound pointers lazily"),
+                       cl::init(false),
+                       cl::cat(SolvingCat));
+
 
 /*** External call policy options ***/
 
@@ -779,7 +785,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state) {
     if (!mo)
       klee_error("out of memory");
     globalObjects.emplace(&v, mo);
-      globalAddresses.emplace(&v, mo->getPointer());
+    globalAddresses.emplace(&v, mo->getPointer());
   }
 }
 
@@ -843,12 +849,19 @@ void Executor::initializeGlobalObjects(ExecutionState &state) {
         addr = externalDispatcher->resolveSymbol(v.getName().str());
       }
       if (!addr) {
-        klee_error("Unable to load symbol(%.*s) while initializing globals",
-                   static_cast<int>(v.getName().size()), v.getName().data());
+        if (LazyInitialization) {
+          mo->isLazyInitialized = true;
+          state.addressSpace.lazilyInitializedOffsets.insert({mo->getSegment(), {}});
+        } else {
+          klee_error("unable to load symbol(%s) while initializing globals.",
+                     v.getName().data());
+        }
+      } else {
+        for (unsigned offset = 0; offset < cast<ConstantExpr>(mo->size)->getZExtValue(); offset++) {
+          os->write8(offset, 0, static_cast<unsigned char *>(addr)[offset]);
+        }
       }
-      for (unsigned offset = 0; offset < cast<ConstantExpr>(mo->size)->getZExtValue(); offset++) {
-        os->write8(offset, 0, static_cast<unsigned char *>(addr)[offset]);
-      }
+
     } else if (v.hasInitializer()) {
       void *address = memory->allocateMemory(
           mo->allocatedSize, getAllocationAlignment(mo->allocSite));
@@ -4802,16 +4815,21 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           wos->write(offset, value);
         }          
       } else {
-        KValue result = os->read(offset, type);
-        
-        if (interpreterOpts.MakeConcreteSymbolic) {
-          result = KValue(replaceReadWithSymbolic(state, result.getSegment()),
-                          replaceReadWithSymbolic(state, result.getOffset()));
-        }
+        KValue result;
+        bool shouldReadFromOffset = true;
 
+        if (mo->isLazyInitialized) {
+          result = handleReadForLazyInit(state, target, mo, os, offset,shouldReadFromOffset);
+        }
+        if (shouldReadFromOffset) {
+          result = os->read(offset, type);
+          if (interpreterOpts.MakeConcreteSymbolic) {
+            result = KValue(replaceReadWithSymbolic(state, result.getSegment()),
+                            replaceReadWithSymbolic(state, result.getOffset()));
+          }
+        }
         bindLocal(target, state, result);
       }
-
       return;
     }
   } 
@@ -4850,7 +4868,15 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           wos->write(addressOptim.getOffset(), value);
         }
       } else {
-        KValue result = os->read(addressOptim.getOffset(), type);
+        bool shouldReadFromOffset = true;
+        KValue result;
+
+        if (mo->isLazyInitialized) {
+          result = handleReadForLazyInit(state, target, mo, os, addressOptim.getOffset(), shouldReadFromOffset);
+        }
+        if (shouldReadFromOffset) {
+          result = os->read(addressOptim.getOffset(), type);
+        }
         bindLocal(target, *bound, result);
       }
     }
@@ -4870,6 +4896,65 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                             getKValueInfo(*unbound, addressOptim));
     }
   }
+}
+KValue Executor::handleReadForLazyInit(ExecutionState &state,
+                                       KInstruction *target,
+                                       const MemoryObject *mo,
+                                       const ObjectState *os,
+                                       const ref<Expr>& offset,
+                                       bool &shouldReadFromOffset) {
+  KValue result;
+  Expr::Width type = (getWidthForLLVMType(target->inst->getType()));
+  bool isPointer = target->inst->getType()->isPointerTy();
+
+  if (isPointer) {
+    // If this is only a pointer, create/find MO for the value underneath
+    shouldReadFromOffset = false;
+
+    auto pair = state.addressSpace.lazyPointersSegmentMap.find(mo->getSegment());
+    if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
+      result = {pair->second, offset};
+    } else {
+      ref<Expr> size = ConstantExpr::alloc(type, Expr::Int64);
+      bool isLocal = false; // only allow the object to exist in the function
+      auto *valueMO = executeAlloc(state, size, isLocal, target);
+      valueMO->isLazyInitialized = true;
+      (void)bindObjectInState(state, valueMO, isLocal, nullptr);
+      state.addressSpace.lazyPointersSegmentMap.insert(
+          {mo->getSegment(), valueMO->getSegment()});
+      result = {valueMO->getSegmentExpr(), offset};
+    }
+  } else {
+    ref<klee::ConstantExpr> offsetExpr;
+    bool success = solver->getValue(state.constraints, offset, offsetExpr, state.queryMetaData);
+    uint64_t offsetValue = offsetExpr->getZExtValue();
+    uint64_t segmentValue = mo->getSegment();
+
+    if (!success) {
+      terminateStateOnExecError(state, "Couldn't get offset for Lazy Init");
+      return result;
+    }
+
+    auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
+    if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
+      terminateStateOnExecError(state, "segment not found in lazilyInitializedOffsets");
+      return result;
+    }
+
+    auto& offsets = segmentOffsetsPair->second;
+    if (offsets.end() == std::find(offsets.begin(), offsets.end(), offsetValue)) {
+      //If offset was not yet read and therefore is uninitialized, initialize it now
+      shouldReadFromOffset = false;
+      offsets.emplace_back(offsetValue);
+      const Array* array = CreateArrayWithName(state, type, "lazy_init_arr");
+      result = Expr::createTempRead(array, type);
+      state.addressSpace.getWriteable(mo,os)->write(offset, result);
+    } else {
+      // use exiting value
+      shouldReadFromOffset = true;
+    }
+  }
+  return result;
 }
 
 KValue Executor::createNondetValue(ExecutionState &state,
@@ -5410,6 +5495,8 @@ size_t Executor::getAllocationAlignment(const llvm::Value *allocSite) const {
                         allocationSiteName.c_str(), forcedAlignment);
       alignment = forcedAlignment;
     }
+  } else if (LazyInitialization) {
+    alignment = forcedAlignment;
   } else {
     llvm_unreachable("Unhandled allocation site");
   }
