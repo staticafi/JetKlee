@@ -4766,11 +4766,11 @@ void Executor::executeFree(ExecutionState &state,
            ie = rl.end(); it != ie; ++it) {
       const MemoryObject *mo = it->first.first;
       if (mo->isLocal) {
-        terminateStateOnError(*it->second, "free of alloca",
+        terminateStateOnError(*it->second, "memory error: free of alloca",
                               StateTerminationType::Free,
                               getKValueInfo(*it->second, addressOptim));
       } else if (mo->isGlobal) {
-        terminateStateOnError(*it->second, "free of global",
+        terminateStateOnError(*it->second, "memory error: free of global",
                               StateTerminationType::Free,
                               getKValueInfo(*it->second, addressOptim));
       } else {
