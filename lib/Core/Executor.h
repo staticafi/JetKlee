@@ -15,23 +15,28 @@
 #ifndef KLEE_EXECUTOR_H
 #define KLEE_EXECUTOR_H
 
-#include "klee/ExecutionState.h"
+#include "ExecutionState.h"
+#include "UserSearcher.h"
+
+#include "klee/ADT/RNG.h"
+#include "klee/Core/BranchTypes.h"
+#include "klee/Core/Interpreter.h"
+#include "klee/Core/TerminationTypes.h"
 #include "klee/Expr/ArrayCache.h"
-#include "klee/Internal/Module/Cell.h"
-#include "klee/Internal/Module/KInstruction.h"
-#include "klee/Internal/Module/KModule.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Interpreter.h"
+#include "klee/Expr/ArrayExprOptimizer.h"
+#include "klee/Module/Cell.h"
+#include "klee/Module/KInstruction.h"
+#include "klee/Module/KModule.h"
+#include "klee/System/Time.h"
 
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "../Expr/ArrayExprOptimizer.h"
 
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct KTest;
@@ -40,6 +45,7 @@ namespace llvm {
   class BasicBlock;
   class BranchInst;
   class CallInst;
+  class LandingPadInst;
   class Constant;
   class ConstantExpr;
   class Function;
@@ -74,6 +80,7 @@ namespace klee {
   class TimingSolver;
   class TreeStreamWriter;
   class MergeHandler;
+  class MergingSearcher;
   template<class T> class ref;
 
 
@@ -83,37 +90,20 @@ namespace klee {
   /// removedStates, and haltExecution, among others.
 
 class Executor : public Interpreter {
-  friend class RandomPathSearcher;
   friend class OwningSearcher;
   friend class WeightedRandomSearcher;
   friend class SpecialFunctionHandler;
   friend class StatsTracker;
   friend class MergeHandler;
-  friend class MergingSearcher;
+  friend klee::Searcher *klee::constructUserSearcher(Executor &executor);
 
 public:
   typedef std::pair<ExecutionState*,ExecutionState*> StatePair;
 
-  enum TerminateReason {
-    Abort,
-    Assert,
-    BadVectorAccess,
-    Exec,
-    External,
-    Free,
-    Leak,
-    Model,
-    Overflow,
-    Ptr,
-    ReadOnly,
-    ReportError,
-    User,
-    Unhandled
-  };
+  /// The random number generator.
+  RNG theRNG;
 
 private:
-  static const char *TerminateReasonNames[];
-
   std::unique_ptr<KModule> kmodule;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
@@ -121,22 +111,12 @@ private:
   ExternalDispatcher *externalDispatcher;
   TimingSolver *solver;
   MemoryManager *memory;
-  std::set<ExecutionState*> states;
+  std::set<ExecutionState*, ExecutionStateIDCompare> states;
   StatsTracker *statsTracker;
   TreeStreamWriter *pathWriter, *symPathWriter;
   SpecialFunctionHandler *specialFunctionHandler;
   TimerGroup timers;
   std::unique_ptr<PTree> processTree;
-
-  /// Keeps track of all currently ongoing merges.
-  /// An ongoing merge is a set of states which branched from a single state
-  /// which ran into a klee_open_merge(), and not all states in the set have
-  /// reached the corresponding klee_close_merge() yet.
-  std::vector<MergeHandler *> mergeGroups;
-
-  /// ExecutionStates currently paused from scheduling because they are
-  /// waiting to be merged in a klee_close_merge instruction
-  std::set<ExecutionState *> inCloseMerge;
 
   /// Used to track states that have been added during the current
   /// instructions step. 
@@ -148,13 +128,6 @@ private:
   /// \invariant \ref removedStates is a subset of \ref states. 
   /// \invariant \ref addedStates and \ref removedStates are disjoint.
   std::vector<ExecutionState *> removedStates;
-
-  /// Used to track states that are not terminated, but should not
-  /// be scheduled by the searcher.
-  std::vector<ExecutionState *> pausedStates;
-  /// States that were 'paused' from scheduling, that now may be
-  /// scheduled again
-  std::vector<ExecutionState *> continuedStates;
 
   /// When non-empty the Executor is running in "seed" mode. The
   /// states in this map will be executed in an arbitrary order
@@ -172,8 +145,9 @@ private:
   /// globals that have no representative object (i.e. functions).
   std::map<const llvm::GlobalValue*, KValue> globalAddresses;
 
-  /// Mapping from function id's to their actual addresses
-  std::map<uint64_t, llvm::Function *> legalFunctions;
+  /// Map of legal function addresses to the corresponding Function.
+  /// Used to validate and dereference function pointers.
+  std::unordered_map<std::uint64_t, llvm::Function*> legalFunctions;
 
   /// When non-null the bindings that will be used for calls to
   /// klee_make_symbolic in order replay.
@@ -234,6 +208,16 @@ private:
   /// Optimizes expressions
   ExprOptimizer optimizer;
 
+  /// Points to the merging searcher of the searcher chain,
+  /// `nullptr` if merging is disabled
+  MergingSearcher *mergingSearcher = nullptr;
+
+  /// Typeids used during exception handling
+  std::vector<ref<Expr>> eh_typeids;
+
+  /// Return the typeid corresponding to a certain `type_info`
+  ref<ConstantExpr> getEhTypeidFor(ref<Expr> type_info);
+
   llvm::Function* getTargetFunction(llvm::Value *calledVal,
                                     ExecutionState &state);
 
@@ -243,13 +227,18 @@ private:
 
   // Given a concrete object in our [klee's] address space, add it to 
   // objects checked code can reference.
-  MemoryObject *addExternalObject(ExecutionState &state, void *addr,
-                                  unsigned size, bool isReadOnly, uint64_t specialSegment = 0);
+  MemoryObject *addExternalObject(ExecutionState &state, void *addr, 
+                                  unsigned size, bool isReadOnly,
+                                  uint64_t specialSegment = 0);
 
+  void initializeGlobalAlias(const llvm::Constant *c);
   void initializeGlobalObject(ExecutionState &state, ObjectState *os, 
 			      const llvm::Constant *c,
 			      unsigned offset);
   void initializeGlobals(ExecutionState &state);
+  void allocateGlobalObjects(ExecutionState &state);
+  void initializeGlobalAliases();
+  void initializeGlobalObjects(ExecutionState &state);
 
   void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
@@ -328,7 +317,17 @@ private:
   void executeFree(ExecutionState &state,
                    const KValue &address,
                    KInstruction *target = 0);
-  
+
+  /// Serialize a landingpad instruction so it can be handled by the
+  /// libcxxabi-runtime
+  MemoryObject *serializeLandingpad(ExecutionState &state,
+                                    const llvm::LandingPadInst &lpi,
+                                    bool &stateTerminated);
+
+  /// Unwind the given state until it hits a landingpad. This is used
+  /// for exception handling.
+  void unwindToNextLandingpad(ExecutionState &state);
+
   void executeCall(ExecutionState &state, 
                    KInstruction *ki,
                    llvm::Function *f,
@@ -351,22 +350,26 @@ private:
   void executeMakeSymbolic(ExecutionState &state, const MemoryObject *mo,
                            const std::string &name);
 
-  void executeMakeConcrete(ExecutionState &state, 
+  void executeMakeConcrete(ExecutionState &state,
                            const MemoryObject *mo,
                            const std::vector<unsigned char>& data);
 
   /// Create a new state where each input condition has been added as
   /// a constraint and return the results. The input state is included
-  /// as one of the results. Note that the output vector may included
+  /// as one of the results. Note that the output vector may include
   /// NULL pointers for states which were unable to be created.
-  void branch(ExecutionState &state, 
-              const std::vector< ref<Expr> > &conditions,
-              std::vector<ExecutionState*> &result);
+  void branch(ExecutionState &state, const std::vector<ref<Expr>> &conditions,
+              std::vector<ExecutionState *> &result, BranchType reason);
 
-  // Fork current and return states in which condition holds / does
-  // not hold, respectively. One of the states is necessarily the
-  // current state, and one of the states may be null.
-  StatePair fork(ExecutionState &current, ref<Expr> condition, bool isInternal);
+  /// Fork current and return states in which condition holds / does
+  /// not hold, respectively. One of the states is necessarily the
+  /// current state, and one of the states may be null.
+  StatePair fork(ExecutionState &current, ref<Expr> condition, bool isInternal,
+                 BranchType reason);
+
+  // If the MaxStatic*Pct limits have been reached, concretize the condition and
+  // return it. Otherwise, return the unmodified condition.
+  ref<Expr> maxStaticPctChecks(ExecutionState &current, ref<Expr> condition);
 
   /// Add the given (boolean) condition as a constraint on state. This
   /// function is a wrapper around the state's addConstraint function
@@ -378,7 +381,7 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
-  KValue createNondetValue(ExecutionState &state, 
+  KValue createNondetValue(ExecutionState &state,
                            unsigned size, bool isSigned,
                            KInstruction *instr,
                            const std::string &name,
@@ -444,35 +447,49 @@ private:
   const InstructionInfo & getLastNonKleeInternalInstruction(const ExecutionState &state,
       llvm::Instruction** lastInstruction);
 
-  bool shouldExitOn(enum TerminateReason termReason);
-
-  // remove state from searcher only
-  void pauseState(ExecutionState& state);
-  // add state to searcher only
-  void continueState(ExecutionState& state);
-  // remove state from queue and delete
+  /// Remove state from queue and delete state
   void terminateState(ExecutionState &state);
-  // call exit handler and terminate state
-  void terminateStateEarly(ExecutionState &state, const llvm::Twine &message);
-  // call exit handler and terminate state
-  void terminateStateOnExit(ExecutionState &state);
-  // call error handler and terminate state
-  void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
-                             enum TerminateReason termReason,
-                             const char *suffix = NULL,
-                             const llvm::Twine &longMessage = "");
 
-  // call error handler and terminate state, for execution errors
-  // (things that should not be possible, like illegal instruction or
-  // unlowered instrinsic, or are unsupported, like inline assembly)
-  void terminateStateOnExecError(ExecutionState &state, 
+  /// Call exit handler and terminate state normally
+  /// (end of execution path)
+  void terminateStateOnExit(ExecutionState &state);
+
+  /// Call exit handler and terminate state early
+  /// (e.g. due to state merging or memory pressure)
+  void terminateStateEarly(ExecutionState &state, const llvm::Twine &message,
+                           StateTerminationType terminationType);
+
+  /// Call error handler and terminate state in case of program errors
+  /// (e.g. free()ing globals, out-of-bound accesses)
+  void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
+                             StateTerminationType terminationType,
+                             const llvm::Twine &longMessage = "",
+                             const char *suffix = nullptr);
+
+  /// Call error handler and terminate state in case of execution errors
+  /// (things that should not be possible, like illegal instruction or
+  /// unlowered intrinsic, or unsupported intrinsics, like inline assembly)
+  void terminateStateOnExecError(ExecutionState &state,
                                  const llvm::Twine &message,
-                                 const llvm::Twine &info="") {
-    terminateStateOnError(state, message, Exec, NULL, info);
-  }
+                                 const llvm::Twine &info = "");
+
+  /// Call error handler and terminate state in case of solver errors
+  /// (solver error or timeout)
+  void terminateStateOnSolverError(ExecutionState &state,
+                                   const llvm::Twine &message);
+
+  /// Call error handler and terminate state for user errors
+  /// (e.g. wrong usage of klee.h API)
+  void terminateStateOnUserError(ExecutionState &state,
+                                 const llvm::Twine &message);
 
   /// bindModuleConstants - Initialize the module constant table.
   void bindModuleConstants();
+
+  template <typename TypeIt>
+  void computeOffsetsSeqTy(KGEPInstruction *kgepi,
+                           ref<ConstantExpr> &constantOffset, uint64_t index,
+                           const TypeIt it);
 
   template <typename TypeIt>
   void computeOffsets(KGEPInstruction *kgepi, TypeIt ib, TypeIt ie);
@@ -488,9 +505,17 @@ private:
   bool getReachableMemoryObjects(ExecutionState &state,
                                  std::set<const MemoryObject *>&);
 
-  void reportError(const llvm::Twine &message, const ExecutionState &state, const llvm::Twine &info, const char *suffix, enum TerminateReason termReason);
+  void reportError(const llvm::Twine &message, const ExecutionState &state,
+                   const llvm::Twine &info, const char *suffix,
+                   enum StateTerminationType terminationType);
 
-  void checkMemoryUsage();
+  /// check memory usage and terminate states when over threshold of -max-memory + 100MB
+  /// \return true if below threshold, false otherwise (states were terminated)
+  bool checkMemoryUsage();
+
+  /// check if branching/forking is allowed
+  bool branchingPermitted(const ExecutionState &state) const;
+
   void printDebugInstructions(ExecutionState &state);
   void doDumpStates();
 
@@ -573,6 +598,9 @@ public:
 
   /// Returns the errno location in memory of the state
   int *getErrnoLocation(const ExecutionState &state) const;
+
+  MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
+  void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
 };
   
 } // End klee namespace

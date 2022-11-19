@@ -10,7 +10,8 @@
 #ifndef KLEE_SPECIALFUNCTIONHANDLER_H
 #define KLEE_SPECIALFUNCTIONHANDLER_H
 
-#include "klee/Internal/Module/Cell.h"
+#include "klee/Config/config.h"
+#include "klee/Module/Cell.h"
 
 #include <iterator>
 #include <map>
@@ -108,7 +109,7 @@ namespace klee {
                           const std::string& name, bool isSigned,
                           KInstruction *target,
                           ref<Expr> expr);
- 
+
     /* Handlers */
 
 #define HANDLER(name) void name(ExecutionState &state, \
@@ -123,8 +124,12 @@ namespace klee {
     HANDLER(handleDefineFixedObject);
     HANDLER(handleDelete);    
     HANDLER(handleDeleteArray);
-    HANDLER(handleExit);
+#ifdef SUPPORT_KLEE_EH_CXX
+    HANDLER(handleEhUnwindRaiseExceptionImpl);
+    HANDLER(handleEhTypeid);
+#endif
     HANDLER(handleErrnoLocation);
+    HANDLER(handleExit);
     HANDLER(handleFree);
     HANDLER(handleGetErrno);
     HANDLER(handleGetObjSize);

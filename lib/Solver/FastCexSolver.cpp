@@ -14,13 +14,12 @@
 #include "klee/Expr/Expr.h"
 #include "klee/Expr/ExprEvaluator.h"
 #include "klee/Expr/ExprRangeEvaluator.h"
+#include "klee/Expr/ExprUtil.h"
 #include "klee/Expr/ExprVisitor.h"
 #include "klee/Expr/ExprUtil.h"
 #include "klee/Solver/IncompleteSolver.h"
-
-// FIXME: Use APInt.
-#include "klee/Internal/Support/Debug.h"
-#include "klee/Internal/Support/IntEvaluation.h" // FIXME: Use APInt
+#include "klee/Support/Debug.h"
+#include "klee/Support/IntEvaluation.h" // FIXME: Use APInt
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -808,8 +807,8 @@ public:
       const Array *array = re->updates.root;
       CexObjectData &cod = getObjectData(array);
       CexValueData index = evalRangeForExpr(re->index);
-        
-      for (const UpdateNode *un = re->updates.head; un; un = un->next) {
+
+      for (const auto *un = re->updates.head.get(); un; un = un->next.get()) {
         CexValueData ui = evalRangeForExpr(un->index);
 
         // If these indices can't alias, continue propogation
@@ -1010,10 +1009,9 @@ FastCexSolver::~FastCexSolver() { }
 /// \return - True if the propogation was able to prove validity or invalidity.
 static bool propogateValues(const Query& query, CexData &cd, 
                             bool checkExpr, bool &isValid) {
-  for (ConstraintManager::const_iterator it = query.constraints.begin(), 
-         ie = query.constraints.end(); it != ie; ++it) {
-    cd.propogatePossibleValue(*it, 1);
-    cd.propogateExactValue(*it, 1);
+  for (const auto &constraint : query.constraints) {
+    cd.propogatePossibleValue(constraint, 1);
+    cd.propogateExactValue(constraint, 1);
   }
   if (checkExpr) {
     cd.propogatePossibleValue(query.expr, 0);
@@ -1035,14 +1033,13 @@ static bool propogateValues(const Query& query, CexData &cd,
     }
   }
 
-  for (ConstraintManager::const_iterator it = query.constraints.begin(), 
-         ie = query.constraints.end(); it != ie; ++it) {
-    if (hasSatisfyingAssignment && !cd.evaluatePossible(*it)->isTrue())
+  for (const auto &constraint : query.constraints) {
+    if (hasSatisfyingAssignment && !cd.evaluatePossible(constraint)->isTrue())
       hasSatisfyingAssignment = false;
 
     // If this constraint is known to be false, then we can prove anything, so
     // the query is valid.
-    if (cd.evaluateExact(*it)->isFalse()) {
+    if (cd.evaluateExact(constraint)->isFalse()) {
       isValid = true;
       return true;
     }
@@ -1121,7 +1118,7 @@ FastCexSolver::computeInitialValues(const Query& query,
   for (const auto &constraint : query.constraints)
     findReads(constraint, true, reads);
 
-  for (ref<ReadExpr> read : reads) {
+  for (const ref<ReadExpr> &read : reads) {
     const Array *array = read->updates.root;
     ref<Expr> indexExpr = cd.evaluatePossible(read->index);
     unsigned index;

@@ -8,9 +8,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "klee/Config/config.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
-#include "klee/OptionCategories.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+#include "klee/Support/OptionCategories.h"
+
+#include <csignal>
 
 #ifdef ENABLE_Z3
 
@@ -173,10 +175,10 @@ char *Z3SolverImpl::getConstraintLog(const Query &query) {
   constant_arrays_in_query.visit(query.expr);
 
   for (auto const &constant_array : constant_arrays_in_query.results) {
-    assert(builder->constant_array_assertions.count(constant_array) == 1 &&
+    assert(temp_builder.constant_array_assertions.count(constant_array) == 1 &&
            "Constant array found in query, but not handled by Z3Builder");
     for (auto const &arrayIndexValueExpr :
-         builder->constant_array_assertions[constant_array]) {
+         temp_builder.constant_array_assertions[constant_array]) {
       assumptions.push_back(arrayIndexValueExpr);
     }
   }
@@ -322,8 +324,70 @@ bool Z3SolverImpl::internalRunSolver(
     }
     return true; // success
   }
+  if (runStatusCode == SolverImpl::SOLVER_RUN_STATUS_INTERRUPTED) {
+    raise(SIGINT);
+  }
   return false; // failed
 }
+
+class ModelVisitor : public ExprVisitor {
+private:
+  Z3Builder *builder;
+  ::Z3_model model;
+  Assignment::map_bindings_ty bindings;
+
+public:
+  ModelVisitor(Z3Builder *builder, ::Z3_model model)
+      : builder(builder), model(model) {}
+
+  ExprVisitor::Action visitRead(const ReadExpr &expr) override {
+    bool success;
+    // Get the model of the index
+    unsigned index;
+    Z3ASTHandle indexExpr = builder->construct(expr.index); // should be cached
+    // We can't use Z3ASTHandle here so have to do ref counting manually
+    ::Z3_ast indexEvaluated;
+    success = Z3_model_eval(builder->ctx, model, indexExpr,
+                          /*model_completion=*/false, &indexEvaluated);
+    assert(success && "Failed to evaluate index model");
+    Z3_inc_ref(builder->ctx, indexEvaluated);
+    if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
+      // if the index is not numeric, it means that it's a "don't care" value
+      Z3_dec_ref(builder->ctx, indexEvaluated);
+      return Action::doChildren();
+    }
+    success = Z3_get_numeral_uint(builder->ctx, indexEvaluated,
+                                          &index);
+    assert(success && "failed to get value back");
+    Z3_dec_ref(builder->ctx, indexEvaluated);
+
+    // Get the model of the read value
+    int value = 0;
+    // We can't use Z3ASTHandle here so have to do ref counting manually
+    ::Z3_ast valueEvaluated;
+    Z3ASTHandle initialRead = builder->getInitialRead(expr.updates.root, index);
+    success = Z3_model_eval(builder->ctx, model, initialRead,
+                           /*model_completion=*/true, &valueEvaluated);
+    assert(success && "Failed to evaluate model");
+    Z3_inc_ref(builder->ctx, valueEvaluated);
+    assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
+           "Evaluated expression has wrong sort");
+
+    success = Z3_get_numeral_int(builder->ctx, valueEvaluated, &value);
+    assert(success && "failed to get value back");
+    assert(value >= 0 && value <= 255 &&
+           "Integer from model is out of range");
+    Z3_dec_ref(builder->ctx, valueEvaluated);
+
+    bindings[expr.updates.root].add(index, value);
+
+    return Action::doChildren();
+  }
+
+  std::shared_ptr<Assignment> buildAssignment() {
+    return std::make_shared<Assignment>(bindings);
+  }
+};
 
 SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
     const Query &query,
@@ -347,7 +411,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       findReads(constraint, true, reads);
 
     Assignment::map_bindings_ty bindings;
-    for (ref<ReadExpr> read : reads) {
+    for (const ref<ReadExpr> &read : reads) {
       bool success;
       // Get the model of the index
       unsigned index;
@@ -355,7 +419,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       // We can't use Z3ASTHandle here so have to do ref counting manually
       ::Z3_ast indexEvaluated;
       success = Z3_model_eval(builder->ctx, theModel, indexExpr,
-                            /*model_completion=*/Z3_FALSE, &indexEvaluated);
+                              /*model_completion=*/false, &indexEvaluated);
       assert(success && "Failed to evaluate index model");
       Z3_inc_ref(builder->ctx, indexEvaluated);
       if (Z3_get_ast_kind(builder->ctx, indexEvaluated) != Z3_NUMERAL_AST) {
@@ -364,7 +428,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
         continue;
       }
       success = Z3_get_numeral_uint(builder->ctx, indexEvaluated,
-                                            &index);
+                                    &index);
       assert(success && "failed to get value back");
       Z3_dec_ref(builder->ctx, indexEvaluated);
 
@@ -374,7 +438,7 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
       ::Z3_ast valueEvaluated;
       Z3ASTHandle initialRead = builder->getInitialRead(read->updates.root, index);
       success = Z3_model_eval(builder->ctx, theModel, initialRead,
-                             /*model_completion=*/Z3_TRUE, &valueEvaluated);
+                              /*model_completion=*/true, &valueEvaluated);
       assert(success && "Failed to evaluate model");
       Z3_inc_ref(builder->ctx, valueEvaluated);
       assert(Z3_get_ast_kind(builder->ctx, valueEvaluated) == Z3_NUMERAL_AST &&
@@ -414,6 +478,9 @@ SolverImpl::SolverRunStatus Z3SolverImpl::handleSolverResponse(
     if (strcmp(reason, "unknown") == 0) {
       return SolverImpl::SOLVER_RUN_STATUS_FAILURE;
     }
+    if (strcmp(reason, "interrupted from keyboard") == 0) {
+      return SolverImpl::SOLVER_RUN_STATUS_INTERRUPTED;
+    }
     klee_warning("Unexpected solver failure. Reason is \"%s,\"\n", reason);
     abort();
   }
@@ -438,7 +505,7 @@ bool Z3SolverImpl::validateZ3Model(::Z3_solver &theSolver, ::Z3_model &theModel)
     __attribute__((unused))
     bool successfulEval =
         Z3_model_eval(builder->ctx, theModel, constraint,
-                      /*model_completion=*/Z3_TRUE, &rawEvaluatedExpr);
+                      /*model_completion=*/true, &rawEvaluatedExpr);
     assert(successfulEval && "Failed to evaluate model");
 
     // Use handle to do ref-counting.

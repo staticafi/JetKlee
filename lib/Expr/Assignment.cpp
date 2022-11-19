@@ -24,22 +24,22 @@ void Assignment::dump() const {
   }
 }
 
-void Assignment::createConstraintsFromAssignment(
-    std::vector<ref<Expr> > &out) const {
-  assert(out.size() == 0 && "out should be empty");
-  for (bindings_ty::const_iterator it = bindings.begin(), ie = bindings.end();
-       it != ie; ++it) {
-    const Array *array = it->first;
-    const auto &values = it->second;
+ConstraintSet Assignment::createConstraintsFromAssignment() const {
+  ConstraintSet result;
+  for (const auto &binding : bindings) {
+    const auto &array = binding.first;
+    const auto &values = binding.second;
+
     for (const auto &pair : values.asMap()) {
       unsigned arrayIndex = pair.first;
       unsigned char value = pair.second;
-      out.push_back(EqExpr::create(
+      result.push_back(EqExpr::create(
           ReadExpr::create(UpdateList(array, 0),
                            ConstantExpr::alloc(arrayIndex, array->getDomain())),
           ConstantExpr::alloc(value, array->getRange())));
     }
   }
+  return result;
 }
 
 void MapArrayModel::toCompact(CompactArrayModel& model) const {

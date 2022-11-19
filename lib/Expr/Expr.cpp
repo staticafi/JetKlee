@@ -11,12 +11,15 @@
 
 #include "klee/Config/Version.h"
 #include "klee/Expr/ExprPPrinter.h"
+#include "klee/Support/OptionCategories.h"
 // FIXME: We shouldn't need this once fast constant support moves into
 // Core. If we need to do arithmetic, we probably want to use APInt.
-#include "klee/Internal/Support/IntEvaluation.h"
-#include "klee/OptionCategories.h"
+#include "klee/Support/IntEvaluation.h"
 
 #include "llvm/ADT/Hashing.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+#include "llvm/ADT/StringExtras.h"
+#endif
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -340,13 +343,11 @@ ref<Expr> ConstantExpr::fromMemory(void *address, Width width) {
   case Expr::Int64: return ConstantExpr::create(*((uint64_t*) address), width);
   // FIXME: what about machines without x87 support?
   default:
-    return ConstantExpr::alloc(llvm::APInt(width,
-#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
-      (width+llvm::APFloatBase::integerPartWidth-1)/llvm::APFloatBase::integerPartWidth,
-#else
-      (width+llvm::integerPartWidth-1)/llvm::integerPartWidth,
-#endif
-      (const uint64_t*)address));
+    return ConstantExpr::alloc(
+        llvm::APInt(width,
+                    (width + llvm::APFloatBase::integerPartWidth - 1) /
+                        llvm::APFloatBase::integerPartWidth,
+                    (const uint64_t *)address));
   }
 }
 
@@ -366,7 +367,11 @@ void ConstantExpr::toMemory(void *address) {
 }
 
 void ConstantExpr::toString(std::string &Res, unsigned radix) const {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+  Res = llvm::toString(value, radix, false);
+#else
   Res = value.toString(radix, false);
+#endif
 }
 
 ref<ConstantExpr> ConstantExpr::Concat(const ref<ConstantExpr> &RHS) {
@@ -537,10 +542,9 @@ ref<Expr> ReadExpr::create(const UpdateList &ul, ref<Expr> index) {
   // least recent to find a potential written value for a concrete index;
   // stop if an update with symbolic has been found as we don't know which
   // array element has been updated
-  const UpdateNode *un = ul.head;
+  auto un = ul.head.get();
   bool updateListHasSymbolicWrites = false;
-  for (; un; un=un->next) {
-    // Check if we have an equivalent concrete index
+  for (; un; un = un->next.get()) {
     ref<Expr> cond = EqExpr::create(index, un->index);
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(cond)) {
       if (CE->isTrue())

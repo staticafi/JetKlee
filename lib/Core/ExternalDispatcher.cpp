@@ -10,7 +10,9 @@
 #include "ExternalDispatcher.h"
 #include "klee/Config/Version.h"
 
+#if LLVM_VERSION_CODE < LLVM_VERSION(8, 0)
 #include "llvm/IR/CallSite.h"
+#endif
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
@@ -196,7 +198,7 @@ bool ExternalDispatcherImpl::executeCall(Function *f, Instruction *i,
         std::move(dispatchModuleUniq)); // MCJIT takes ownership
     // Force code generation
     uint64_t fnAddr =
-        executionEngine->getFunctionAddress(dispatcher->getName());
+        executionEngine->getFunctionAddress(dispatcher->getName().str());
     executionEngine->finalizeObject();
     assert(fnAddr && "failed to get function address");
     (void)fnAddr;
@@ -253,15 +255,16 @@ bool ExternalDispatcherImpl::runProtectedCall(Function *f, uint64_t *args) {
 Function *ExternalDispatcherImpl::createDispatcher(Function *target,
                                                    Instruction *inst,
                                                    Module *module) {
-  if (!resolveSymbol(target->getName()))
+  if (!resolveSymbol(target->getName().str()))
     return 0;
 
-  CallSite cs;
-  if (inst->getOpcode() == Instruction::Call) {
-    cs = CallSite(cast<CallInst>(inst));
-  } else {
-    cs = CallSite(cast<InvokeInst>(inst));
-  }
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+  const CallBase &cs = cast<CallBase>(*inst);
+#else
+  const CallSite cs(inst->getOpcode() == Instruction::Call
+                        ? CallSite(cast<CallInst>(inst))
+                        : CallSite(cast<InvokeInst>(inst)));
+#endif
 
   Value **args = new Value *[cs.arg_size()];
 
@@ -284,27 +287,32 @@ Function *ExternalDispatcherImpl::createDispatcher(Function *target,
       ConstantInt::get(Type::getInt64Ty(ctx), (uintptr_t)(void *)&gTheArgsP),
       PointerType::getUnqual(PointerType::getUnqual(Type::getInt64Ty(ctx))),
       "argsp");
-  auto argI64s = Builder.CreateLoad(argI64sp, "args");
+  auto argI64s = Builder.CreateLoad(
+      argI64sp->getType()->getPointerElementType(), argI64sp, "args");
 
   // Get the target function type.
-  FunctionType *FTy = cast<FunctionType>(
-      cast<PointerType>(target->getType())->getElementType());
+  FunctionType *FTy = target->getFunctionType();
 
   // Each argument will be passed by writing it into gTheArgsP[i].
   unsigned i = 0, idx = 2;
-  for (CallSite::arg_iterator ai = cs.arg_begin(), ae = cs.arg_end(); ai != ae;
-       ++ai, ++i) {
+  for (auto ai = cs.arg_begin(), ae = cs.arg_end(); ai != ae; ++ai, ++i) {
     // Determine the type the argument will be passed as. This accommodates for
     // the corresponding code in Executor.cpp for handling calls to bitcasted
     // functions.
     auto argTy =
         (i < FTy->getNumParams() ? FTy->getParamType(i) : (*ai)->getType());
+
+    // fp80 must be aligned to 16 according to the System V AMD 64 ABI
+    if (argTy->isX86_FP80Ty() && idx & 0x01)
+      idx++;
+
     auto argI64p =
-        Builder.CreateGEP(nullptr, argI64s,
+        Builder.CreateGEP(argI64s->getType()->getPointerElementType(), argI64s,
                           ConstantInt::get(Type::getInt32Ty(ctx), idx));
 
     auto argp = Builder.CreateBitCast(argI64p, PointerType::getUnqual(argTy));
-    args[i] = Builder.CreateLoad(argp);
+    args[i] =
+        Builder.CreateLoad(argp->getType()->getPointerElementType(), argp);
 
     unsigned argSize = argTy->getPrimitiveSizeInBits();
     idx += ((!!argSize ? argSize : 64) + 63) / 64;

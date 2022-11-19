@@ -18,6 +18,16 @@ set(NATIVE_CC "${CMAKE_C_COMPILER} ${CMAKE_C_FLAGS} -I ${CMAKE_SOURCE_DIR}/inclu
 set(NATIVE_CXX "${CMAKE_CXX_COMPILER} ${CMAKE_CXX_FLAGS} -I ${CMAKE_SOURCE_DIR}/include")
 set(TARGET_TRIPLE "${TARGET_TRIPLE}")
 
+# Extend native compiler invocation on macOS to point to the currently selected systems directory
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  execute_process(
+          COMMAND xcrun --sdk macosx --show-sdk-path
+          OUTPUT_VARIABLE MAC_OS_SDK_PATH
+          OUTPUT_STRIP_TRAILING_WHITESPACE)
+  set(NATIVE_CC "${NATIVE_CC} -isysroot ${MAC_OS_SDK_PATH}")
+  set(NATIVE_CXX "${NATIVE_CXX} -isysroot ${MAC_OS_SDK_PATH}")
+endif()
+
 # FIXME: Do this to avoid changing the template file that
 # is shared by both build systems.
 if (ENABLE_POSIX_RUNTIME)
@@ -61,12 +71,11 @@ if (NOT EXISTS "${LLVM_TOOLS_BINARY_DIR}/not")
   set(DOWNLOAD_NOT_SOURCE TRUE)
 endif()
 
+# Do not build FileCheck and not to ${KLEE_TOOLS_DIR} as it will not be in lit's PATH.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${KLEE_TOOLS_DIR}/testtools)
+
 if (DOWNLOAD_FILECHECK_SOURCE)
-  if (${LLVM_VERSION_MAJOR} GREATER 3)
-    set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/FileCheck/FileCheck.cpp")
-  else()
-    set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.x/llvm/utils/FileCheck/FileCheck.cpp")
-  endif()
+  set(FILECHECK_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/FileCheck/FileCheck.cpp")
   set(FILECHECK_SRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/FileCheck.cpp")
   if (NOT EXISTS "${FILECHECK_SRC_FILE}")
     message(STATUS "Downloading LLVM FileCheck source")
@@ -89,11 +98,7 @@ if (DOWNLOAD_FILECHECK_SOURCE)
 endif()
 
 if (DOWNLOAD_NOT_SOURCE)
-  if (${LLVM_VERSION_MAJOR} GREATER 3)
-    set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/not/not.cpp")
-  else()
-    set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.x/llvm/utils/not/not.cpp")
-  endif()
+  set(NOT_SRC_URL "https://raw.githubusercontent.com/llvm/llvm-project/release/${LLVM_VERSION_MAJOR}.x/llvm/utils/not/not.cpp")
   set(NOT_SRC_FILE "${CMAKE_CURRENT_BINARY_DIR}/not.cpp")
   if (NOT EXISTS "${NOT_SRC_FILE}")
     message(STATUS "Downloading LLVM not source")
@@ -125,28 +130,24 @@ add_subdirectory(Concrete)
 ###############################################################################
 
 # Find path to libkleeRuntest target for `lit.site.cfg`.
-# FIXME: This is not the right way to get the location of the target we have to
-# set CMP0026 to old.
-# This will likely break if using a multi-configuration generator.
-if (POLICY CMP0026)
-  # HACK: Allow reading `LOCATION` property.
-  cmake_policy(SET CMP0026 OLD)
-endif()
-get_property(LIB_KLEE_RUN_TEST_PATH
-  TARGET kleeRuntest
-  PROPERTY LOCATION
-)
+set(LIB_KLEE_RUN_TEST_PATH $<TARGET_FILE:kleeRuntest>)
 
 configure_file(lit.site.cfg.in
-  ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg
+  ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.imd
   @ONLY
+)
+
+# Evaluate all generator expressions inserted during the configure step.
+file(GENERATE
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg
+  INPUT  ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg.imd
 )
 
 add_custom_target(systemtests
   COMMAND "${LIT_TOOL}" ${LIT_ARGS} "${CMAKE_CURRENT_BINARY_DIR}"
   DEPENDS klee kleaver klee-replay kleeRuntest gen-bout gen-random-bout
   COMMENT "Running system tests"
-  ${ADD_CUSTOM_COMMAND_USES_TERMINAL_ARG}
+  USES_TERMINAL
 )
 
 # Tell CMake to remove lit's output directories when
