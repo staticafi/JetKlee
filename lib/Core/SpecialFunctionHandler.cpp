@@ -1363,25 +1363,3 @@ void SpecialFunctionHandler::handleUnsupportedPthread(ExecutionState &state,
   executor.terminateStateOnExecError(state,
         "unsupported pthread API.");
 }
-
-void SpecialFunctionHandler::handlePthreadCreate(ExecutionState &state,
-                                                 KInstruction *target,
-                                                 const std::vector<Cell> &arguments) {
-  executor.terminateStateOnExecError(state,
-        "Call to pthread_create.");
-}
-
-void SpecialFunctionHandler::handlePthreadJoin(ExecutionState &state,
-                                               KInstruction *target,
-                                               const std::vector<Cell> &arguments) {
-  executor.terminateStateOnExecError(state,
-        "Call to pthread_join.");
-}
-
-void SpecialFunctionHandler::handleUnsupportedPthread(ExecutionState &state,
-                                                      KInstruction *target,
-                                                      const std::vector<Cell> &arguments) {
-  executor.terminateStateOnExecError(state,
-        "unsupported pthread API.");
-}
-

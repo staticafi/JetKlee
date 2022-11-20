@@ -74,9 +74,6 @@ public:
   /// Symbolic address for poiner comparison
   llvm::Optional<ref<Expr>> symbolicAddress;
 
-  /// Symbolic address for poiner comparison
-  llvm::Optional<ref<Expr>> symbolicAddress;
-
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);
   MemoryObject &operator=(const MemoryObject &b);
