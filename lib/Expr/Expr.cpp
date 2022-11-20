@@ -89,6 +89,39 @@ ref<Expr> Expr::createTempRead(const Array *array, Expr::Width w) {
                                                 ConstantExpr::alloc(1,Expr::Int32)),
                                ReadExpr::create(ul, 
                                                 ConstantExpr::alloc(0,Expr::Int32)));
+  case Expr::Int128:
+    return ConcatExpr::create16(ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(15,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(14,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(13,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(12,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(11,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(10,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(9,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(8,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(7,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(6,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(5,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(4,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(3,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(2,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(1,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(0,Expr::Int32)));
   }
 }
 
@@ -669,6 +702,17 @@ ref<Expr> ConcatExpr::create8(const ref<Expr> &kid1, const ref<Expr> &kid2,
 			      ConcatExpr::create(kid4, ConcatExpr::create4(kid5, kid6, kid7, kid8)))));
 }
 
+/// Shortcut to concat 16 kids.  The chain returned is unbalanced to the right
+ref<Expr> ConcatExpr::create16(const ref<Expr> &kid1, const ref<Expr> &kid2,
+                              const ref<Expr> &kid3, const ref<Expr> &kid4,
+                              const ref<Expr> &kid5, const ref<Expr> &kid6,
+                              const ref<Expr> &kid7, const ref<Expr> &kid8,
+                              const ref<Expr> &kid9, const ref<Expr> &kid10,
+                              const ref<Expr> &kid11, const ref<Expr> &kid12,
+                              const ref<Expr> &kid13, const ref<Expr> &kid14,
+                              const ref<Expr> &kid15, const ref<Expr> &kid16) {
+  return ConcatExpr::create4(kid1, ConcatExpr::create(kid2, kid3), ConcatExpr::create(kid4, kid5), ConcatExpr::create4(kid6, kid7, kid8, ConcatExpr::create8(kid9, kid10, kid11, kid12, kid13, kid14, kid15, kid16)));
+}
 /***/
 
 ref<Expr> ExtractExpr::create(ref<Expr> expr, unsigned off, Width w) {

@@ -30,6 +30,7 @@
 #include "klee/System/Time.h"
 
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <map>
@@ -235,10 +236,10 @@ private:
   void initializeGlobalObject(ExecutionState &state, ObjectState *os, 
 			      const llvm::Constant *c,
 			      unsigned offset);
-  void initializeGlobals(ExecutionState &state);
-  void allocateGlobalObjects(ExecutionState &state);
+  void initializeGlobals(ExecutionState &state, bool isEntryFunctionMain);
+  void allocateGlobalObjects(ExecutionState &state, bool isEntryFunctionMain);
   void initializeGlobalAliases();
-  void initializeGlobalObjects(ExecutionState &state);
+  void initializeGlobalObjects(ExecutionState &state, bool isEntryFunctionMain);
 
   void stepInstruction(ExecutionState &state);
   void updateStates(ExecutionState *current);
@@ -381,6 +382,11 @@ private:
   // Used for testing.
   ref<Expr> replaceReadWithSymbolic(ExecutionState &state, ref<Expr> e);
 
+
+  const Array* CreateArrayWithName(ExecutionState &state,
+                                   const Expr::Width& width,
+                                   const std::string& name);
+
   KValue createNondetValue(ExecutionState &state,
                            unsigned size, bool isSigned,
                            KInstruction *instr,
@@ -520,6 +526,7 @@ private:
   void doDumpStates();
 
   /// Only for debug purposes; enable via debugger or klee-control
+  static void dumpState(std::unique_ptr<llvm::raw_fd_ostream>& os, ExecutionState* es);
   void dumpStates();
   void dumpPTree();
 
@@ -601,6 +608,28 @@ public:
 
   MergingSearcher *getMergingSearcher() const { return mergingSearcher; };
   void setMergingSearcher(MergingSearcher *ms) { mergingSearcher = ms; };
+
+  KValue handleReadForLazyInit(ExecutionState &state, KInstruction *target,
+                               const MemoryObject *mo, const ObjectState *os,
+                               const ref<Expr> &offset, Expr::Width type,
+                               bool &shouldReadFromOffset);
+
+  void handleWriteForLazyInit(ExecutionState &state,
+                              const ref<Expr> &addressOffset,
+                              const uint64_t addressSegment,
+                              const uint64_t valueSegment);
+  
+  void initializeEntryFunctionArguments(llvm::Function *f,
+                                        ExecutionState &state);
+  ref<Expr> getPointerSymbolicSizeExpr(ExecutionState &state);
+  ref<Expr> createTempReadForType(ExecutionState &state, llvm::Type* ty);
+
+  void getSymbolicAddressForConstantSegment(ExecutionState &state, KValue &value);
+  void handleICMPForLazyInit(const llvm::CmpInst::Predicate &predicate,
+                             ExecutionState &state, KValue &left,
+                             KValue &right);
+  void checkWidthMatch(KValue &left, KValue &right) const;
+  void handleICMPForLazyMO(ExecutionState &state, KValue &value);
 };
   
 } // End klee namespace
