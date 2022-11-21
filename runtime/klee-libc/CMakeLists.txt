@@ -10,6 +10,7 @@
 set(LIB_PREFIX "RuntimeKLEELibc")
 set(SRC_FILES
         __cxa_atexit.c
+	__ctype_b_loc.c
         abort.c
         atexit.c
         atoi.c
@@ -32,6 +33,8 @@ set(SRC_FILES
         strrchr.c
         strtol.c
         strtoul.c
+        strtoull.c
+        strerror.c
         tolower.c
         toupper.c
         )
