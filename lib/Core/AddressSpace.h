@@ -35,15 +35,17 @@ namespace klee {
     bool operator()(const MemoryObject *a, const MemoryObject *b) const;
   };
 
-  typedef ImmutableMap<const MemoryObject *, ref<ObjectState>, MemoryObjectLT>
-      MemoryMap;
-  typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
-  typedef std::map</*address*/ const uint64_t, /*segment*/ const uint64_t> ConcreteAddressMap;
-  typedef std::map</*segment*/ const uint64_t, /*address*/ const uint64_t> SegmentAddressMap;
-  typedef std::map</*segment*/ const uint64_t, /*symbolic array*/ ref<Expr>> RemovedObjectsMap;
+typedef ImmutableMap<const MemoryObject*, ref<ObjectState>, MemoryObjectLT> MemoryMap;
+typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
+typedef std::map</*address*/ const uint64_t, /*segment*/ const uint64_t> ConcreteAddressMap;
+typedef std::map</*segment*/ const uint64_t, /*address*/ const uint64_t> SegmentAddressMap;
+typedef std::map</*segment*/ const uint64_t, /*symbolic array*/ ref<Expr>> RemovedObjectsMap;
+typedef std::map</*pointer segment*/ const uint64_t, /*value segment:offset*/ std::pair<uint64_t, uint64_t>> LazyPointersSegmentMap;
+typedef std::map</*segment*/ const uint64_t, /*lazily initialized offsets*/std::vector<uint64_t>> LazilyInitializedOffsets;
 
-  class AddressSpace {
-    friend class ExecutionState;
+
+class AddressSpace {
+  friend class ExecutionState;
 
   private:
     /// Epoch counter used to control ownership of objects.
@@ -68,13 +70,20 @@ namespace klee {
 
     RemovedObjectsMap removedObjectsMap;
 
-    AddressSpace() : cowKey(1) {}
-    AddressSpace(const AddressSpace &b)
+  LazilyInitializedOffsets lazilyInitializedOffsets;
+
+  LazyPointersSegmentMap lazyPointersSegmentMap;
+
+  AddressSpace() : cowKey(1) {}
+  AddressSpace(const AddressSpace &b)
       : cowKey(++b.cowKey),
-      objects(b.objects),
-      segmentMap(b.segmentMap),
-      removedObjectsMap(b.removedObjectsMap) { }
-    ~AddressSpace() {}
+        objects(b.objects),
+        segmentMap(b.segmentMap),
+        concreteAddressMap(b.concreteAddressMap),
+        removedObjectsMap(b.removedObjectsMap),
+        lazilyInitializedOffsets(b.lazilyInitializedOffsets),
+        lazyPointersSegmentMap(b.lazyPointersSegmentMap){ }
+  ~AddressSpace() {}
 
     /// Looks up constant segment in concreteAddressMap.
     /// \param segment segment to search for
