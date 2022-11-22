@@ -10,7 +10,8 @@
 set(LIB_PREFIX "RuntimeKLEELibc")
 set(SRC_FILES
         __cxa_atexit.c
-	__ctype_b_loc.c
+		__ctype_b_loc.c
+		abs.c
         abort.c
         atexit.c
         atoi.c
