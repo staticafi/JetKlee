@@ -34,6 +34,7 @@ set(SRC_FILES
         strtol.c
         strtoul.c
         strtoull.c
+        strtoumax.c
         strerror.c
         tolower.c
         toupper.c
