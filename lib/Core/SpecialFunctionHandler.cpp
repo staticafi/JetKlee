@@ -187,6 +187,13 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("pthread_key_create", handleUnsupportedPthread, true),
   add("pthread_setspecific", handleUnsupportedPthread, true),
   add("pthread_getspecific", handleUnsupportedPthread, true),
+  add("scanf", handleScanf, true),
+  add("__isoc99_scanf", handleScanf, true),
+  add("__isoc99_wscanf", handleScanf, true),
+  add("fscanf", handleFscanf, true),
+  add("__isoc99_fscanf", handleFscanf, true),
+  add("__isoc99_sscanf", handleFscanf, true),
+  add("__isoc99_swscanf", handleFscanf, true),
 
 #undef addDNR
 #undef add
@@ -1372,4 +1379,62 @@ void SpecialFunctionHandler::handleUnsupportedPthread(ExecutionState &state,
                                                       const std::vector<Cell> &arguments) {
   executor.terminateStateOnExecError(state,
         "unsupported pthread API.");
+}
+
+void SpecialFunctionHandler::handleScanf(ExecutionState &state,
+                                         KInstruction *target,
+                                         const std::vector<Cell> &arguments) {
+  size_t size = arguments.size();
+  if (size < 2) {
+    executor.terminateStateOnExecError(state, "unsupported function model");
+    return;
+  }
+
+  /* FIXME: we should check the format too -- if the format is "%d" and arguments are &a, &b,
+   * then we should not make 'b' symbolic */
+  for (unsigned i = 1; i < size; ++i) { /* first two arguments are file and format */
+    Executor::ExactResolutionList rl;
+    executor.resolveExact(state, arguments[i], rl, "_fscanf");
+
+    for (auto it = rl.begin(), ie = rl.end(); it != ie; ++it) {
+      const MemoryObject *mo = it->first.first;
+      executor.executeMakeSymbolic(state, mo, "_fscanf_"+std::to_string(mo->id));
+    }
+  }
+
+  /* FIXME: we unnecesarily over-approximate here */
+  executor.bindLocal(target, state,
+                   executor.createNondetValue(state, Expr::Int32,
+                                              true, target,
+                                              "fscanf_ret", false));
+}
+
+
+void SpecialFunctionHandler::handleFscanf(ExecutionState &state,
+                                         KInstruction *target,
+                                         const std::vector<Cell> &arguments) {
+  size_t size = arguments.size();
+  if (size < 3) {
+    executor.terminateStateOnExecError(state, "unsupported function model");
+    return;
+  }
+
+  /* FIXME: we should check the format too -- if the format is "%d" and arguments are &a, &b,
+   * then we should not make 'b' symbolic. We also handle sscanf with this handler,
+     which is even more dangereous as we loose the connection between string and data. */
+  for (unsigned i = 2; i < size; ++i) { /* first two arguments are file and format */
+    Executor::ExactResolutionList rl;
+    executor.resolveExact(state, arguments[i], rl, "_fscanf");
+
+    for (auto it = rl.begin(), ie = rl.end(); it != ie; ++it) {
+      const MemoryObject *mo = it->first.first;
+      executor.executeMakeSymbolic(state, mo, "_fscanf_"+std::to_string(mo->id));
+    }
+  }
+
+  /* FIXME: we unnecesarily over-approximate here */
+  executor.bindLocal(target, state,
+                   executor.createNondetValue(state, Expr::Int32,
+                                              true, target,
+                                              "fscanf_ret", false));
 }
