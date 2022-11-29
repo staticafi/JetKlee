@@ -6,6 +6,7 @@ Output/
 
 # commonly used as cmake build directory
 /build
+/build-*/
 
 cscope.*
 *~
