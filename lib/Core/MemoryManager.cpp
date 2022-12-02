@@ -13,7 +13,7 @@
 #include "Memory.h"
 
 #include "klee/Expr/Expr.h"
-#include "klee/Internal/Support/ErrorHandling.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
@@ -107,16 +107,8 @@ MmapAllocation::~MmapAllocation() {
     munmap(data, dataSize);
 }
 
-static inline uint64_t alignAddress(uint64_t address, size_t alignment) {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
-    return llvm::alignTo(address, alignment);
-#else
-    return llvm::RoundUpToAlignment(address, alignment);
-#endif
-}
-
 void *MmapAllocation::getNextFreeSlot(size_t alignment) const {
-  return (void *)alignAddress((uint64_t)nextFreeSlot + alignment - 1, alignment);
+  return (void *)llvm::alignTo((uint64_t)nextFreeSlot + alignment - 1, alignment);
 }
 
 bool MmapAllocation::hasSpace(size_t size, size_t alignment) const {
@@ -296,7 +288,8 @@ MemoryObject *MemoryManager::allocate(ref<Expr> size, bool isLocal,
 }
 
 MemoryObject *MemoryManager::allocateFixed(uint64_t size,
-                                           const llvm::Value *allocSite, uint64_t specialSegment) {
+                                           const llvm::Value *allocSite,
+                                           uint64_t specialSegment) {
   ++stats::allocations;
   ref<Expr> sizeExpr = ConstantExpr::alloc(size, Context::get().getPointerWidth());
   MemoryObject *res;

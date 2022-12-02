@@ -9,22 +9,25 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "klee/ADT/TreeStream.h"
 #include "klee/Config/Version.h"
-#include "klee/ExecutionState.h"
+#include "klee/Core/Interpreter.h"
 #include "klee/Expr/Expr.h"
-#include "klee/Internal/ADT/KTest.h"
-#include "klee/Internal/ADT/TreeStream.h"
-#include "klee/Internal/Support/Debug.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/Internal/Support/FileHandling.h"
-#include "klee/Internal/Support/ModuleUtil.h"
-#include "klee/Internal/Support/PrintVersion.h"
-#include "klee/Internal/System/Time.h"
-#include "klee/Interpreter.h"
-#include "klee/OptionCategories.h"
+#include "klee/ADT/KTest.h"
+#include "klee/Support/OptionCategories.h"
+#include "klee/Statistics/Statistics.h"
 #include "klee/Solver/SolverCmdLine.h"
-#include "klee/Statistics.h"
+#include "klee/Support/Debug.h"
+#include "klee/Support/ErrorHandling.h"
+#include "klee/Support/FileHandling.h"
+#include "klee/Support/ModuleUtil.h"
+#include "klee/Support/PrintVersion.h"
+#include "klee/System/Time.h"
 
+// FIXME: this is a hack
+#include "../lib/Core/ExecutionState.h"
+
+#include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
@@ -35,6 +38,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -44,11 +48,6 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Signals.h"
 
-#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
-#include <llvm/Bitcode/BitcodeReader.h>
-#else
-#include <llvm/Bitcode/ReaderWriter.h>
-#endif
 
 #include <dirent.h>
 #include <signal.h>
@@ -195,29 +194,24 @@ namespace {
   cl::OptionCategory LinkCat("Linking options",
                              "These options control the libraries being linked.");
 
-  enum class LibcType { FreeStandingLibc, KleeLibc, UcLibc };
+  enum class LibcType { FreestandingLibc, KleeLibc, UcLibc };
 
-  cl::opt<LibcType>
-  Libc("libc",
-       cl::desc("Choose libc version (none by default)."),
-       cl::values(
-                  clEnumValN(LibcType::FreeStandingLibc,
-                             "none",
-                             "Don't link in a libc (only provide freestanding environment)"),
-                  clEnumValN(LibcType::KleeLibc,
-                             "klee",
-                             "Link in KLEE's libc"),
-                  clEnumValN(LibcType::UcLibc, "uclibc",
-                             "Link in uclibc (adapted for KLEE)")
-                  KLEE_LLVM_CL_VAL_END),
-       cl::init(LibcType::FreeStandingLibc),
-       cl::cat(LinkCat));
+  cl::opt<LibcType> Libc(
+      "libc", cl::desc("Choose libc version (none by default)."),
+      cl::values(
+          clEnumValN(
+              LibcType::FreestandingLibc, "none",
+              "Don't link in a libc (only provide freestanding environment)"),
+          clEnumValN(LibcType::KleeLibc, "klee", "Link in KLEE's libc"),
+          clEnumValN(LibcType::UcLibc, "uclibc",
+                     "Link in uclibc (adapted for KLEE)")),
+      cl::init(LibcType::FreestandingLibc), cl::cat(LinkCat));
 
   cl::list<std::string>
-  LinkLibraries("link-llvm-lib",
-		cl::desc("Link the given library before execution. Can be used multiple times."),
-		cl::value_desc("library file"),
-                cl::cat(LinkCat));
+      LinkLibraries("link-llvm-lib",
+                    cl::desc("Link the given bitcode library before execution, "
+                             "e.g. .bca, .bc, .a. Can be used multiple times."),
+                    cl::value_desc("bitcode library file"), cl::cat(LinkCat));
 
   cl::opt<bool>
   WithPOSIXRuntime("posix-runtime",
@@ -225,6 +219,12 @@ namespace {
                    cl::init(false),
                    cl::cat(LinkCat));
 
+  cl::opt<std::string> RuntimeBuild(
+      "runtime-build",
+      cl::desc("Link with versions of the runtime library that were built with "
+               "the provided configuration (default=" RUNTIME_CONFIGURATION
+               ")."),
+      cl::init(RUNTIME_CONFIGURATION), cl::cat(LinkCat));
 
   /*** Checks options ***/
 
@@ -327,6 +327,7 @@ namespace {
 
 namespace klee {
 extern cl::opt<std::string> MaxTime;
+class ExecutionState;
 }
 
 /***/
@@ -341,7 +342,8 @@ private:
 
   unsigned m_numTotalTests;     // Number of tests received from the interpreter
   unsigned m_numGeneratedTests; // Number of tests successfully generated
-  unsigned m_pathsExplored; // number of paths explored so far
+  unsigned m_pathsCompleted; // number of completed paths
+  unsigned m_pathsExplored; // number of partially explored and completed paths
 
   // used for writing .ktest files
   int m_argc;
@@ -359,8 +361,11 @@ public:
   llvm::raw_ostream &getInfoStream() const { return *m_infoFile; }
   /// Returns the number of test cases successfully generated so far
   unsigned getNumTestCases() { return m_numGeneratedTests; }
+  unsigned getNumPathsCompleted() { return m_pathsCompleted; }
   unsigned getNumPathsExplored() { return m_pathsExplored; }
-  void incPathsExplored() { m_pathsExplored++; }
+  void incPathsCompleted() { ++m_pathsCompleted; }
+  void incPathsExplored(std::uint32_t num = 1) {
+    m_pathsExplored += num; }
 
   void setInterpreter(Interpreter *i);
 
@@ -386,7 +391,7 @@ public:
 KleeHandler::KleeHandler(int argc, char **argv)
     : m_interpreter(0), m_pathWriter(0), m_symPathWriter(0),
       m_outputDirectory(), m_numTotalTests(0), m_numGeneratedTests(0),
-      m_pathsExplored(0), m_argc(argc), m_argv(argv) {
+      m_pathsCompleted(0), m_pathsExplored(0), m_argc(argc), m_argv(argv) {
 
   // create output directory (OutputDir or "klee-out-<i>")
   bool dir_given = OutputDir != "";
@@ -486,7 +491,7 @@ void KleeHandler::setInterpreter(Interpreter *i) {
 std::string KleeHandler::getOutputFilename(const std::string &filename) {
   SmallString<128> path = m_outputDirectory;
   sys::path::append(path,filename);
-  return path.str();
+  return path.c_str();
 }
 
 std::unique_ptr<llvm::raw_fd_ostream>
@@ -807,7 +812,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         }
 
         // define also the rest of the undefined functions,
-        // (they are irrelenat on this path, but we need them
+        // (they are irrelevant on this path, but we need them
         // to successfully compile the harness)
         auto M = getModule();
         for (auto& F : *M) {
@@ -982,13 +987,12 @@ std::string KleeHandler::getRunTimeLibraryPath(const char *argv0) {
     KLEE_DEBUG_WITH_TYPE("klee_runtime", llvm::dbgs() <<
                          "Using build directory KLEE library runtime :");
     libDir = KLEE_DIR;
-    llvm::sys::path::append(libDir,RUNTIME_CONFIGURATION);
-    llvm::sys::path::append(libDir,"lib");
+    llvm::sys::path::append(libDir, "runtime/lib");
   }
 
   KLEE_DEBUG_WITH_TYPE("klee_runtime", llvm::dbgs() <<
                        libDir.c_str() << "\n");
-  return libDir.str();
+  return libDir.c_str();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1097,6 +1101,10 @@ static const char *modelledExternals[] = {
   "klee_warning",
   "klee_warning_once",
   "klee_stack_trace",
+#ifdef SUPPORT_KLEE_EH_CXX
+  "_klee_eh_Unwind_RaiseException_impl",
+  "klee_eh_typeid_for",
+#endif
   "llvm.dbg.declare",
   "llvm.dbg.value",
   "llvm.va_start",
@@ -1241,7 +1249,7 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
     dontCare.insert(dontCareUclibc,
                     dontCareUclibc+NELEMS(dontCareUclibc));
     break;
-  case LibcType::FreeStandingLibc: /* silence compiler warning */
+  case LibcType::FreestandingLibc: /* silence compiler warning */
     break;
   }
 
@@ -1252,19 +1260,23 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
        fnIt != fn_ie; ++fnIt) {
     if (fnIt->isDeclaration() && !fnIt->use_empty())
       externals.insert(std::make_pair(fnIt->getName(), false));
-    for (Function::const_iterator bbIt = fnIt->begin(), bb_ie = fnIt->end();
-         bbIt != bb_ie; ++bbIt) {
-      for (BasicBlock::const_iterator it = bbIt->begin(), ie = bbIt->end();
-           it != ie; ++it) {
-        if (const CallInst *ci = dyn_cast<CallInst>(it)) {
-          if (isa<InlineAsm>(ci->getCalledValue())) {
-            klee_warning_once(&*fnIt,
-                              "function \"%s\" has inline asm",
-                              fnIt->getName().data());
-          }
-        }
-      }
-    }
+//    for (Function::const_iterator bbIt = fnIt->begin(), bb_ie = fnIt->end();
+//         bbIt != bb_ie; ++bbIt) {
+//      for (BasicBlock::const_iterator it = bbIt->begin(), ie = bbIt->end();
+//           it != ie; ++it) {
+//        if (const CallInst *ci = dyn_cast<CallInst>(it)) {
+//#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+//          if (isa<InlineAsm>(ci->getCalledOperand())) {
+//#else
+//          if (isa<InlineAsm>(ci->getCalledValue())) {
+//#endif
+//            klee_warning_once(&*fnIt,
+//                              "function \"%s\" has inline asm",
+//                              fnIt->getName().data());
+//          }
+//        }
+//      }
+//    }
   }
 
   for (Module::const_global_iterator
@@ -1278,7 +1290,7 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
          it = m->alias_begin(), ie = m->alias_end();
        it != ie; ++it) {
     std::map<std::string, bool>::iterator it2 =
-      externals.find(it->getName());
+        externals.find(it->getName().str());
     if (it2!=externals.end())
       externals.erase(it2);
   }
@@ -1290,16 +1302,18 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
     const std::string &ext = it->first;
     if (!modelled.count(ext) && (WarnAllExternals ||
                                  !dontCare.count(ext))) {
-      if (unsafe.count(ext)) {
-        foundUnsafe.insert(*it);
-      } else {
-        klee_warning("undefined reference to %s: %s",
-                     it->second ? "variable" : "function",
-                     ext.c_str());
-       //if (it->second && (ext == "optarg" || ext == "optind")) {
-       //    // getopt is fatal, we really cannot handle that
-       //    klee_error("Unhandled getopt stuff");
-       //}
+      if (ext.compare(0, 5, "llvm.") != 0) { // not an LLVM reserved name
+        if (unsafe.count(ext)) {
+          foundUnsafe.insert(*it);
+        } //else {
+//          klee_warning("undefined reference to %s: %s",
+//                       it->second ? "variable" : "function",
+//                       ext.c_str());
+          //if (it->second && (ext == "optarg" || ext == "optind")) {
+          //    // getopt is fatal, we really cannot handle that
+          //    klee_error("Unhandled getopt stuff");
+          //}
+        //}
       }
     }
   }
@@ -1363,7 +1377,7 @@ static void halt_via_gdb(int pid) {
 
 #ifndef SUPPORT_KLEE_UCLIBC
 static void
-linkWithUclibc(StringRef libDir,
+linkWithUclibc(StringRef libDir, std::string opt_suffix,
                std::vector<std::unique_ptr<llvm::Module>> &modules) {
   klee_error("invalid libc, no uclibc support!\n");
 }
@@ -1454,7 +1468,7 @@ createLibCWrapper(std::vector<std::unique_ptr<llvm::Module>> &modules,
 }
 
 static void
-linkWithUclibc(StringRef libDir,
+linkWithUclibc(StringRef libDir, std::string opt_suffix,
                std::vector<std::unique_ptr<llvm::Module>> &modules) {
   LLVMContext &ctx = modules[0]->getContext();
 
@@ -1475,108 +1489,30 @@ linkWithUclibc(StringRef libDir,
 
   createLibCWrapper(modules, EntryPoint, "__uClibc_main");
   klee_message("NOTE: Using klee-uclibc : %s", uclibcBCA.c_str());
+
+  // Link the fortified library
+  SmallString<128> FortifyPath(libDir);
+  llvm::sys::path::append(FortifyPath,
+                          "libkleeRuntimeFortify" + opt_suffix + ".bca");
+  if (!klee::loadFile(FortifyPath.c_str(), ctx, modules, errorMsg))
+    klee_error("error loading the fortify library '%s': %s",
+               FortifyPath.c_str(), errorMsg.c_str());
 }
 #endif
-
-std::vector<std::unique_ptr<llvm::Module>>
-loadBitcode(const std::string& inputFile,
-            LLVMContext& ctx,
-            Interpreter::ModuleOptions& Opts) {
-  std::string errorMsg;
-  std::vector<std::unique_ptr<llvm::Module>> loadedModules;
-  if (!klee::loadFile(InputFile, ctx, loadedModules, errorMsg)) {
-    klee_error("error loading program '%s': %s", InputFile.c_str(),
-               errorMsg.c_str());
-  }
-  // Load and link the whole files content. The assumption is that this is the
-  // application under test.
-  // Nothing gets removed in the first place.
-  std::unique_ptr<llvm::Module> M(klee::linkModules(
-      loadedModules, "" /* link all modules together */, errorMsg));
-  if (!M) {
-    klee_error("error loading program '%s': %s", InputFile.c_str(),
-               errorMsg.c_str());
-  }
-
-  llvm::Module *mainModule = M.get();
-  // Push the module as the first entry
-  loadedModules.emplace_back(std::move(M));
-
-  if (WithPOSIXRuntime) {
-    SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libkleeRuntimePOSIX.bca");
-    klee_message("NOTE: Using POSIX model: %s", Path.c_str());
-    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
-                        errorMsg))
-      klee_error("error loading POSIX support '%s': %s", Path.c_str(),
-                 errorMsg.c_str());
-
-    std::string libcPrefix = (Libc == LibcType::UcLibc ? "__user_" : "");
-    preparePOSIX(loadedModules, libcPrefix);
-  }
-
-  if (Libcxx) {
-#ifndef SUPPORT_KLEE_LIBCXX
-    klee_error("Klee was not compiled with libcxx support");
-#else
-    SmallString<128> LibcxxBC(Opts.LibraryDir);
-    llvm::sys::path::append(LibcxxBC, KLEE_LIBCXX_BC_NAME);
-    if (!klee::loadFile(LibcxxBC.c_str(), mainModule->getContext(), loadedModules,
-                        errorMsg))
-      klee_error("error loading free standing support '%s': %s",
-                 LibcxxBC.c_str(), errorMsg.c_str());
-    klee_message("NOTE: Using libcxx : %s", LibcxxBC.c_str());
-#endif
-  }
-
-  switch (Libc) {
-  case LibcType::KleeLibc: {
-    // FIXME: Find a reasonable solution for this.
-    SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libklee-libc.bca");
-    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
-                        errorMsg))
-      klee_error("error loading klee libc '%s': %s", Path.c_str(),
-                 errorMsg.c_str());
-  }
-  /* Falls through. */
-  case LibcType::FreeStandingLibc: {
-    SmallString<128> Path(Opts.LibraryDir);
-    llvm::sys::path::append(Path, "libkleeRuntimeFreeStanding.bca");
-    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
-                        errorMsg))
-      klee_error("error loading free standing support '%s': %s", Path.c_str(),
-                 errorMsg.c_str());
-    break;
-  }
-  case LibcType::UcLibc:
-    linkWithUclibc(Opts.LibraryDir, loadedModules);
-    break;
-  }
-
-  for (const auto &library : LinkLibraries) {
-    if (!klee::loadFile(library, mainModule->getContext(), loadedModules,
-                        errorMsg))
-      klee_error("error loading free standing support '%s': %s",
-                 library.c_str(), errorMsg.c_str());
-  }
-
-  return loadedModules;
-}
 
 int main(int argc, char **argv, char **envp) {
   atexit(llvm_shutdown);  // Call llvm_shutdown() on exit.
 
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+  KCommandLine::HideOptions(llvm::cl::getGeneralCategory());
+#else
   KCommandLine::HideOptions(llvm::cl::GeneralCategory);
+#endif
 
   llvm::InitializeNativeTarget();
 
   parseArguments(argc, argv);
-#if LLVM_VERSION_CODE >= LLVM_VERSION(3, 9)
   sys::PrintStackTraceOnErrorSignal(argv[0]);
-#else
-  sys::PrintStackTraceOnErrorSignal();
-#endif
 
   if (Watchdog) {
     if (MaxTime.empty()) {
@@ -1649,14 +1585,124 @@ int main(int argc, char **argv, char **envp) {
   sys::SetInterruptFunction(interrupt_handle);
 
   // Load the bytecode...
+  std::string errorMsg;
+  LLVMContext ctx;
+  std::vector<std::unique_ptr<llvm::Module>> loadedModules;
+  if (!klee::loadFile(InputFile, ctx, loadedModules, errorMsg)) {
+    klee_error("error loading program '%s': %s", InputFile.c_str(),
+               errorMsg.c_str());
+  }
+  // Load and link the whole files content. The assumption is that this is the
+  // application under test.
+  // Nothing gets removed in the first place.
+  std::unique_ptr<llvm::Module> M(klee::linkModules(
+      loadedModules, "" /* link all modules together */, errorMsg));
+  if (!M) {
+    klee_error("error loading program '%s': %s", InputFile.c_str(),
+               errorMsg.c_str());
+  }
+
+  llvm::Module *mainModule = M.get();
+
+  const std::string &module_triple = mainModule->getTargetTriple();
+  std::string host_triple = llvm::sys::getDefaultTargetTriple();
+
+  if (module_triple != host_triple)
+    klee_warning("Module and host target triples do not match: '%s' != '%s'\n"
+                 "This may cause unexpected crashes or assertion violations.",
+                 module_triple.c_str(), host_triple.c_str());
+
+  // Detect architecture
+  std::string opt_suffix = "64"; // Fall back to 64bit
+  if (module_triple.find("i686") != std::string::npos ||
+      module_triple.find("i586") != std::string::npos ||
+      module_triple.find("i486") != std::string::npos ||
+      module_triple.find("i386") != std::string::npos)
+    opt_suffix = "32";
+
+  // Add additional user-selected suffix
+  opt_suffix += "_" + RuntimeBuild.getValue();
+
+  // Push the module as the first entry
+  loadedModules.emplace_back(std::move(M));
+
   std::string LibraryDir = KleeHandler::getRunTimeLibraryPath(argv[0]);
-  Interpreter::ModuleOptions Opts(LibraryDir.c_str(), EntryPoint,
+  Interpreter::ModuleOptions Opts(LibraryDir.c_str(), EntryPoint, opt_suffix,
                                   /*Optimize=*/OptimizeModule,
                                   /*CheckDivZero=*/CheckDivZero,
                                   /*CheckOvershift=*/CheckOvershift);
 
-  LLVMContext ctx;
-  auto loadedModules = loadBitcode(InputFile, ctx, Opts);
+  if (WithPOSIXRuntime) {
+    SmallString<128> Path(Opts.LibraryDir);
+    llvm::sys::path::append(Path, "libkleeRuntimePOSIX" + opt_suffix + ".bca");
+    klee_message("NOTE: Using POSIX model: %s", Path.c_str());
+    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
+                        errorMsg))
+      klee_error("error loading POSIX support '%s': %s", Path.c_str(),
+                 errorMsg.c_str());
+
+    std::string libcPrefix = (Libc == LibcType::UcLibc ? "__user_" : "");
+    preparePOSIX(loadedModules, libcPrefix);
+  }
+
+  if (Libcxx) {
+#ifndef SUPPORT_KLEE_LIBCXX
+    klee_error("KLEE was not compiled with libc++ support");
+#else
+    SmallString<128> LibcxxBC(Opts.LibraryDir);
+    llvm::sys::path::append(LibcxxBC, KLEE_LIBCXX_BC_NAME);
+    if (!klee::loadFile(LibcxxBC.c_str(), mainModule->getContext(), loadedModules,
+                        errorMsg))
+      klee_error("error loading libc++ '%s': %s", LibcxxBC.c_str(),
+                 errorMsg.c_str());
+    klee_message("NOTE: Using libc++ : %s", LibcxxBC.c_str());
+#ifdef SUPPORT_KLEE_EH_CXX
+    SmallString<128> EhCxxPath(Opts.LibraryDir);
+    llvm::sys::path::append(EhCxxPath, "libkleeeh-cxx" + opt_suffix + ".bca");
+    if (!klee::loadFile(EhCxxPath.c_str(), mainModule->getContext(),
+                        loadedModules, errorMsg))
+      klee_error("error loading libklee-eh-cxx '%s': %s", EhCxxPath.c_str(),
+                 errorMsg.c_str());
+    klee_message("NOTE: Enabled runtime support for C++ exceptions");
+#else
+    klee_message("NOTE: KLEE was not compiled with support for C++ exceptions");
+#endif
+#endif
+  }
+
+  switch (Libc) {
+  case LibcType::KleeLibc: {
+    // FIXME: Find a reasonable solution for this.
+    SmallString<128> Path(Opts.LibraryDir);
+    llvm::sys::path::append(Path,
+                            "libkleeRuntimeKLEELibc" + opt_suffix + ".bca");
+    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
+                        errorMsg))
+      klee_error("error loading klee libc '%s': %s", Path.c_str(),
+                 errorMsg.c_str());
+  }
+  /* Falls through. */
+  case LibcType::FreestandingLibc: {
+    SmallString<128> Path(Opts.LibraryDir);
+    llvm::sys::path::append(Path,
+                            "libkleeRuntimeFreestanding" + opt_suffix + ".bca");
+    if (!klee::loadFile(Path.c_str(), mainModule->getContext(), loadedModules,
+                        errorMsg))
+      klee_error("error loading freestanding support '%s': %s", Path.c_str(),
+                 errorMsg.c_str());
+    break;
+  }
+  case LibcType::UcLibc:
+    linkWithUclibc(LibraryDir, opt_suffix, loadedModules);
+    break;
+  }
+
+  for (const auto &library : LinkLibraries) {
+    if (!klee::loadFile(library, mainModule->getContext(), loadedModules,
+                        errorMsg))
+      klee_error("error loading bitcode library '%s': %s", library.c_str(),
+                 errorMsg.c_str());
+  }
 
   // FIXME: Change me to std types.
   int pArgc;
@@ -1882,7 +1928,7 @@ int main(int argc, char **argv, char **envp) {
   uint64_t queryCounterexamples =
     *theStatisticManager->getStatisticByName("QueriesCEX");
   uint64_t queryConstructs =
-    *theStatisticManager->getStatisticByName("QueriesConstructs");
+    *theStatisticManager->getStatisticByName("QueryConstructs");
   uint64_t instructions =
     *theStatisticManager->getStatisticByName("Instructions");
   uint64_t forks =
@@ -1904,13 +1950,15 @@ int main(int argc, char **argv, char **envp) {
     << "KLEE: done: query cex = " << queryCounterexamples << "\n";
 
   std::stringstream stats;
-  stats << "\n";
-  stats << "KLEE: done: total instructions = "
-        << instructions << "\n";
-  stats << "KLEE: done: completed paths = "
-        << handler->getNumPathsExplored() << "\n";
-  stats << "KLEE: done: generated tests = "
-        << handler->getNumTestCases() << "\n";
+  stats << '\n'
+        << "KLEE: done: total instructions = " << instructions << '\n'
+        << "KLEE: done: completed paths = " << handler->getNumPathsCompleted()
+        << '\n'
+        << "KLEE: done: partially completed paths = "
+        << handler->getNumPathsExplored() - handler->getNumPathsCompleted()
+        << '\n'
+        << "KLEE: done: generated tests = " << handler->getNumTestCases()
+        << '\n';
 
   bool useColors = llvm::errs().is_displayed();
   if (useColors)

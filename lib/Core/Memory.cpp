@@ -10,15 +10,14 @@
 #include "Memory.h"
 
 #include "Context.h"
+#include "ExecutionState.h"
 #include "MemoryManager.h"
-#include "ObjectHolder.h"
 
 #include "klee/Expr/ArrayCache.h"
 #include "klee/Expr/Expr.h"
-#include "klee/Internal/Support/ErrorHandling.h"
-#include "klee/OptionCategories.h"
+#include "klee/Support/OptionCategories.h"
 #include "klee/Solver/Solver.h"
-#include "klee/util/BitArray.h"
+#include "klee/Support/ErrorHandling.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instruction.h"
@@ -38,27 +37,6 @@ namespace {
                     cl::desc("Use constant arrays instead of updates when possible (default=true)\n"),
                     cl::init(true),
                     cl::cat(SolvingCat));
-}
-
-/***/
-
-ObjectHolder::ObjectHolder(const ObjectHolder &b) : os(b.os) { 
-  if (os) ++os->refCount; 
-}
-
-ObjectHolder::ObjectHolder(ObjectState *_os) : os(_os) { 
-  if (os) ++os->refCount; 
-}
-
-ObjectHolder::~ObjectHolder() { 
-  if (os && --os->refCount==0) delete os; 
-}
-  
-ObjectHolder &ObjectHolder::operator=(const ObjectHolder &b) {
-  if (b.os) ++b.os->refCount;
-  if (os && --os->refCount==0) delete os;
-  os = b.os;
-  return *this;
 }
 
 /***/
@@ -113,7 +91,7 @@ ref<Expr> MemoryObject::getSymbolicAddress(klee::ArrayCache &array) {
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
   : parent(parent),
-    updates(0, 0),
+    updates(nullptr, nullptr),
     sizeBound(0),
     initialized(true),
     symbolic(false),
@@ -132,7 +110,7 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent)
 
 ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const Array *array)
   : parent(parent),
-    updates(array, 0),
+    updates(array, nullptr),
     sizeBound(0),
     initialized(false),
     symbolic(true),
@@ -146,17 +124,14 @@ ObjectStatePlane::ObjectStatePlane(const ObjectState *parent, const ObjectStateP
   : parent(parent),
     concreteStore(os.concreteStore),
     concreteMask(os.concreteMask),
-    flushMask(os.flushMask),
     knownSymbolics(os.knownSymbolics),
+    unflushedMask(os.unflushedMask),
     updates(os.updates),
     sizeBound(os.sizeBound),
     initialized(os.initialized),
     symbolic(os.symbolic),
     initialValue(os.initialValue) {
   assert(!os.parent->readOnly && "no need to copy read only object?");
-}
-
-ObjectStatePlane::~ObjectStatePlane() {
 }
 
 /***/
@@ -171,8 +146,8 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
     // should avoid creating UpdateNode instances we never use.
     unsigned NumWrites = updates.head ? updates.head->getSize() : 0;
     std::vector< std::pair< ref<Expr>, ref<Expr> > > Writes(NumWrites);
-    const UpdateNode *un = updates.head;
-    for (unsigned i = NumWrites; i != 0; un = un->next) {
+    const auto *un = updates.head.get();
+    for (unsigned i = NumWrites; i != 0; un = un->next.get()) {
       --i;
       Writes[i] = std::make_pair(un->index, un->value);
     }
@@ -199,9 +174,15 @@ const UpdateList &ObjectStatePlane::getUpdates() const {
     }
 
     static unsigned id = 0;
-    const Array *array = parent->getArrayCache()->CreateArray(
-        "const_arr" + llvm::utostr(++id), sizeBound, &Contents[0],
-        &Contents[0] + Contents.size());
+    const Array *array;
+    if (sizeBound == 0) {
+       array = parent->getArrayCache()->CreateArray(
+          "const_arr" + llvm::utostr(++id), sizeBound);
+    } else {
+      array = parent->getArrayCache()->CreateArray(
+          "const_arr" + llvm::utostr(++id), sizeBound, &Contents[0],
+          &Contents[0] + Contents.size());
+    }
     updates = UpdateList(array, 0);
 
     // Apply the remaining (non-constant) writes.
@@ -217,7 +198,8 @@ void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
   for (unsigned i = 0; i < concreteStore.size(); i++) {
     if (isByteKnownSymbolic(i)) {
       ref<ConstantExpr> ce;
-      bool success = solver->getValue(state, read8(i), ce);
+      bool success = solver->getValue(state.constraints, read8(i), ce,
+                                      state.queryMetaData);
       if (!success) {
         klee_warning("Solver timed out when getting a value for external call, "
                      "segment + offset %lu+%u will have random value",
@@ -233,7 +215,7 @@ void ObjectStatePlane::flushToConcreteStore(TimingSolver *solver,
 
 void ObjectStatePlane::makeConcrete() {
   concreteMask.resize(0);
-  flushMask.resize(0);
+  unflushedMask.resize(0);
   knownSymbolics.clear();
 }
 
@@ -253,37 +235,39 @@ Cache Invariants
 --
 isByteKnownSymbolic(i) => !isByteConcrete(i)
 isByteConcrete(i) => !isByteKnownSymbolic(i)
-!isByteFlushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
+isByteUnflushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
  */
 
 void ObjectStatePlane::flushForRead() const {
   // TODO: iterate only over the offsets for which we have information
   // (SparseVector may be, well, sparse...)
   for (unsigned offset = 0; offset < sizeBound; offset++) {
-    if (!isByteFlushed(offset)) {
+    if (isByteUnflushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
                        ConstantExpr::create(getConcreteValue(offset), Expr::Int8));
       } else {
-        assert(isByteKnownSymbolic(offset) && "invalid bit set in flushMask");
+        assert(isByteKnownSymbolic(offset) &&
+               "invalid bit set in unflushedMask");
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
                        knownSymbolics[offset]);
       }
 
       markByteFlushed(offset);
     }
-  } 
+  }
 }
 
 void ObjectStatePlane::flushForWrite() {
   for (unsigned offset = 0; offset < sizeBound; offset++) {
-    if (!isByteFlushed(offset)) {
+    if (isByteUnflushed(offset)) {
       if (isByteConcrete(offset)) {
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
                        ConstantExpr::create(getConcreteValue(offset), Expr::Int8));
         markByteSymbolic(offset);
       } else {
-        assert(isByteKnownSymbolic(offset) && "invalid bit set in flushMask");
+        assert(isByteKnownSymbolic(offset) &&
+               "invalid bit set in unflushedMask");
         updates.extend(ConstantExpr::create(offset, Expr::Int32),
                        knownSymbolics[offset]);
         setKnownSymbolic(offset, 0);
@@ -305,10 +289,10 @@ bool ObjectStatePlane::isByteConcrete(unsigned offset) const {
   return initialized;
 }
 
-bool ObjectStatePlane::isByteFlushed(unsigned offset) const {
-  if (offset < flushMask.size())
-    return !flushMask.get(offset);
-  return !initialized;
+bool ObjectStatePlane::isByteUnflushed(unsigned offset) const {
+  if (offset < unflushedMask.size())
+    return unflushedMask.get(offset);
+  return initialized;
 }
 
 bool ObjectStatePlane::isByteKnownSymbolic(unsigned offset) const {
@@ -334,21 +318,21 @@ void ObjectStatePlane::markByteSymbolic(unsigned offset) {
 }
 
 void ObjectStatePlane::markByteUnflushed(unsigned offset) const {
-  if (offset >= flushMask.size()) {
+  if (offset >= unflushedMask.size()) {
     if (initialized)
       return;
-    flushMask.resize(sizeBound, initialized);
+    unflushedMask.resize(sizeBound, initialized);
   }
-  flushMask.set(offset);
+  unflushedMask.set(offset);
 }
 
 void ObjectStatePlane::markByteFlushed(unsigned offset) const {
-  if (offset >= flushMask.size()) {
+  if (offset >= unflushedMask.size()) {
     if (!initialized)
       return;
-    flushMask.resize(sizeBound, initialized);
+    unflushedMask.resize(sizeBound, initialized);
   }
-  flushMask.unset(offset);
+  unflushedMask.unset(offset);
 }
 
 void ObjectStatePlane::setKnownSymbolic(unsigned offset,
@@ -370,7 +354,7 @@ ref<Expr> ObjectStatePlane::read8(unsigned offset) const {
   } else if (isByteKnownSymbolic(offset)) {
     return knownSymbolics[offset];
   } else {
-    assert(isByteFlushed(offset) && "unflushed byte without cache value");
+    assert(!isByteUnflushed(offset) && "unflushed byte without cache value");
     
     return read8(ConstantExpr::create(offset, Expr::Int32));
   }    
@@ -396,7 +380,7 @@ ref<Expr> ObjectStatePlane::read8(ref<Expr> offset) const {
   ref<Expr> cond = UltExpr::create(offset,
                                    ConstantExpr::alloc(updates.root->constantValues.size(), Expr::Int32));
 
-  for (const UpdateNode* node = updates.head; node != 0; node = node->next) {
+  for (const UpdateNode* node = updates.head.get(); node != nullptr; node = node->next.get()) {
     cond = OrExpr::create(EqExpr::create(offset, node->index), cond);
   }
   
@@ -591,13 +575,13 @@ void ObjectStatePlane::print() const {
     llvm::errs() << "\t\t["<<i<<"]"
                << " concrete? " << isByteConcrete(i)
                << " known-sym? " << isByteKnownSymbolic(i)
-               << " flushed? " << isByteFlushed(i) << " = ";
+               << " unflushed? " << isByteUnflushed(i) << " = ";
     ref<Expr> e = read8(i);
     llvm::errs() << e << "\n";
   }
 
   llvm::errs() << "\tUpdates:\n";
-  for (const UpdateNode *un=updates.head; un; un=un->next) {
+  for (const auto *un = updates.head.get(); un; un = un->next.get()) {
     llvm::errs() << "\t\t[" << un->index << "] = " << un->value << "\n";
   }
 }
@@ -606,57 +590,40 @@ void ObjectStatePlane::print() const {
 
 ObjectState::ObjectState(const MemoryObject *mo)
   : copyOnWriteOwner(0),
-    refCount(0),
     object(mo),
     readOnly(false),
-    segmentPlane(0),
-    offsetPlane(new ObjectStatePlane(this)){
-  mo->refCount++;
+    segmentPlane(nullptr),
+    offsetPlane(new ObjectStatePlane(this)) {
 }
 
 
 ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
   : copyOnWriteOwner(0),
-    refCount(0),
     object(mo),
     readOnly(false),
-    segmentPlane(0),
+    segmentPlane(nullptr),
     offsetPlane(new ObjectStatePlane(this, array)) {
-  mo->refCount++;
 }
 
 ObjectState::ObjectState(const ObjectState &os)
   : copyOnWriteOwner(0),
-    refCount(0),
     object(os.object),
     readOnly(false),
-    segmentPlane(0),
+    segmentPlane(nullptr),
     offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
-  object->refCount++;
   if (os.segmentPlane)
     segmentPlane = new ObjectStatePlane(this, *os.segmentPlane);
 }
 
 ObjectState::ObjectState(const ObjectState &os, const MemoryObject *mo)
   : ObjectState(os) {
-  object->refCount--;
-  object = mo;
-  object->refCount++;
+    object = mo;
 }
 
 ObjectState::~ObjectState() {
   if (segmentPlane)
     delete segmentPlane;
   delete offsetPlane;
-  if (object)
-  {
-    assert(object->refCount > 0);
-    object->refCount--;
-    if (object->refCount == 0)
-    {
-      delete object;
-    }
-  }
 }
 
 KValue ObjectState::read8(unsigned offset) const {
