@@ -37,6 +37,7 @@ set(SRC_FILES
         strtoull.c
         strtoumax.c
         strerror.c
+        time.c
         tolower.c
         toupper.c
         )
