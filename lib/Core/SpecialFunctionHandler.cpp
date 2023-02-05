@@ -1381,32 +1381,63 @@ void SpecialFunctionHandler::handleUnsupportedPthread(ExecutionState &state,
         "unsupported pthread API.");
 }
 
+size_t SpecialFunctionHandler::parseArgumentForScanf(ExecutionState& state, const Cell &argument) {
+  size_t argCount = 0;
+  const auto& formatArg = argument;
+  if (dyn_cast<ConstantExpr>(formatArg.getValue())) {
+    std::string format = readStringAtAddress(state, formatArg);
+    format.erase(remove_if(format.begin(), format.end(), isspace), format.end());
+    std::string delimiter = "%";
+
+    size_t last = 0, next = 0;
+    if ((format)[0] != '%') {
+      klee_warning("(f)scanf: format is wrong, undefined behavior!");
+    }
+
+    while ((next = format.find(delimiter, last)) != std::string::npos) {
+      last = next + 1;
+      if (format[last] != '*') {
+        argCount++;
+      }
+    }
+  }
+  return argCount ? argCount : SIZE_MAX;
+}
+
 void SpecialFunctionHandler::handleScanf(ExecutionState &state,
                                          KInstruction *target,
                                          const std::vector<Cell> &arguments) {
   size_t size = arguments.size();
   if (size < 2) {
-    executor.terminateStateOnExecError(state, "unsupported function model");
+    executor.terminateStateOnExecError(state, "scanf: unsupported function model");
     return;
   }
 
-  /* FIXME: we should check the format too -- if the format is "%d" and arguments are &a, &b,
-   * then we should not make 'b' symbolic */
-  for (unsigned i = 1; i < size; ++i) { /* first two arguments are file and format */
-    Executor::ExactResolutionList rl;
-    executor.resolveExact(state, arguments[i], rl, "_fscanf");
+  size_t formatArgCount = parseArgumentForScanf(state, arguments[0]);
 
-    for (auto it = rl.begin(), ie = rl.end(); it != ie; ++it) {
-      const MemoryObject *mo = it->first.first;
-      executor.executeMakeSymbolic(state, mo, "_fscanf_"+std::to_string(mo->id));
+  if (formatArgCount == SIZE_MAX) { // FIXME: Should we report this UB as an error?
+    klee_warning("scanf: unsupported format specified, might result in undefined behavior!");
+    formatArgCount = 0;
+  }
+
+  size_t realizedArgs = 0;
+  for (size_t i = 1; i < size; ++i) { /* first two arguments are file and format */
+    if (realizedArgs == formatArgCount) {
+      break;
+    }
+    Executor::ExactResolutionList rl;
+    executor.resolveExact(state, arguments[i], rl, "_scanf");
+
+    for (const auto& it : rl) {
+      const MemoryObject *mo = it.first.first;
+      /* FIXME: Length of the nondet value should be reduced */
+      executor.executeMakeSymbolic(state, mo, "_scanf_"+std::to_string(mo->id));
+      ++realizedArgs;
     }
   }
 
-  /* FIXME: we unnecesarily over-approximate here */
-  executor.bindLocal(target, state,
-                   executor.createNondetValue(state, Expr::Int32,
-                                              true, target,
-                                              "fscanf_ret", false));
+  auto expr = ConstantExpr::create(realizedArgs, Expr::Int64);
+  executor.bindLocal(target, state, expr);
 }
 
 
@@ -1415,26 +1446,33 @@ void SpecialFunctionHandler::handleFscanf(ExecutionState &state,
                                          const std::vector<Cell> &arguments) {
   size_t size = arguments.size();
   if (size < 3) {
-    executor.terminateStateOnExecError(state, "unsupported function model");
+    executor.terminateStateOnExecError(state, "fscanf: unsupported function model");
     return;
   }
 
-  /* FIXME: we should check the format too -- if the format is "%d" and arguments are &a, &b,
-   * then we should not make 'b' symbolic. We also handle sscanf with this handler,
-     which is even more dangereous as we loose the connection between string and data. */
+  size_t formatArgCount = parseArgumentForScanf(state, arguments[1]);
+
+  if (formatArgCount == SIZE_MAX) { // FIXME: Should we report this UB as an error?
+    klee_warning("fscanf: unsupported format specified, might result in undefined behavior!");
+    formatArgCount = 0;
+  }
+
+  size_t realizedArgs = 0;
   for (unsigned i = 2; i < size; ++i) { /* first two arguments are file and format */
+    if (realizedArgs == formatArgCount) {
+      break;
+    }
     Executor::ExactResolutionList rl;
     executor.resolveExact(state, arguments[i], rl, "_fscanf");
 
-    for (auto it = rl.begin(), ie = rl.end(); it != ie; ++it) {
-      const MemoryObject *mo = it->first.first;
+    for (const auto& it : rl) {
+      const MemoryObject *mo = it.first.first;
+      /* FIXME: Length of the nondet value should be reduced */
       executor.executeMakeSymbolic(state, mo, "_fscanf_"+std::to_string(mo->id));
+      ++realizedArgs;
     }
   }
 
-  /* FIXME: we unnecesarily over-approximate here */
-  executor.bindLocal(target, state,
-                   executor.createNondetValue(state, Expr::Int32,
-                                              true, target,
-                                              "fscanf_ret", false));
+  auto expr = ConstantExpr::create(realizedArgs, Expr::Int64);
+  executor.bindLocal(target, state, expr);
 }

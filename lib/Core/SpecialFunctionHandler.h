@@ -71,7 +71,8 @@ namespace klee {
     static const_iterator end();
     static int size();
 
-
+  private:
+    size_t parseArgumentForScanf(ExecutionState& state, const Cell &argument);
 
   public:
     SpecialFunctionHandler(Executor &_executor);
