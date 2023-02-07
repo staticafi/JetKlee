@@ -16,6 +16,8 @@ infrastructure. Currently, there are two primary components:
      with additional support for making parts of the operating system
      environment symbolic.
 
+To easily install required dependencies, see `installDependencies.sh` file included.
+
 Additionally, there is a simple library for replaying computed inputs
 on native code (for closed programs). There is also a more complicated
 infrastructure for replaying the inputs generated for the POSIX/Linux
