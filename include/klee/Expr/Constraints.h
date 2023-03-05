@@ -58,6 +58,8 @@ public:
     return constraints != other.constraints;
   }
 
+  bool includeConstantConstraints = false;
+
 private:
   std::vector<ref<Expr>> constraints;
 

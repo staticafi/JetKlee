@@ -150,6 +150,23 @@ namespace {
                 cl::desc("Write .sym.path files for each test case (default=false)"),
                 cl::cat(TestCaseCat));
 
+  cl::opt<bool>
+  WritePathConditionSymbols("write-path-condition-symbols",
+                cl::desc("Write .condition_symbols files for each test case (default=false)"),
+                cl::cat(TestCaseCat));
+
+  cl::opt<bool>
+  WriteJSONTestCases("write-json",
+                cl::desc("Write test cases in json format (default=false)"),
+                cl::cat(TestCaseCat));
+
+  cl::opt<std::string>
+  TestCaseJSONPath("json-path",
+                 cl::desc("Specify a file for writing test cases in json format (default=test_cases.json)"),
+                 cl::init("test_cases.json"),
+                 cl::value_desc("json test case file"),
+                 cl::cat(TestCaseCat));
+
 
   /*** Startup options ***/
 
@@ -308,8 +325,8 @@ namespace {
 
   cl::opt<unsigned>
   MaxTests("max-tests",
-           cl::desc("Stop execution after generating the given number of tests. Extra tests corresponding to partially explored paths will also be dumped.  Set to 0 to disable (default=0)"),
-           cl::init(0),
+           cl::desc("Stop execution after generating the given number of tests. Extra tests corresponding to partially explored paths will also be dumped.  Set to -1 to disable (default=-1)"),
+           cl::init(-1),
            cl::cat(TerminationCat));
 
   cl::opt<bool>
@@ -336,6 +353,8 @@ private:
   Interpreter *m_interpreter;
   TreeStreamWriter *m_pathWriter, *m_symPathWriter;
   std::unique_ptr<llvm::raw_ostream> m_infoFile;
+  std::unique_ptr<llvm::raw_fd_ostream> m_jsonFile;
+
 
   SmallString<128> m_outputDirectory;
 
@@ -458,6 +477,9 @@ KleeHandler::KleeHandler(int argc, char **argv)
 
   // open info
   m_infoFile = openOutputFile("info");
+
+  if (WriteJSONTestCases)
+    m_jsonFile = openOutputFile(TestCaseJSONPath);
 }
 
 KleeHandler::~KleeHandler() {
@@ -654,6 +676,41 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       }
     }
 
+    if (WriteJSONTestCases) {
+      std::vector<std::vector<uint8_t>> model;
+      bool success = m_interpreter->getSimpleSymbolicSolution(state, model);
+      auto f = m_jsonFile.get();
+
+      *f << "{"
+          <<   "\"description\": \"Symbiotic test exchange format\", "
+          <<   "\"version\": \"0.1\", "
+          <<   "\"feasible\": " << (success ? "true, " : "false");
+      if (success) {
+        *f << "\"input_tc\": {"
+            <<   "\"bytes\": [";
+        bool first = true;
+        for (size_t i = 0; i < model.size(); i++) {
+          for (uint8_t byte : model[i]) {
+            if (!first)
+              *f << ", ";
+            *f << +byte; // print byte as a number in base 10
+            first = false;
+          }
+        }
+        *f <<   "], "
+            << "\"chunks\": [";
+        first = true;
+        for (size_t i = 0; i < model.size(); i++) {
+          if (!first)
+            *f << ", ";
+          *f << model[i].size();
+          first = false;
+        }
+        *f << "]}";
+      }
+      *f << "}\n";
+    }
+
     if (WriteWitness) {
       if (auto witness = openTestFile("graphml", id)) {
 
@@ -841,6 +898,23 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       }
     }
 
+    if (WritePathConditionSymbols) {
+      auto f = openTestFile("path_symbols", id);
+      if (f) {
+        std::vector<std::vector<const Array *>> pathConditionSymbols;
+        m_interpreter->getPathConditionSymbols(state, pathConditionSymbols);
+        for (std::vector<const Array *> &symbols : pathConditionSymbols) {
+          const char * sep = "";
+          for (const Array * symbol : symbols) {
+            *f << sep;
+            sep = ", ";
+            *f << symbol->name;
+          }
+          *f << '\n';
+        }
+      }
+    }
+
     if (errorMessage || WriteKQueries) {
       std::string constraints;
       m_interpreter->getConstraintLog(state, constraints,Interpreter::KQUERY);
@@ -917,11 +991,16 @@ void KleeHandler::loadPathFile(std::string name,
   if (!f.good())
     assert(0 && "unable to open path file");
 
-  while (f.good()) {
-    unsigned value;
-    f >> value;
-    buffer.push_back(!!value);
-    f.get();
+  std::string line;
+  while (f.good() && std::getline(f, line)) {
+    if (line == "0") {
+      buffer.push_back(false);
+    } else if (line == "1") {
+      buffer.push_back(true);
+    } else {
+      llvm::errs() << "ERROR: invalid path format\n";
+      exit(1);
+    }
   }
 }
 

@@ -36,3 +36,7 @@ cmake-build-debug/
 
 #idea files
 .idea/
+
+#vscode files
+.vscode/
+

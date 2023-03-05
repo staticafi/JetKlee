@@ -463,3 +463,79 @@ void InterleavedSearcher::update(
          ie = searchers.end(); it != ie; ++it)
     (*it)->update(current, addedStates, removedStates);
 }
+
+InteractiveSearcher::InteractiveSearcher(Executor &_executor, std::string file)
+  : executor(_executor),
+    inputStream(file) {
+}
+
+InteractiveSearcher::~InteractiveSearcher() {
+}
+
+ExecutionState &InteractiveSearcher::selectState() {
+  /*
+  if (lastState != nullptr)
+  {
+    ExecutionState &ret = *lastState;
+
+    auto *inst = (*(lastState->pc)).inst;
+    if (BranchInst *bi = dyn_cast<BranchInst>(inst))
+      if (bi->isConditional())
+        lastState = nullptr;
+
+    return ret;
+  }
+ // TODO: read line by line
+  PTreeNode *n = executor.processTree->root.get();
+  while (inputStream.good()) {
+    char c;
+    inputStream.get(c);
+    if (c == '\n') {
+      break;
+    } else if (c == '0' && n->left != nullptr) {
+      n = n->left.get();
+    } else if (c == '1' && n->right != nullptr) {
+      n = n->right.get();
+    } else {
+      klee_error("Interactive searcher hit undiscovered state. Stopping search early.");
+    }
+  }
+  lastState = n->state;
+  return *lastState;
+  */
+
+  // TODO: handle invalid states
+  if (currentPath.empty())
+    std::getline(inputStream, currentPath);
+
+  PTreeNode *n = executor.processTree->root.get();
+  bool pathDone = true;
+  for (char& c : currentPath) {
+    if (c == '0' && n->left != nullptr) {
+      n = n->left.get();
+    } else if (c == '1' && n->right != nullptr) {
+      n = n->right.get();
+    } else {
+      pathDone = false;
+      break;
+    }
+  }
+
+  if (pathDone)
+  {
+    currentPath.clear();
+    executor.interpreterHandler->processTestCase(*n->state, "", "");
+    // (*n->state->constraints.begin())->print(llvm::errs()); // debug print constraints
+  }
+
+  return *n->state;
+}
+
+void InteractiveSearcher::update(
+    ExecutionState *current, const std::vector<ExecutionState *> &addedStates,
+    const std::vector<ExecutionState *> &removedStates) {
+}
+
+bool InteractiveSearcher::empty() {
+  return currentPath.empty() && inputStream.peek() == std::ifstream::traits_type::eof();
+}

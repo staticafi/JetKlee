@@ -18,6 +18,7 @@
 #include <queue>
 #include <set>
 #include <vector>
+#include <fstream>
 
 namespace llvm {
   class BasicBlock;
@@ -283,6 +284,25 @@ namespace klee {
     }
   };
 
+  class InteractiveSearcher : public Searcher {
+    Executor &executor;
+    std::ifstream inputStream;
+    std::string currentPath;
+    // ExecutionState *lastState = nullptr;
+
+  public:
+    InteractiveSearcher(Executor &_executor, std::string path);
+    ~InteractiveSearcher();
+
+    ExecutionState &selectState();
+    void update(ExecutionState *current,
+                const std::vector<ExecutionState *> &addedStates,
+                const std::vector<ExecutionState *> &removedStates);
+    bool empty();
+    void printName(llvm::raw_ostream &os) {
+      os << "InteractiveSearcher\n";
+    }
+  };
 }
 
 #endif /* KLEE_SEARCHER_H */

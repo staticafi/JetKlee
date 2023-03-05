@@ -228,11 +228,13 @@ public:
 
   NondetValue& addNondetValue(const KValue& val, bool isSigned, const std::string& name);
 
+  bool includeConstantConstraints = false;
+
 private:
   ExecutionState() : ptreeNode(0) {}
 
 public:
-  ExecutionState(KFunction *kf);
+  ExecutionState(KFunction *kf, bool includeConstantConstraints);
 
   // XXX total hack, just used to make a state so solver can
   // use on structure

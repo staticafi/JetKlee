@@ -65,7 +65,7 @@ StackFrame::~StackFrame() {
 
 /***/
 
-ExecutionState::ExecutionState(KFunction *kf) :
+ExecutionState::ExecutionState(KFunction *kf, bool includeConstantConstraints) :
     pc(kf->instructions),
     prevPC(pc),
 
@@ -76,11 +76,13 @@ ExecutionState::ExecutionState(KFunction *kf) :
     coveredNew(false),
     forkDisabled(false),
     ptreeNode(0),
-    steppedInstructions(0){
+    steppedInstructions(0),
+    includeConstantConstraints(includeConstantConstraints) {
   pushFrame(0, kf);
+  constraints.includeConstantConstraints = includeConstantConstraints;
 }
 
-ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
+ExecutionState::ExecutionState(const std::vector<ref<Expr>> &assumptions)
     : constraints(assumptions), ptreeNode(0) {}
 
 ExecutionState::~ExecutionState() {
@@ -130,13 +132,15 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     symbolics(state.symbolics),
     arrayNames(state.arrayNames),
     openMergeStack(state.openMergeStack),
-    steppedInstructions(state.steppedInstructions)
+    steppedInstructions(state.steppedInstructions),
+    includeConstantConstraints(state.includeConstantConstraints)
 {
   for (unsigned int i=0; i<symbolics.size(); i++)
     symbolics[i].first->refCount++;
 
   for (auto cur_mergehandler: openMergeStack)
     cur_mergehandler->addOpenState(this);
+  constraints.includeConstantConstraints = includeConstantConstraints;
 }
 
 ExecutionState *ExecutionState::branch() {
@@ -375,6 +379,7 @@ bool ExecutionState::merge(const ExecutionState &b) {
   }
 
   constraints = ConstraintManager();
+  constraints.includeConstantConstraints = includeConstantConstraints;
   for (std::set< ref<Expr> >::iterator it = commonConstraints.begin(), 
          ie = commonConstraints.end(); it != ie; ++it)
     constraints.addConstraint(*it);

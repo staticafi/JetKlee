@@ -90,6 +90,7 @@ class Executor : public Interpreter {
   friend class StatsTracker;
   friend class MergeHandler;
   friend class MergingSearcher;
+  friend class InteractiveSearcher;
 
 public:
   typedef std::pair<ExecutionState*,ExecutionState*> StatePair;
@@ -551,6 +552,9 @@ public:
 
   unsigned getSymbolicPathStreamID(const ExecutionState &state) override;
 
+  void getPathConditionSymbols(const ExecutionState &state,
+                               std::vector<std::vector<const Array *>> &res) override;
+
   void getConstraintLog(const ExecutionState &state, std::string &res,
                         Interpreter::LogType logFormat =
                             Interpreter::STP) override;
@@ -563,6 +567,11 @@ public:
   // get a sequence of inputs that drive the program to this state
   std::vector<NamedConcreteValue>
   getTestVector(const ExecutionState &state) override;
+
+  bool getSimpleSymbolicSolution(
+      const ExecutionState &state,
+      std::vector<std::vector<unsigned char>> &res)
+      override;
 
   void getCoveredLines(const ExecutionState &state,
                        std::map<const std::string *, std::set<unsigned>> &res)

@@ -154,6 +154,9 @@ public:
 
   virtual unsigned getSymbolicPathStreamID(const ExecutionState &state) = 0;
 
+  virtual void getPathConditionSymbols(const ExecutionState &state,
+                                       std::vector<std::vector<const Array *>> &res) = 0;
+
   virtual void getConstraintLog(const ExecutionState &state,
                                 std::string &res,
                                 LogType logFormat = STP) = 0;
@@ -163,6 +166,10 @@ public:
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) = 0;
+
+
+  virtual bool getSimpleSymbolicSolution(const ExecutionState &state,
+                                         std::vector<std::vector<unsigned char>> &res) = 0;
 
   // get a sequence of inputs that drive the program to this state
   virtual std::vector<NamedConcreteValue>

@@ -66,6 +66,18 @@ cl::opt<bool> UseBatchingSearch(
     cl::init(false),
     cl::cat(SearchCat));
 
+cl::opt<bool> UseInteractiveSearch(
+    "use-interactive-search",
+    cl::desc("Use interactive searcher (specify path to expand in a file)"
+             "see --interactive-search-file) (default=false)"),
+    cl::init(false),
+    cl::cat(SearchCat));
+
+cl::opt<std::string> InteractiveSearchFile(
+    "interactive-search-file",
+    cl::desc("Path to a file when using --use-interactive-search"),
+    cl::cat(SearchCat));
+
 cl::opt<unsigned> BatchInstructions(
     "batch-instructions",
     cl::desc("Number of instructions to batch when using "
@@ -152,6 +164,11 @@ Searcher *klee::constructUserSearcher(Executor &executor) {
 
   if (UseIterativeDeepeningTimeSearch) {
     searcher = new IterativeDeepeningTimeSearcher(searcher);
+  }
+
+  if (UseInteractiveSearch)
+  {
+    searcher = new InteractiveSearcher(executor, InteractiveSearchFile);
   }
 
   llvm::raw_ostream &os = executor.getHandler().getInfoStream();

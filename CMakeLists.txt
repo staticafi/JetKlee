@@ -318,7 +318,8 @@ include(${CMAKE_SOURCE_DIR}/cmake/compiler_warnings.cmake)
 # Solvers
 ################################################################################
 # STP
-include(${CMAKE_SOURCE_DIR}/cmake/find_stp.cmake)
+# STP is not supported
+# include(${CMAKE_SOURCE_DIR}/cmake/find_stp.cmake)
 # Z3
 include(${CMAKE_SOURCE_DIR}/cmake/find_z3.cmake)
 # metaSMT

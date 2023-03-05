@@ -168,6 +168,12 @@ cl::opt<bool>
                                   "querying the solver (default=true)"),
                          cl::cat(SolvingCat));
 
+cl::opt<bool>
+    SuppressIntermediateQueries("suppress-intermediate-queries", cl::init(false),
+                         cl::desc("Suppress queries to SMT solver until state is dumped"
+                                  "(useful with interactive heuristic) (default=false)"),
+                         cl::cat(SolvingCat));
+
 
 /*** External call policy options ***/
 
@@ -963,7 +969,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
          cpn && (cpn->statistics.getValue(stats::solverTime) > 
                  stats::solverTime*MaxStaticCPSolvePct))) {
       ref<ConstantExpr> value; 
-      bool success = solver->getValue(current, condition, value);
+      bool success = SuppressIntermediateQueries || solver->getValue(current, condition, value);
       assert(success && "FIXME: Unhandled solver failure");
       (void) success;
       addConstraint(current, EqExpr::create(value, condition));
@@ -974,19 +980,29 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   time::Span timeout = coreSolverTimeout;
   if (isSeeding)
     timeout *= static_cast<unsigned>(it->second.size());
-  solver->setTimeout(timeout);
-  bool success = solver->evaluate(current, condition, res);
-  solver->setTimeout(time::Span());
-  if (!success) {
-    current.pc = current.prevPC;
-    terminateStateEarly(current, "Query timed out (fork).");
-    return StatePair(0, 0);
+  bool success;
+  if (SuppressIntermediateQueries)
+  {
+    success = true;
+    res = Solver::Unknown;
+  } else {
+    solver->setTimeout(timeout);
+    bool success = solver->evaluate(current, condition, res);
+    solver->setTimeout(time::Span());
+    if (!success) {
+      current.pc = current.prevPC;
+      terminateStateEarly(current, "Query timed out (fork).");
+      return StatePair(0, 0);
+    }
   }
 
   if (!isSeeding) {
     if (replayPath && !isInternal) {
-      assert(replayPosition<replayPath->size() &&
-             "ran out of branches in replay path mode");
+      if (replayPosition >= replayPath->size()) {
+        terminateStateEarly(current, "Hit end of path.");
+        return StatePair(0, 0);
+      }
+
       bool branch = (*replayPath)[replayPosition++];
       
       if (res==Solver::True) {
@@ -1011,14 +1027,14 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
           inhibitForking || 
           (MaxForks!=~0u && stats::forks >= MaxForks)) {
 
-	if (MaxMemoryInhibit && atMemoryLimit)
-	  klee_warning_once(0, "skipping fork (memory cap exceeded)");
-	else if (current.forkDisabled)
-	  klee_warning_once(0, "skipping fork (fork disabled on current path)");
-	else if (inhibitForking)
-	  klee_warning_once(0, "skipping fork (fork disabled globally)");
-	else 
-	  klee_warning_once(0, "skipping fork (max-forks reached)");
+        if (MaxMemoryInhibit && atMemoryLimit)
+          klee_warning_once(0, "skipping fork (memory cap exceeded)");
+        else if (current.forkDisabled)
+          klee_warning_once(0, "skipping fork (fork disabled on current path)");
+        else if (inhibitForking)
+          klee_warning_once(0, "skipping fork (fork disabled globally)");
+        else
+          klee_warning_once(0, "skipping fork (max-forks reached)");
 
         TimerStatIncrementer timer(stats::forkTime);
         if (theRNG.getBool()) {
@@ -1103,7 +1119,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
       for (std::vector<SeedInfo>::iterator siit = seeds.begin(), 
              siie = seeds.end(); siit != siie; ++siit) {
         ref<ConstantExpr> res;
-        bool success = 
+        bool success =
           solver->getValue(current, siit->assignment.evaluate(condition), res);
         assert(success && "FIXME: Unhandled solver failure");
         (void) success;
@@ -1164,8 +1180,10 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
 
 void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
-    if (!CE->isTrue())
+    if (!SuppressIntermediateQueries && !CE->isTrue())
       llvm::report_fatal_error("attempt to add invalid constraint");
+    if (SuppressIntermediateQueries)
+      state.addConstraint(condition);
     return;
   }
 
@@ -1176,8 +1194,8 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
     bool warn = false;
     for (std::vector<SeedInfo>::iterator siit = it->second.begin(), 
            siie = it->second.end(); siit != siie; ++siit) {
-      bool res;
-      bool success = 
+      bool res = false;
+      bool success = SuppressIntermediateQueries ||
         solver->mustBeFalse(state, siit->assignment.evaluate(condition), res);
       assert(success && "FIXME: Unhandled solver failure");
       (void) success;
@@ -1916,19 +1934,26 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       errorCase = AndExpr::create(errorCase, Expr::createIsZero(e));
 
       // check feasibility
-      bool result;
-      bool success __attribute__ ((unused)) = solver->mayBeTrue(state, e, result);
-      assert(success && "FIXME: Unhandled solver failure");
-      if (result) {
+      bool keepChildState = false;
+      if (SuppressIntermediateQueries) {
+        keepChildState = true;
+      } else {
+        bool result;
+        bool success __attribute__ ((unused)) = solver->mayBeTrue(state, e, result);
+        assert(success && "FIXME: Unhandled solver failure");
+        keepChildState = result;
+      }
+
+      if (keepChildState) {
         targets.push_back(d);
         expressions.push_back(e);
       }
     }
     // check errorCase feasibility
     bool result;
-    bool success __attribute__ ((unused)) = solver->mayBeTrue(state, errorCase, result);
+    bool success __attribute__ ((unused)) = SuppressIntermediateQueries || solver->mayBeTrue(state, errorCase, result);
     assert(success && "FIXME: Unhandled solver failure");
-    if (result) {
+    if (SuppressIntermediateQueries || result) {
       expressions.push_back(errorCase);
     }
 
@@ -1937,7 +1962,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     branch(state, expressions, branches);
 
     // terminate error state
-    if (result) {
+    if (SuppressIntermediateQueries || result) {
       terminateStateOnExecError(*branches.back(), "indirectbr: illegal label address");
       branches.pop_back();
     }
@@ -3132,7 +3157,7 @@ void Executor::run(ExecutionState &initialState) {
   std::vector<ExecutionState *> newStates(states.begin(), states.end());
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
-  while (!states.empty() && !haltExecution) {
+  while (!states.empty() && !haltExecution && !searcher->empty()) {
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
     stepInstruction(state);
@@ -4298,7 +4323,7 @@ KValue Executor::createNondetValue(ExecutionState &state,
     kval = expr;
   }
 
-  auto& nv = state.addNondetValue(kval, isSigned, name);
+  auto& nv = state.addNondetValue(kval, isSigned, uniqueName);
   nv.kinstruction = kinst;
 
   return kval;
@@ -4452,7 +4477,7 @@ void Executor::runFunctionAsMain(Function *f,
     }
   }
 
-  ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
+  ExecutionState *state = new ExecutionState(kmodule->functionMap[f], SuppressIntermediateQueries);
   
   if (pathWriter) 
     state->pathOS = pathWriter->open();
@@ -4518,6 +4543,15 @@ unsigned Executor::getPathStreamID(const ExecutionState &state) {
 unsigned Executor::getSymbolicPathStreamID(const ExecutionState &state) {
   assert(symPathWriter);
   return state.symPathOS.getID();
+}
+
+void Executor::getPathConditionSymbols(const ExecutionState &state,
+                                       std::vector<std::vector<const Array *>> &res) {
+  for (auto constraint : state.constraints) {
+    std::vector<const Array *> objects;
+    findSymbolicObjects(constraint, objects);
+    res.push_back(objects);
+  }
 }
 
 void Executor::getConstraintLog(const ExecutionState &state, std::string &res,
@@ -4713,6 +4747,46 @@ Executor::getTestVector(const ExecutionState &state) {
     }
   }
   return res;
+}
+
+// Analogous to getSymbolicSolution but without minimising the test case.
+// Also doesn't crash on infeasible states.
+bool Executor::getSimpleSymbolicSolution(const ExecutionState &state, std::vector<std::vector<uint8_t>> &res) {
+  res.reserve(state.nondetValues.size());
+
+  for (auto& it : state.nondetValues) {
+    ref<ConstantExpr> value;
+    bool success = solver->getValue(state, it.value.getValue(), value);
+    if (!success)
+      return false;
+
+    ref<ConstantExpr> segment;
+    success = solver->getValue(state, it.value.getSegment(), segment);
+    if (!success)
+      return false;
+
+    std::vector<uint8_t> data;
+
+    // FIXME: store the pointers as pairs too, not in two objects
+    if (auto seg = segment->getZExtValue()) {
+        auto w = Context::get().getPointerWidth();
+        auto size = static_cast<unsigned>(w)/8;
+        data.resize(size);
+        memcpy(data.data(), &seg, size);
+        res.push_back(data);
+    }
+
+    auto size = std::max(static_cast<unsigned>(it.value.getValue()->getWidth()/8), 1U);
+    assert(size > 0 && "Invalid size");
+    assert(size <= 8 && "Does not support size > 8");
+    data.clear();
+    data.resize(size);
+    uint64_t zext_val = value->getZExtValue();
+    memcpy(data.data(), &zext_val, size);
+
+    res.push_back(data);
+  }
+  return true;
 }
 
 void Executor::getCoveredLines(const ExecutionState &state,
