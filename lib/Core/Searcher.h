@@ -286,12 +286,13 @@ namespace klee {
 
   class InteractiveSearcher : public Searcher {
     Executor &executor;
-    std::ifstream inputStream;
+    std::unique_ptr<std::ifstream> inputStream;
     std::string currentPath;
     // ExecutionState *lastState = nullptr;
 
   public:
     InteractiveSearcher(Executor &_executor, std::string path);
+    InteractiveSearcher(Executor &_executor, std::unique_ptr<std::ifstream> inputStream);
     ~InteractiveSearcher();
 
     ExecutionState &selectState();

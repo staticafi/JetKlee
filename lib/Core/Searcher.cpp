@@ -466,7 +466,13 @@ void InterleavedSearcher::update(
 
 InteractiveSearcher::InteractiveSearcher(Executor &_executor, std::string file)
   : executor(_executor),
-    inputStream(file) {
+    inputStream(std::make_unique<std::ifstream>(file)) {
+}
+
+InteractiveSearcher::InteractiveSearcher(Executor &_executor,
+                                         std::unique_ptr<std::ifstream> inputStream)
+  : executor(_executor),
+    inputStream(std::move(inputStream)) {
 }
 
 InteractiveSearcher::~InteractiveSearcher() {
@@ -506,7 +512,7 @@ ExecutionState &InteractiveSearcher::selectState() {
 
   // TODO: handle invalid states
   if (currentPath.empty())
-    std::getline(inputStream, currentPath);
+    std::getline(*inputStream, currentPath);
 
   PTreeNode *n = executor.processTree->root.get();
   bool pathDone = true;
@@ -537,5 +543,5 @@ void InteractiveSearcher::update(
 }
 
 bool InteractiveSearcher::empty() {
-  return currentPath.empty() && inputStream.peek() == std::ifstream::traits_type::eof();
+  return currentPath.empty() && inputStream->peek() == std::ifstream::traits_type::eof();
 }

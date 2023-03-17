@@ -18,6 +18,8 @@
 
 #include "llvm/Support/CommandLine.h"
 
+#include <fstream>
+
 using namespace llvm;
 using namespace klee;
 
@@ -168,7 +170,11 @@ Searcher *klee::constructUserSearcher(Executor &executor) {
 
   if (UseInteractiveSearch)
   {
-    searcher = new InteractiveSearcher(executor, InteractiveSearchFile);
+    auto stream = std::make_unique<std::ifstream>(InteractiveSearchFile);
+    if(stream->fail()){
+      klee_error("Could not open interactive search file");
+    }
+    searcher = new InteractiveSearcher(executor, std::move(stream));
   }
 
   llvm::raw_ostream &os = executor.getHandler().getInfoStream();
