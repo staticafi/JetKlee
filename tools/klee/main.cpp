@@ -709,6 +709,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         *f << "]}";
       }
       *f << "}\n";
+      f->flush();
     }
 
     if (WriteWitness) {
