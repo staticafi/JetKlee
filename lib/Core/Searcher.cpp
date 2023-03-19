@@ -479,38 +479,6 @@ InteractiveSearcher::~InteractiveSearcher() {
 }
 
 ExecutionState &InteractiveSearcher::selectState() {
-  /*
-  if (lastState != nullptr)
-  {
-    ExecutionState &ret = *lastState;
-
-    auto *inst = (*(lastState->pc)).inst;
-    if (BranchInst *bi = dyn_cast<BranchInst>(inst))
-      if (bi->isConditional())
-        lastState = nullptr;
-
-    return ret;
-  }
- // TODO: read line by line
-  PTreeNode *n = executor.processTree->root.get();
-  while (inputStream.good()) {
-    char c;
-    inputStream.get(c);
-    if (c == '\n') {
-      break;
-    } else if (c == '0' && n->left != nullptr) {
-      n = n->left.get();
-    } else if (c == '1' && n->right != nullptr) {
-      n = n->right.get();
-    } else {
-      klee_error("Interactive searcher hit undiscovered state. Stopping search early.");
-    }
-  }
-  lastState = n->state;
-  return *lastState;
-  */
-
-  // TODO: handle invalid states
   if (currentPath.empty())
     std::getline(*inputStream, currentPath);
 
