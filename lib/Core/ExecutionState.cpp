@@ -75,6 +75,7 @@ ExecutionState::ExecutionState(KFunction *kf, bool includeConstantConstraints) :
     instsSinceCovNew(0),
     coveredNew(false),
     forkDisabled(false),
+    executedAllInstructions(false),
     ptreeNode(0),
     steppedInstructions(0),
     includeConstantConstraints(includeConstantConstraints) {
@@ -126,6 +127,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
 
     instsSinceCovNew(state.instsSinceCovNew),
     coveredNew(state.coveredNew),
+    executedAllInstructions(state.executedAllInstructions),
     forkDisabled(state.forkDisabled),
     coveredLines(state.coveredLines),
     ptreeNode(state.ptreeNode),
@@ -148,7 +150,9 @@ ExecutionState *ExecutionState::branch() {
 
   ExecutionState *falseState = new ExecutionState(*this);
   falseState->coveredNew = false;
+  falseState->executedAllInstructions = false;
   falseState->coveredLines.clear();
+  executedAllInstructions = false;
 
   weight *= .5;
   falseState->weight -= weight;

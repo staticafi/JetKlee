@@ -530,8 +530,14 @@ ExecutionState &InteractiveSearcher::selectState() {
   if (pathDone)
   {
     currentPath.clear();
-    executor.interpreterHandler->processTestCase(*n->state, "", "");
+    executor.interpreterHandler->writeJSON(n->state);
     // (*n->state->constraints.begin())->print(llvm::errs()); // debug print constraints
+  }
+
+  if (!pathDone && n->state->executedAllInstructions) {
+    // Path is infeasible because the program has already terminated at this path
+    currentPath.clear();
+    executor.interpreterHandler->writeJSON(nullptr); // writes "infeasible" JSON
   }
 
   return *n->state;

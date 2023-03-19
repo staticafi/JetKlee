@@ -144,6 +144,10 @@ cl::opt<bool> CheckMemCleanup(
     cl::desc("Check for memory cleanup"),
     cl::cat(TestGenCat));
 
+cl::opt<bool> KeepFinalizedStates(
+    "keep-finalized-states", cl::init(false),
+    cl::desc("Keep finalized states (useful with interactive heuristic)"),
+    cl::cat(TestGenCat));
 
 /* Constraint solving options */
 
@@ -945,6 +949,13 @@ void Executor::branch(ExecutionState &state,
 
 Executor::StatePair 
 Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
+  ExecutionState *stateCopy = nullptr;
+  if (KeepFinalizedStates) {
+    stateCopy = new klee::ExecutionState(current);
+    // Copied state has more symbolics when dumping.
+    // This likely won't be an issue.
+  }
+
   Solver::Validity res;
   std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it = 
     seedMap.find(&current);
@@ -1146,6 +1157,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
     }
 
     processTree->attach(current.ptreeNode, falseState, trueState);
+    current.ptreeNode->parent->state = stateCopy;
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -1881,6 +1893,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       ref<Expr> cond = eval(ki, 0, state).value;
 
       cond = optimizer.optimizeExpr(cond, false);
+      state.executedAllInstructions = true;
       Executor::StatePair branches = fork(state, cond, false);
 
       // NOTE: There is a hidden dependency here, markBranchVisited
@@ -3159,6 +3172,11 @@ void Executor::run(ExecutionState &initialState) {
 
   while (!states.empty() && !haltExecution && !searcher->empty()) {
     ExecutionState &state = searcher->selectState();
+    if (state.executedAllInstructions) {
+      klee_warning("Heuristic returned finalized state");
+      continue;
+    }
+
     KInstruction *ki = state.pc;
     stepInstruction(state);
 

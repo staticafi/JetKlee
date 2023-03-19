@@ -206,6 +206,9 @@ public:
   /// @brief Disables forking for this state. Set by user code
   bool forkDisabled;
 
+  /// @brief Whether last instruction of the state was executed. Set by user code
+  bool executedAllInstructions;
+
   /// @brief Set containing which lines in which files are covered by this state
   std::map<const std::string *, std::set<unsigned> > coveredLines;
 

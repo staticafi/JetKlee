@@ -383,6 +383,7 @@ public:
 
   void setInterpreter(Interpreter *i);
 
+  void writeJSON(const ExecutionState *state);
   void processTestCase(const ExecutionState  &state,
                        const char *errorMessage,
                        const char *errorSuffix);
@@ -597,6 +598,43 @@ static std::string getDecl(const std::string& fun, unsigned bitwidth,
   return rettype + fun + "(" + args + ")";
 }
 
+// Write given test case in JSON format.
+// Pass nullptr to write infeasible test-case
+void KleeHandler::writeJSON(const ExecutionState *state) {
+  std::vector<std::vector<uint8_t>> model;
+  bool success = state != nullptr && m_interpreter->getSimpleSymbolicSolution(*state, model);
+  auto f = m_jsonFile.get();
+
+  *f << "{"
+      <<   "\"description\": \"Symbiotic test exchange format\", "
+      <<   "\"version\": \"0.1\", "
+      <<   "\"feasible\": " << (success ? "true, " : "false");
+  if (success) {
+    *f << "\"input_tc\": {"
+        <<   "\"bytes\": [";
+    bool first = true;
+    for (size_t i = 0; i < model.size(); i++) {
+      for (uint8_t byte : model[i]) {
+        if (!first)
+          *f << ", ";
+        *f << +byte; // print byte as a number in base 10
+        first = false;
+      }
+    }
+    *f <<   "], "
+        << "\"chunks\": [";
+    first = true;
+    for (size_t i = 0; i < model.size(); i++) {
+      if (!first)
+        *f << ", ";
+      *f << model[i].size();
+      first = false;
+    }
+    *f << "]}";
+  }
+  *f << "}\n";
+  f->flush();
+}
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
 void KleeHandler::processTestCase(const ExecutionState &state,
@@ -677,39 +715,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     }
 
     if (WriteJSONTestCases) {
-      std::vector<std::vector<uint8_t>> model;
-      bool success = m_interpreter->getSimpleSymbolicSolution(state, model);
-      auto f = m_jsonFile.get();
-
-      *f << "{"
-          <<   "\"description\": \"Symbiotic test exchange format\", "
-          <<   "\"version\": \"0.1\", "
-          <<   "\"feasible\": " << (success ? "true, " : "false");
-      if (success) {
-        *f << "\"input_tc\": {"
-            <<   "\"bytes\": [";
-        bool first = true;
-        for (size_t i = 0; i < model.size(); i++) {
-          for (uint8_t byte : model[i]) {
-            if (!first)
-              *f << ", ";
-            *f << +byte; // print byte as a number in base 10
-            first = false;
-          }
-        }
-        *f <<   "], "
-            << "\"chunks\": [";
-        first = true;
-        for (size_t i = 0; i < model.size(); i++) {
-          if (!first)
-            *f << ", ";
-          *f << model[i].size();
-          first = false;
-        }
-        *f << "]}";
-      }
-      *f << "}\n";
-      f->flush();
+      writeJSON(&state);
     }
 
     if (WriteWitness) {
