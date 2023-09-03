@@ -3579,7 +3579,7 @@ void Executor::getSymbolicAddressForConstantSegment(ExecutionState &state, KValu
       value = KValue(ConstantExpr::alloc(VALUES_SEGMENT, segment->getWidth()), valueBackup);
     } else {
       value = KValue(ConstantExpr::alloc(VALUES_SEGMENT, segment->getWidth()),
-                     const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache));
+                     AddExpr::create(const_cast<MemoryObject*>(lookupResult.first)->getSymbolicAddress(arrayCache), valueBackup));
     }
 
   }
