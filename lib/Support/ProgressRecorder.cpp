@@ -13,6 +13,7 @@
 #include "../Core/ExecutionState.h"
 #include "../Core/PTree.h"
 #include "../Core/CallPathManager.h"
+#include "../Core/Memory.h"
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
@@ -41,6 +42,14 @@ namespace klee {
           lastIsSpace = false;
       }
     return expr;
+  }
+
+  static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane) {
+    if (plane == nullptr) return;
+    ostr << "\"sizeBound\": " << plane->sizeBound << ", ";
+    ostr << "\"initialized\": " << plane->initialized << ", ";
+    ostr << "\"symbolic\": " << plane->symbolic << ", ";
+    ostr << "\"initialValue\": " << (int)plane->initialValue << " ";
   }
 
   ProgressRecorder& ProgressRecorder::instance() {
@@ -142,6 +151,45 @@ namespace klee {
     ostr << "    \"constraints\": [\n";
     for (auto it = node->state->constraints.begin(); it != node->state->constraints.end(); ++it)
       ostr << "      \"" << expr2str(*it) << "\"" << (std::next(it) != node->state->constraints.end() ? ",\n" : "\n");
+    ostr << "    ]";
+    if (!uniqueState) {
+      ostr << "\n";
+      return;
+    }
+    ostr << ",\n";
+    ostr << "    \"objects\": [\n";
+    for (auto it = node->state->addressSpace.objects.begin(); it != node->state->addressSpace.objects.end(); ) {
+      ostr << "      { ";
+      ostr << "\"objID\": " << it->first->id << ", ";
+      ostr << "\"segment\": " << it->first->segment << ", ";
+      ostr << "\"name\": \"" << it->first->name << "\", ";
+      ostr << "\"size\": \"" << expr2str(it->first->size) << "\", ";
+      ostr << "\"isLocal\": " << it->first->isLocal << ", ";
+      ostr << "\"isGlobal\": " << it->first->isGlobal << ", ";
+      ostr << "\"isFixed\": " << it->first->isFixed << ", ";
+      ostr << "\"isLazy\": " << it->first->isLazyInitialized << ", ";
+      ostr << "\"symAddress\": \"" << (it->first->symbolicAddress ? expr2str(*it->first->symbolicAddress) : "") << "\" ";
+      ostr << "}";
+      ++it;
+      ostr << (it != node->state->addressSpace.objects.end() ? ",\n" : "\n");
+    }
+    ostr << "    ],\n";
+    ostr << "    \"objectStates\": [\n";
+    for (auto it = node->state->addressSpace.objects.begin(); it != node->state->addressSpace.objects.end(); ) {
+      ostr << "      { ";
+      ostr << "\"objID\": " << it->first->id << ", ";
+      ostr << "\"copyOnWriteOwner\": " << it->second->copyOnWriteOwner << ", ";
+      ostr << "\"readOnly\": " << it->second->readOnly << ", ";
+      ostr << "\"segmentPlane\": { ";
+      plane2json(ostr, it->second->segmentPlane);
+      ostr << "}, ";
+      ostr << "\"offsetPlane\": { ";
+      plane2json(ostr, it->second->offsetPlane);
+      ostr << "}";
+      ostr << " }";
+      ++it;
+      ostr << (it != node->state->addressSpace.objects.end() ? ",\n" : "\n");
+    }
     ostr << "    ]\n";
   }
 
