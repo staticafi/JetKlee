@@ -8,6 +8,9 @@ Output/
 /build
 /build-*/
 
+/temp/
+.vscode/
+
 cscope.*
 *~
 
