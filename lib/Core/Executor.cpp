@@ -49,6 +49,7 @@
 #include "klee/Support/FloatEvaluation.h"
 #include "klee/Support/ModuleUtil.h"
 #include "klee/Support/OptionCategories.h"
+#include "klee/Support/ProgressRecorder.h"
 #include "klee/System/MemoryUsage.h"
 #include "klee/System/Time.h"
 
@@ -3814,6 +3815,8 @@ void Executor::run(ExecutionState &initialState) {
 
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
+    recorder().onRoundBegin();
+
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
     stepInstruction(state);
@@ -3829,6 +3832,8 @@ void Executor::run(ExecutionState &initialState) {
       // update searchers when states were terminated early due to memory pressure
       updateStates(nullptr);
     }
+
+    recorder().onRoundEnd();
   }
 
   delete searcher;
