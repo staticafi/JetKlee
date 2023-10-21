@@ -16,6 +16,7 @@ klee_add_component(kleeSupport
   Time.cpp
   Timer.cpp
   TreeStream.cpp
+  ProgressRecorder.cpp
 )
 
 target_link_libraries(kleeSupport PRIVATE ${ZLIB_LIBRARIES})
