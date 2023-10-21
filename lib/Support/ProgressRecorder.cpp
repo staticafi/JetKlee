@@ -14,6 +14,7 @@
 #include "../Core/PTree.h"
 #include "../Core/CallPathManager.h"
 #include <fstream>
+#include <sstream>
 #include <sys/stat.h>
 #include <assert.h>
 
@@ -21,6 +22,25 @@ namespace klee {
 
   static bool createDir(const std::string &dir) {
     return mkdir(dir.c_str(), 0775) >= 0;
+  }
+
+  static std::string expr2str(const ref<Expr> &e) {
+    std::stringstream sstr;
+    sstr << e;
+    std::string expr;
+    expr.reserve(sstr.str().size());
+    bool lastIsSpace{ false };
+    for (auto c : sstr.str())
+      if (std::isspace(c)) {
+        if (!lastIsSpace) {
+          expr.push_back(' ');
+          lastIsSpace = true;
+        }
+      } else {
+          expr.push_back(c);
+          lastIsSpace = false;
+      }
+    return expr;
   }
 
   ProgressRecorder& ProgressRecorder::instance() {
@@ -118,7 +138,11 @@ namespace klee {
              << callerInfo->assemblyLine << "]"
              << (i + 1U < node->state->stack.size() ? "," : "");
       }
-    ostr << "]\n";
+    ostr << "],\n";
+    ostr << "    \"constraints\": [\n";
+    for (auto it = node->state->constraints.begin(); it != node->state->constraints.end(); ++it)
+      ostr << "      \"" << expr2str(*it) << "\"" << (std::next(it) != node->state->constraints.end() ? ",\n" : "\n");
+    ostr << "    ]\n";
   }
 
   void ProgressRecorder::InsertEdge::toJson(std::ostream& ostr) {
