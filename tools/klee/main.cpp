@@ -22,6 +22,7 @@
 #include "klee/Support/FileHandling.h"
 #include "klee/Support/ModuleUtil.h"
 #include "klee/Support/PrintVersion.h"
+#include "klee/Support/ProgressRecorder.h"
 #include "klee/System/Time.h"
 
 // FIXME: this is a hack
@@ -328,6 +329,16 @@ namespace {
            cl::desc("Link the llvm libc++ library into the bitcode (default=false)"),
            cl::init(false),
            cl::cat(LinkCat));
+
+  /*** Miscellaneous options ***/
+
+  cl::OptionCategory MiscellaneousCat("Miscellaneous options",
+                                 "These options are of various purposes which cannot be classified otherwise.");
+
+  cl::opt<bool>
+  ProgressRecording("progress-recording",
+                cl::desc("Record the progress of the computation to the disk."),
+                cl::cat(TestCaseCat));
 }
 
 namespace klee {
@@ -1796,6 +1807,9 @@ int main(int argc, char **argv, char **envp) {
     theInterpreter = Interpreter::create(ctx, IOpts, handler);
   assert(interpreter);
   handler->setInterpreter(interpreter);
+
+  if (ProgressRecording)
+    recorder().start(handler->getOutputFilename(ProgressRecorder::rootDirName));
 
   for (int i=0; i<argc; i++) {
     handler->getInfoStream() << argv[i] << (i+1<argc ? " ":"\n");
