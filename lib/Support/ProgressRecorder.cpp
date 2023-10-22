@@ -127,17 +127,17 @@ namespace klee {
   }
 
   void ProgressRecorder::InsertNode::toJson(std::ostream& ostr) {
-    ostr << "    \"action\": \"InsertNode\",\n";
-    ostr << "    \"nodeID\": " << nodeID << ",\n";
-    ostr << "    \"stateID\": " << stateID << ",\n";
-    ostr << "    \"uniqueState\": " << uniqueState << ",\n";
+    ostr << "    \"action\": \"InsertNode\", ";
+    ostr << "\"nodeID\": " << nodeID << ", ";
+    ostr << "\"stateID\": " << stateID << ", ";
+    ostr << "\"uniqueState\": " << uniqueState << ", ";
     const InstructionInfo *const instrInfo{ node->state->prevPC->info };
-    ostr << "    \"location\": ["
+    ostr << "\"location\": ["
          << "\"" << instrInfo->file << "\","
          << instrInfo->line << ","
          << instrInfo->column << ","
-         << instrInfo->assemblyLine << "],\n";
-    ostr << "    \"stack\": [";
+         << instrInfo->assemblyLine << "], ";
+    ostr << "\"stack\": [";
     for (std::size_t i = 0U; i != node->state->stack.size(); ++i)
       if (node->state->stack.at(i).callPathNode->callSite != nullptr) {
         const InstructionInfo *const callerInfo{ node->state->stack.at(i).caller->info };
@@ -194,14 +194,14 @@ namespace klee {
   }
 
   void ProgressRecorder::InsertEdge::toJson(std::ostream& ostr) {
-    ostr << "    \"action\": \"InsertEdge\",\n";
-    ostr << "    \"parentID\": " << parentID << ",\n";
-    ostr << "    \"childID\": " << childID << ",\n";    
-    ostr << "    \"tag\": " << (int)tag << "\n";    
+    ostr << "    \"action\": \"InsertEdge\", ";
+    ostr << "\"parentID\": " << parentID << ", ";
+    ostr << "\"childID\": " << childID << ", ";    
+    ostr << "\"tag\": " << (int)tag << "\n";    
   }
 
   void ProgressRecorder::EraseNode::toJson(std::ostream& ostr) {
-    ostr << "    \"action\": \"EraseNode\",\n";
-    ostr << "    \"nodeID\": " << ID << "\n";
+    ostr << "    \"action\": \"EraseNode\", ";
+    ostr << "\"nodeID\": " << ID << "\n";
   }
 }
