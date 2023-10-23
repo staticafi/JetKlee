@@ -714,7 +714,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state, bool isEntryFunction
       globalAddresses.emplace(&f, KValue(Expr::createPointer(0)));
     } else {
       auto mo = memory->allocate(Context::get().getPointerWidth(), false, true, &f, 8);
-      ObjectState *os = bindObjectInState(state, mo, false);
+      bindObjectInState(state, mo, false);
       auto id = mo->segment;
       legalFunctions.emplace(id, &f);
       globalAddresses.emplace(&f, KValue(FUNCTIONS_SEGMENT, Expr::createPointer(id)));
