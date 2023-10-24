@@ -3982,7 +3982,9 @@ static void getPointers(const llvm::Type *type,
       }
       // FIXME: is this always enough? Does this cover padding
       // in any structure?
-      off += DL.getTypeAllocSize(Ty);
+      if (Ty->isSized()) {
+        off += DL.getTypeAllocSize(Ty);
+      }
   }
 }
 
