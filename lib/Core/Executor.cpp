@@ -807,7 +807,7 @@ void Executor::allocateGlobalObjects(ExecutionState &state, bool isEntryFunction
       klee_error("out of memory");
     if (LazyInitialization && !v.isConstant() && !isEntryFunctionMain) {
       mo->isLazyInitialized = true;
-      state.addressSpace.lazilyInitializedOffsets.insert({mo->segment, {}});
+      state.addressSpace.lazyObjectsMap.emplace(mo->getSegment(), std::set<ref<Expr>>());
     }
     globalObjects.emplace(&v, mo);
     globalAddresses.emplace(&v, mo->getPointer());
@@ -876,7 +876,7 @@ void Executor::initializeGlobalObjects(ExecutionState &state, bool isEntryFuncti
       if (!addr) {
         if (LazyInitialization) {
           mo->isLazyInitialized = true;
-          state.addressSpace.lazilyInitializedOffsets.insert({mo->getSegment(), {}});
+          state.addressSpace.lazyObjectsMap.emplace(mo->getSegment(), std::set<ref<Expr>>());
         } else {
           klee_error("Unable to load symbol(%s) while initializing globals.",
                      v.getName().data());
@@ -3516,8 +3516,8 @@ void Executor::handleICMPForLazyMO(ExecutionState &state,
   uint64_t segmentConstant = cast<ConstantExpr>(segment)->getZExtValue();
 
   //look if segment belongs to lazy MO, and if it was never written to
-  auto result = state.addressSpace.lazilyInitializedOffsets.find(segmentConstant);
-  if (result != state.addressSpace.lazilyInitializedOffsets.end()) {
+  auto result = state.addressSpace.lazyObjectsMap.find(segmentConstant);
+  if (result != state.addressSpace.lazyObjectsMap.end()) {
     if (result->second.empty()) {
       getSymbolicAddressForConstantSegment(state, value);
     }
@@ -4916,9 +4916,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 StateTerminationType::ReadOnly);
         } else {
           if (mo->isLazyInitialized) {
-            auto segment = cast<klee::ConstantExpr>(value.getSegment());
-            handleWriteForLazyInit(state, address.getOffset(), mo->getSegment(),
-                                   segment->getZExtValue());
+            handleWriteForLazyInit(state, mo->getSegment(),
+                                   address);
           }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
@@ -4975,9 +4974,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                 StateTerminationType::ReadOnly);
         } else {
           if (mo->isLazyInitialized) {
-            auto segment = cast<klee::ConstantExpr>(value.getSegment());
-            handleWriteForLazyInit(state, addressOptim.getOffset(),
-                                   mo->getSegment(), segment->getZExtValue());
+            handleWriteForLazyInit(state, mo->getSegment(),
+                                   addressOptim);
           }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
@@ -5020,36 +5018,20 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   }
 }
 void Executor::handleWriteForLazyInit(ExecutionState &state,
-                                      const ref<Expr> &addressOffset,
                                       const uint64_t addressSegment,
-                                      const uint64_t valueSegment) {
-  ref<ConstantExpr> offsetExpr;
-  bool success = solver->getValue(state.constraints, addressOffset, offsetExpr, state.queryMetaData);
-  if (!success) {
-    terminateStateOnExecError(state, "Couldn't get offset for Lazy Init");
-    return;
-  }
-  uint64_t offsetValue = offsetExpr->getZExtValue();
+                                      const KValue& address) {
 
-  auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(addressSegment);
-  if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
-    terminateStateOnExecError(state, "segment not found in lazilyInitializedOffsets");
+  auto& lazyObjectsMap = state.addressSpace.lazyObjectsMap;
+  auto segmentOffsetsPair = lazyObjectsMap.find(addressSegment);
+  if (segmentOffsetsPair == lazyObjectsMap.end()) {
+    terminateStateOnExecError(state, "segment not found in lazyObjectsMap");
     return;
   }
 
   auto& offsets = segmentOffsetsPair->second;
-  bool found_result = offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue);
-  if (!found_result) {
-    offsets.emplace_back(offsetValue);
+  if (offsets.end() == offsets.find(address.getOffset())) {
+    offsets.emplace(address.getOffset());
   }
-
-  auto& lazyPtrSegmentMap = state.addressSpace.lazyPointersSegmentMap;
-
-  auto lazyPointerValuePair = lazyPtrSegmentMap.find(addressSegment);
-  if (lazyPointerValuePair != lazyPtrSegmentMap.end()) {
-    lazyPtrSegmentMap[addressSegment] = {valueSegment, offsetValue};
-  }
-
 }
 
 KValue
@@ -5058,86 +5040,58 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
                                 const ref<Expr> &offset, Expr::Width type,
                                 bool &shouldReadFromOffset) {
   KValue result;
-
-  bool isPointer = target->inst->getType()->isPointerTy();
   ref<ConstantExpr> constantZero = ConstantExpr::create(0, Context::get().getPointerWidth());
-  ref<klee::ConstantExpr> offsetExpr;
-  bool success = solver->getValue(state.constraints, offset, offsetExpr, state.queryMetaData);
-  if (!success) {
-    terminateStateOnError(state, "Couldn't get offset for Lazy Init", StateTerminationType::Execution);
+  uint64_t segmentValue = mo->getSegment();
+  shouldReadFromOffset = false;
+
+  auto& lazyObjectsMap = state.addressSpace.lazyObjectsMap;
+  const auto& segmentOffsetsPair = lazyObjectsMap.find(segmentValue);
+  if (segmentOffsetsPair == lazyObjectsMap.end()) {
+    terminateStateOnError(state, "segment not found in lazyObjectsMap", StateTerminationType::Execution);
     return result;
   }
-  uint64_t offsetValue = offsetExpr->getZExtValue();
-  uint64_t segmentValue = mo->getSegment();
 
+  //offset is already initialized, perform early return;
+  const auto& initializedOffsets = segmentOffsetsPair->second;
+  if (initializedOffsets.find(offset) != initializedOffsets.end()) {
+    shouldReadFromOffset = true;
+    return result;
+  }
+
+  const bool isPointer = target->inst->getType()->isPointerTy();
+  // If target is only a pointer, create/find MO for the value underneath
   if (isPointer) {
-    // If target is only a pointer, create/find MO for the value underneath
-    shouldReadFromOffset = false;
-
-    auto pair = state.addressSpace.lazyPointersSegmentMap.find(segmentValue);
-    if (pair != state.addressSpace.lazyPointersSegmentMap.end()) {
-      result = {pair->second.first, os->read(offset, type).getValue()};
-    } else {
-      if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
-        klee_warning("MaxPointerDepth reached, stopping the fork");
-        result = {0, constantZero};
-      } else {
-        // in case this offset was already initialized, skip new symbolic value creation
-        auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
-        if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
-          terminateStateOnError(state, "segment not found in lazilyInitializedOffsets", StateTerminationType::Execution);
-          return result;
-        }
-        auto& offsets = segmentOffsetsPair->second;
-        if (offsets.end() != std::find(offsets.begin(), offsets.end(), offsetValue)) {
-          shouldReadFromOffset = true;
-          return result;
-        }
-
-        ref<Expr> size = getPointerSymbolicSizeExpr(state);
-        bool isLocal = false; // only allow the object to exist in the function
-        auto *valueMO = executeAlloc(state, size, isLocal, target);
-        valueMO->isLazyInitialized = true;
-        valueMO->pointerDepth = mo->pointerDepth + 1;
-
-        (void)bindObjectInState(state, valueMO, isLocal, nullptr);
-        state.addressSpace.lazyPointersSegmentMap.insert(
-            {mo->getSegment(), {valueMO->getSegment(), 0}});
-
-        result = {valueMO->getSegmentExpr(), constantZero};
-      }
+    if (0 != MaxPointerDepth && mo->pointerDepth > MaxPointerDepth) {
+      klee_warning("MaxPointerDepth reached, stopping the fork");
+      result = {constantZero, constantZero};
+      return result;
     }
+
+    ref<Expr> size = getPointerSymbolicSizeExpr(state);
+    bool isLocal = false;
+    auto *valueMO = executeAlloc(state, size, isLocal, target);
+    valueMO->isLazyInitialized = true;
+    valueMO->pointerDepth = mo->pointerDepth + 1;
+
+    (void)bindObjectInState(state, valueMO, isLocal, nullptr);
+    lazyObjectsMap[segmentValue].emplace(offset);
+    result = {valueMO->getSegmentExpr(), constantZero};
+
+    ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+    wos->write(offset, result);
   } else {
-    ref<klee::ConstantExpr> offsetExpr;
-    bool success = solver->getValue(state.constraints, offset, offsetExpr, state.queryMetaData);
-    uint64_t offsetValue = offsetExpr->getZExtValue();
-    uint64_t segmentValue = mo->getSegment();
-
-    if (!success) {
-      terminateStateOnExecError(state, "Couldn't get offset for Lazy Init");
-      return result;
-    }
-
-    auto segmentOffsetsPair = state.addressSpace.lazilyInitializedOffsets.find(segmentValue);
-    if (segmentOffsetsPair == state.addressSpace.lazilyInitializedOffsets.end()) {
-      terminateStateOnExecError(state, "segment not found in lazilyInitializedOffsets");
-      return result;
-    }
-
     auto& offsets = segmentOffsetsPair->second;
-    if (offsets.end() == std::find(offsets.begin(), offsets.end(), offsetValue)) {
-      //If offset was not yet read and therefore is uninitialized, initialize it now
-      shouldReadFromOffset = false;
-      offsets.emplace_back(offsetValue);
-      Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
-      const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
-      result = Expr::createTempRead(array, typeWidth);
-      state.addressSpace.getWriteable(mo,os)->write(offset, result);
-      state.addNondetValue(result, true, "lazy_init_value");
-    } else {
-      // simple path, value already exists, read it traditionally
-      shouldReadFromOffset = true;
-    }
+
+    //If offset was not yet read, initialize it now
+    shouldReadFromOffset = false;
+    offsets.emplace(offset);
+    Expr::Width typeWidth = getWidthForLLVMType(target->inst->getType());
+    const Array* array = CreateArrayWithName(state, typeWidth, "lazy_init_arr");
+    result = Expr::createTempRead(array, typeWidth);
+
+    ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+    wos->write(offset, result);
+    state.addNondetValue(result, true, "lazy_init_value");
   }
   return result;
 }
