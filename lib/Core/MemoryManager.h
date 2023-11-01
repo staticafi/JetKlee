@@ -18,6 +18,8 @@
 #include <vector>
 #include <cstdint>
 
+#include "klee/Expr/Expr.h"
+
 namespace llvm {
 class Value;
 }

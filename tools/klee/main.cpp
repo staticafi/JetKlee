@@ -1305,15 +1305,21 @@ void externalsAndGlobalsCheck(const llvm::Module *m) {
       if (ext.compare(0, 5, "llvm.") != 0) { // not an LLVM reserved name
         if (unsafe.count(ext)) {
           foundUnsafe.insert(*it);
-        } //else {
-//          klee_warning("undefined reference to %s: %s",
-//                       it->second ? "variable" : "function",
-//                       ext.c_str());
+        } else {
+          if (!it->second) {
+              // Do not warn about undefined functions, we'll find that out
+              // when we'll try to run them.
+              // FIXME: do this only when ExternalCallPolicy == pure
+              continue;
+          }
+          klee_warning("undefined reference to %s: %s",
+                       it->second ? "variable" : "function",
+                       ext.c_str());
           //if (it->second && (ext == "optarg" || ext == "optind")) {
           //    // getopt is fatal, we really cannot handle that
           //    klee_error("Unhandled getopt stuff");
           //}
-        //}
+        }
       }
     }
   }

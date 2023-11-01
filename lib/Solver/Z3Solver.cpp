@@ -22,6 +22,7 @@
 #include "klee/Expr/Constraints.h"
 #include "klee/Expr/Assignment.h"
 #include "klee/Expr/ExprUtil.h"
+#include "klee/Expr/ExprVisitor.h"
 #include "klee/Solver/Solver.h"
 #include "klee/Solver/SolverImpl.h"
 

@@ -40,8 +40,8 @@ typedef ImmutableMap<uint64_t, const MemoryObject*> SegmentMap;
 typedef std::map</*address*/ const uint64_t, /*segment*/ const uint64_t> ConcreteAddressMap;
 typedef std::map</*segment*/ const uint64_t, /*address*/ const uint64_t> SegmentAddressMap;
 typedef std::map</*segment*/ const uint64_t, /*symbolic array*/ ref<Expr>> RemovedObjectsMap;
-typedef std::map</*pointer segment*/ const uint64_t, /*value segment:offset*/ std::pair<uint64_t, uint64_t>> LazyPointersSegmentMap;
-typedef std::map</*segment*/ const uint64_t, /*lazily initialized offsets*/std::vector<uint64_t>> LazilyInitializedOffsets;
+
+typedef std::map</*pointer segment*/ const uint64_t, /* offsets*/ std::set<ref<Expr>>> LazyObjectsMap;
 
 
 class AddressSpace {
@@ -70,9 +70,7 @@ class AddressSpace {
 
     RemovedObjectsMap removedObjectsMap;
 
-  LazilyInitializedOffsets lazilyInitializedOffsets;
-
-  LazyPointersSegmentMap lazyPointersSegmentMap;
+    LazyObjectsMap lazyObjectsMap;
 
   AddressSpace() : cowKey(1) {}
   AddressSpace(const AddressSpace &b)
@@ -81,8 +79,7 @@ class AddressSpace {
         segmentMap(b.segmentMap),
         concreteAddressMap(b.concreteAddressMap),
         removedObjectsMap(b.removedObjectsMap),
-        lazilyInitializedOffsets(b.lazilyInitializedOffsets),
-        lazyPointersSegmentMap(b.lazyPointersSegmentMap){ }
+        lazyObjectsMap(b.lazyObjectsMap){ }
   ~AddressSpace() {}
 
     /// Looks up constant segment in concreteAddressMap.

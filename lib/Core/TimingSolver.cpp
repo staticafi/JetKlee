@@ -19,6 +19,8 @@
 #include "klee/Solver/Solver.h"
 
 #include "CoreStats.h"
+#include "klee/Expr/Assignment.h"
+#include "klee/Expr/ExprUtil.h"
 
 using namespace klee;
 using namespace llvm;

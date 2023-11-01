@@ -31,7 +31,7 @@ void AddressSpace::bindObject(const MemoryObject *mo, ObjectState *os) {
   if (mo->segment != 0) {
     segmentMap = segmentMap.replace(std::make_pair(mo->segment, mo));
     if (mo->isLazyInitialized) {
-      lazilyInitializedOffsets.insert({mo->getSegment(), {}});
+      lazyObjectsMap.emplace(mo->getSegment(), std::set<ref<Expr>>());
     }
   }
 
@@ -41,7 +41,7 @@ void AddressSpace::unbindObject(const MemoryObject *mo) {
   if (mo->segment != 0) {
     segmentMap = segmentMap.remove(mo->segment);
     if (mo->isLazyInitialized) {
-      lazilyInitializedOffsets.erase(mo->segment);
+      lazyObjectsMap.erase(mo->getSegment());
     }
   }
 

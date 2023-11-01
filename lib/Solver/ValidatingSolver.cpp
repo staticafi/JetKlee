@@ -12,6 +12,8 @@
 #include "klee/Solver/Solver.h"
 #include "klee/Solver/SolverImpl.h"
 
+#include "klee/Expr/ExprUtil.h"
+
 #include <vector>
 
 namespace klee {
