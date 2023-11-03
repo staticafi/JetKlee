@@ -17,6 +17,8 @@
 
 #include "llvm/Support/CommandLine.h"
 
+#include <fstream>
+
 using namespace llvm;
 using namespace klee;
 
@@ -80,6 +82,18 @@ cl::opt<std::string> BatchTime(
     cl::cat(SearchCat));
 
 } // namespace
+
+cl::opt<bool> UseInteractiveSearch(
+    "use-interactive-search",
+    cl::desc("Use interactive searcher (specify path to expand in a file)"
+             "see --interactive-search-file) (default=false)"),
+    cl::init(false),
+    cl::cat(SearchCat));
+
+cl::opt<std::string> InteractiveSearchFile(
+    "interactive-search-file",
+    cl::desc("Path to a file when using --use-interactive-search"),
+    cl::cat(SearchCat));
 
 void klee::initializeSearchOptions() {
   // default values
@@ -150,6 +164,15 @@ Searcher *klee::constructUserSearcher(Executor &executor) {
     executor.setMergingSearcher(ms);
 
     searcher = ms;
+  }
+
+  if (UseInteractiveSearch)
+  {
+    auto stream = std::make_unique<std::ifstream>(InteractiveSearchFile);
+    if(stream->fail()){
+      klee_error("Could not open interactive search file");
+    }
+    searcher = new InteractiveSearcher(executor, std::move(stream));
   }
 
   llvm::raw_ostream &os = executor.getHandler().getInfoStream();

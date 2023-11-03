@@ -1065,7 +1065,7 @@ ref<Expr> Executor::maxStaticPctChecks(ExecutionState &current,
   if (reached_max_fork_limit || reached_max_cp_fork_limit ||
       reached_max_solver_limit || reached_max_cp_solver_limit) {
     ref<klee::ConstantExpr> value;
-    bool success = solver->getValue(current.constraints, condition, value,
+    bool success = true || solver->getValue(current.constraints, condition, value,
                                     current.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
     (void)success;
@@ -1084,6 +1084,8 @@ ref<Expr> Executor::maxStaticPctChecks(ExecutionState &current,
 
 Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
                                    bool isInternal, BranchType reason) {
+  ExecutionState *stateCopy = new klee::ExecutionState(current);
+
   Solver::Validity res;
   std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it =
     seedMap.find(&current);
@@ -1096,7 +1098,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
   if (isSeeding)
     timeout *= static_cast<unsigned>(it->second.size());
   solver->setTimeout(timeout);
-  bool success = solver->evaluate(current.constraints, condition, res,
+  bool success = true || solver->evaluate(current.constraints, condition, res,
                                   current.queryMetaData);
   solver->setTimeout(time::Span());
   if (!success) {
@@ -1241,6 +1243,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
     }
 
     processTree->attach(current.ptreeNode, falseState, trueState, reason);
+    current.ptreeNode->parent->state = stateCopy;
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -1275,8 +1278,7 @@ Executor::StatePair Executor::fork(ExecutionState &current, ref<Expr> condition,
 
 void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(condition)) {
-    if (!CE->isTrue())
-      llvm::report_fatal_error("attempt to add invalid constraint");
+    state.addConstraint(condition);
     return;
   }
 
@@ -1288,7 +1290,7 @@ void Executor::addConstraint(ExecutionState &state, ref<Expr> condition) {
     for (std::vector<SeedInfo>::iterator siit = it->second.begin(),
            siie = it->second.end(); siit != siie; ++siit) {
       bool res;
-      bool success = solver->mustBeFalse(state.constraints,
+      bool success = true || solver->mustBeFalse(state.constraints,
                                          siit->assignment.evaluate(condition),
                                          res, state.queryMetaData);
       assert(success && "FIXME: Unhandled solver failure");
@@ -2398,6 +2400,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       ref<Expr> cond = eval(ki, 0, state).value;
 
       cond = optimizer.optimizeExpr(cond, false);
+      state.executedAllInstructions = true;
       Executor::StatePair branches = fork(state, cond, false, BranchType::ConditionalBranch);
 
       // NOTE: There is a hidden dependency here, markBranchVisited
@@ -2451,21 +2454,21 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       errorCase = AndExpr::create(errorCase, Expr::createIsZero(e));
 
       // check feasibility
-      bool result;
-      bool success __attribute__((unused)) =
-          solver->mayBeTrue(state.constraints, e, result, state.queryMetaData);
-      assert(success && "FIXME: Unhandled solver failure");
-      if (result) {
+      // bool result;
+      // bool success __attribute__((unused)) =
+      //     solver->mayBeTrue(state.constraints, e, result, state.queryMetaData);
+      // assert(success && "FIXME: Unhandled solver failure");
+      if (true) {
         targets.push_back(d);
         expressions.push_back(e);
       }
     }
     // check errorCase feasibility
     bool result;
-    bool success __attribute__((unused)) = solver->mayBeTrue(
+    bool success __attribute__((unused)) = true || solver->mayBeTrue(
         state.constraints, errorCase, result, state.queryMetaData);
     assert(success && "FIXME: Unhandled solver failure");
-    if (result) {
+    if (true || result) {
       expressions.push_back(errorCase);
     }
 
@@ -3813,7 +3816,7 @@ void Executor::run(ExecutionState &initialState) {
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
   // main interpreter loop
-  while (!states.empty() && !haltExecution) {
+  while (!states.empty() && !haltExecution && !searcher->empty()) {
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
     stepInstruction(state);
@@ -5569,6 +5572,92 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     memcpy(data.data(), &val, size);
 
     res.push_back(std::make_pair(descr, data));
+  }
+  return true;
+}
+
+
+// Analogous to getSymbolicSolution but without minimising the test case.
+// Also doesn't crash on infeasible states.
+bool Executor::getSimpleSymbolicSolution(const ExecutionState &state, std::vector<std::vector<uint8_t>> &res) {
+  solver->setTimeout(coreSolverTimeout);
+
+  ConstraintSet extendedConstraints(state.constraints);
+  ConstraintManager cm(extendedConstraints);
+
+  // try to minimize sizes of symbolic-size objects
+  std::vector<uint64_t> sizes;
+  sizes.reserve(state.symbolics.size());
+  for (const auto & symbolic : state.symbolics) {
+    const auto &mo = symbolic.first;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(mo->size)) {
+      sizes.push_back(CE->getZExtValue());
+    } else {
+      auto pair = solver->getRange(extendedConstraints, mo->size, state.queryMetaData);
+      sizes.push_back(pair.first->getZExtValue());
+      cm.addConstraint(EqExpr::create(mo->size, pair.first));
+    }
+  }
+
+  std::vector< std::vector<unsigned char> > values;
+  std::shared_ptr<const Assignment> assignment(nullptr);
+  if (!state.symbolics.empty()) {
+    bool success = solver->getInitialValues(extendedConstraints, assignment, state.queryMetaData);
+    solver->setTimeout(time::Span());
+    if (!success) {
+      klee_warning("unable to compute initial values (invalid constraints?)!");
+      ExprPPrinter::printQuery(llvm::errs(), state.constraints,
+                               ConstantExpr::alloc(0, Expr::Bool));
+      return false;
+    }
+  }
+
+  for (size_t i = 0; i < state.symbolics.size(); ++i) {
+    const auto &mo = state.symbolics[i].first;
+    const Array *array = state.symbolics[i].second;
+    std::vector<uint8_t> data;
+    data.reserve(sizes[i]);
+    if (auto vals = assignment->getBindingsOrNull(array)) {
+      data = vals->asVector();
+    }
+    data.resize(sizes[i]);
+    res.push_back(data);
+  }
+
+  // try to minimize the found values
+  // We cannot use getTestVector(), as the values in .ktest
+  // have different endiandness (byte 0 goes first, then byte 1, etc.)
+  for (auto& it : state.nondetValues) {
+    auto pair = solver->getRange(
+        extendedConstraints, it.value.getValue(), state.queryMetaData);
+    auto value = pair.first;
+    cm.addConstraint(EqExpr::create(it.value.getValue(), value));
+
+    pair = solver->getRange(
+        extendedConstraints, it.value.getSegment(), state.queryMetaData);
+    auto segment = pair.first;
+    cm.addConstraint(EqExpr::create(it.value.getSegment(), segment));
+
+    std::vector<uint8_t> data;
+
+    // FIXME: store the pointers as pairs too, not in two objects
+    if (auto seg = segment->getZExtValue()) {
+        auto w = Context::get().getPointerWidth();
+        auto size = static_cast<unsigned>(w)/8;
+        data.resize(size);
+        memcpy(data.data(), &seg, size);
+        res.emplace_back(data);
+    }
+
+    auto size = std::max(static_cast<unsigned>(it.value.getValue()->getWidth()/8), 1U);
+    assert(size > 0 && "Invalid size");
+    assert(size <= 8 && "Does not support size > 8");
+    data.clear();
+    data.resize(size);
+    uint64_t val = value->getZExtValue();
+    memcpy(data.data(), &val, size);
+
+    res.push_back(data);
   }
   return true;
 }

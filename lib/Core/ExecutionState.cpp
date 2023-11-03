@@ -110,7 +110,8 @@ ExecutionState::ExecutionState(const ExecutionState& state):
                              ? state.unwindingInformation->clone()
                              : nullptr),
     coveredNew(state.coveredNew),
-    forkDisabled(state.forkDisabled) {
+    forkDisabled(state.forkDisabled),
+    executedAllInstructions(state.executedAllInstructions) {
   for (const auto &cur_mergehandler: openMergeStack)
     cur_mergehandler->addOpenState(this);
 }
@@ -121,7 +122,9 @@ ExecutionState *ExecutionState::branch() {
   auto *falseState = new ExecutionState(*this);
   falseState->setID();
   falseState->coveredNew = false;
+  falseState->executedAllInstructions = false;
   falseState->coveredLines.clear();
+  executedAllInstructions = false;
 
   return falseState;
 }

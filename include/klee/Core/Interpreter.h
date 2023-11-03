@@ -45,6 +45,7 @@ public:
   virtual void incPathsCompleted() = 0;
   virtual void incPathsExplored(std::uint32_t num = 1) = 0;
 
+  virtual void writeJSON(const ExecutionState *state) = 0;
   virtual void processTestCase(const ExecutionState &state,
                                const char *err,
                                const char *suffix) = 0;
@@ -166,6 +167,9 @@ public:
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) = 0;
+
+  virtual bool getSimpleSymbolicSolution(const ExecutionState &state,
+                                         std::vector<std::vector<unsigned char>> &res) = 0;
 
   // get a sequence of inputs that drive the program to this state
   virtual std::vector<NamedConcreteValue>

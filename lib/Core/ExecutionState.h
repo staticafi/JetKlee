@@ -176,15 +176,8 @@ struct CleanupPhaseUnwindingInformation : public UnwindingInformation {
 
 /// @brief ExecutionState representing a path under exploration
 class ExecutionState {
-#ifdef KLEE_UNITTEST
 public:
-#else
-private:
-#endif
-  // copy ctor
   ExecutionState(const ExecutionState &state);
-
-public:
   using stack_ty = std::vector<StackFrame>;
 
   // Execution - Control Flow specific
@@ -317,6 +310,9 @@ public:
 
   /// @brief Disables forking for this state. Set by user code
   bool forkDisabled = false;
+
+  /// @brief Whether last instruction of the state was executed. Set by user code
+  bool executedAllInstructions = false;
 
 public:
 #ifdef KLEE_UNITTEST

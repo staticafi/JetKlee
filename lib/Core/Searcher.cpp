@@ -552,3 +552,59 @@ void InterleavedSearcher::printName(llvm::raw_ostream &os) {
     searcher->printName(os);
   os << "</InterleavedSearcher>\n";
 }
+
+InteractiveSearcher::InteractiveSearcher(Executor &_executor, std::string file)
+  : executor(_executor),
+    inputStream(std::make_unique<std::ifstream>(file)) {
+}
+
+InteractiveSearcher::InteractiveSearcher(Executor &_executor,
+                                         std::unique_ptr<std::ifstream> inputStream)
+  : executor(_executor),
+    inputStream(std::move(inputStream)) {
+}
+
+InteractiveSearcher::~InteractiveSearcher() {
+}
+
+ExecutionState &InteractiveSearcher::selectState() {
+  if (currentPath.empty())
+    std::getline(*inputStream, currentPath);
+
+  PTreeNode *n = executor.processTree->root.getPointer();
+  bool pathDone = true;
+  for (char& c : currentPath) {
+    if (c == '0' && n->left.getPointer() != nullptr) {
+      n = n->left.getPointer();
+    } else if (c == '1' && n->right.getPointer() != nullptr) {
+      n = n->right.getPointer();
+    } else {
+      pathDone = false;
+      break;
+    }
+  }
+
+  if (pathDone)
+  {
+    currentPath.clear();
+    executor.interpreterHandler->writeJSON(n->state);
+    // (*n->state->constraints.begin())->print(llvm::errs()); // debug print constraints
+  }
+
+  if (!pathDone && n->state->executedAllInstructions) {
+    // Path is infeasible because the program has already terminated at this path
+    currentPath.clear();
+    executor.interpreterHandler->writeJSON(nullptr); // writes "infeasible" JSON
+  }
+
+  return *n->state;
+}
+
+void InteractiveSearcher::update(
+    ExecutionState *current, const std::vector<ExecutionState *> &addedStates,
+    const std::vector<ExecutionState *> &removedStates) {
+}
+
+bool InteractiveSearcher::empty() {
+  return currentPath.empty() && inputStream->peek() == std::ifstream::traits_type::eof();
+}

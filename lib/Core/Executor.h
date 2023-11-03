@@ -103,10 +103,11 @@ public:
 
   /// The random number generator.
   RNG theRNG;
+  std::unique_ptr<PTree> processTree;
+  InterpreterHandler *interpreterHandler;
 
 private:
   std::unique_ptr<KModule> kmodule;
-  InterpreterHandler *interpreterHandler;
   Searcher *searcher;
 
   ExternalDispatcher *externalDispatcher;
@@ -117,7 +118,6 @@ private:
   TreeStreamWriter *pathWriter, *symPathWriter;
   SpecialFunctionHandler *specialFunctionHandler;
   TimerGroup timers;
-  std::unique_ptr<PTree> processTree;
 
   /// Used to track states that have been added during the current
   /// instructions step. 
@@ -590,6 +590,11 @@ public:
   bool getSymbolicSolution(
       const ExecutionState &state,
       std::vector<std::pair<std::string, std::vector<unsigned char>>> &res)
+      override;
+
+  bool getSimpleSymbolicSolution(
+      const ExecutionState &state,
+      std::vector<std::vector<unsigned char>> &res)
       override;
 
   // get a sequence of inputs that drive the program to this state

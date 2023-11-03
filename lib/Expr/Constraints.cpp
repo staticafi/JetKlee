@@ -120,8 +120,7 @@ void ConstraintManager::addConstraintInternal(const ref<Expr> &e) {
 
   switch (e->getKind()) {
   case Expr::Constant:
-    assert(cast<ConstantExpr>(e)->isTrue() &&
-           "attempt to add invalid (false) constraint");
+    constraints.push_back(e);
     break;
 
     // split to enable finer grained independence and other optimizations

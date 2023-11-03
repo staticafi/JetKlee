@@ -85,6 +85,17 @@ bool Solver::getValue(const Query& query, ref<ConstantExpr> &result) {
     return true;
   }
 
+  // For some reason solver ignores constant constraints.
+  // (Does the FIXME a few lines below refer to this???)
+  // If the constraints are infeasible because of a
+  // false constant in constraints, we return false.
+  for (const auto &constraint : query.constraints) {
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(constraint)) {
+      if (CE->isFalse())
+        return false;
+    }
+  }
+
   // FIXME: Push ConstantExpr requirement down.
   ref<Expr> tmp;
   if (!impl->computeValue(query, tmp))

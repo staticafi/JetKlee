@@ -304,6 +304,8 @@ bool CexCachingSolver::computeValue(const Query& query,
   std::shared_ptr<const Assignment> a;
   if (!getAssignment(query.withFalse(), a))
     return false;
+  if (!a)
+    return false;
   assert(a && "computeValue() must have assignment");
   result = a->evaluate(query.expr);  
   assert(isa<ConstantExpr>(result) && 
