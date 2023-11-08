@@ -5068,8 +5068,9 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
     }
 
     ref<Expr> size = getPointerSymbolicSizeExpr(state);
-    bool isLocal = false;
+    bool isLocal = mo->isLocal;
     auto *valueMO = executeAlloc(state, size, isLocal, target);
+    valueMO->isGlobal = mo->isGlobal;
     valueMO->isLazyInitialized = true;
     valueMO->pointerDepth = mo->pointerDepth + 1;
 
