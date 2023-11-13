@@ -4240,8 +4240,10 @@ void Executor::terminateStateOnError(ExecutionState &state,
     }
   }
 
-  if (shouldExitOn(terminationType))
+  if (shouldExitOn(terminationType)) {
     haltExecution = true;
+    errorLoc = std::make_pair(ii.line, ii.column);
+  }
 
   bool notemitted = emittedErrors.insert(std::make_pair(lastInst, message)).second;
 
