@@ -118,7 +118,7 @@ private:
   SpecialFunctionHandler *specialFunctionHandler;
   TimerGroup timers;
   std::unique_ptr<PTree> processTree;
-  std::pair<unsigned, unsigned> errorLoc;
+  std::tuple<std::string, unsigned, unsigned> errorLoc;
 
   /// Used to track states that have been added during the current
   /// instructions step. 
@@ -630,7 +630,7 @@ public:
                              KValue &right);
   void checkWidthMatch(KValue &left, KValue &right) const;
   void handleICMPForLazyMO(ExecutionState &state, KValue &value);
-  std::pair<unsigned, unsigned> getErrorLocation() override { return errorLoc; }
+  std::tuple<std::string, unsigned, unsigned> getErrorLocation() override { return errorLoc; }
 
 };
   
