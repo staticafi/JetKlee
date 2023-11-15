@@ -17,7 +17,9 @@
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
 #include "klee/Support/Casting.h"
+#include "klee/Support/ErrorHandling.h"
 #include "klee/Support/OptionCategories.h"
+
 
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
@@ -398,4 +400,21 @@ void ExecutionState::addConstraint(ref<Expr> e) {
 
 void ExecutionState::addCexPreference(const ref<Expr> &cond) {
   cexPreferences = cexPreferences.insert(cond);
+}
+
+// Get the line and column of the errror
+std::tuple<std::string, unsigned, unsigned> ExecutionState::getErrorLocation() const {
+  const KInstruction *target = prevPC;
+  for (ExecutionState::stack_ty::const_reverse_iterator
+         it = stack.rbegin(), ie = stack.rend();
+       it != ie; ++it) {
+    const StackFrame &sf = *it;
+    const InstructionInfo &ii = *target->info;
+
+    if (ii.file != "" && ii.line != 0 && ii.column != 0)
+      return {ii.file, ii.line, ii.column};
+    target = sf.caller;
+  }
+  klee::klee_warning("Can't get error location for witness");
+  return {"", 0, 0};
 }

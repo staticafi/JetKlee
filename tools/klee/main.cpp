@@ -793,12 +793,17 @@ void KleeHandler::processTestCase(const ExecutionState &state,
               continue;
 
           if (input.line > 0 && input.col > 0)
-            *file <<
-            input.getName() << ":" << input.line << ":" << input.col << ":" << input.toString() << "\n";
+            *file << input.getName() << ":"
+                  << input.line << ":"
+                  << input.col << ":"
+                  << input.toString() << "\n";
          }
 
-        std::pair<unsigned, unsigned> errorLoc = m_interpreter->getErrorLocation();
-        *file << "@TARGET:" << errorLoc.first << ":" << errorLoc.second << "\n";
+        auto errorLoc = m_interpreter->getErrorLocation();
+        *file << "@TARGET:"
+              << std::get<0>(errorLoc) << ":"
+              << std::get<1>(errorLoc) << ":"
+              << std::get<2>(errorLoc) << "\n";
 
 
       } else {
