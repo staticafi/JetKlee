@@ -19,6 +19,7 @@ set(SRC_FILES
         calloc.c
         fortify-klibc.c
         htonl.c
+        longjmp.c
         memchr.c
         mempcpy.c
         putchar.c
