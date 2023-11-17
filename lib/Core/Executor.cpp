@@ -3527,7 +3527,7 @@ void Executor::handleICMPForLazyMO(ExecutionState &state,
 void Executor::handleICMPForLazyInit(const CmpInst::Predicate &predicate,
                                      ExecutionState &state, KValue &left,
                                      KValue &right) {
-  
+
   bool leftSegmentZero = left.getSegment()->isZero();
   bool rightSegmentZero = right.getSegment()->isZero();
 
@@ -4338,7 +4338,18 @@ static const char *okExternalsList[] = { "printf",
                                          "modf",
                                          "modff",
                                          "modfl",
+					 "exp",
+					 "expf",
+					 "expl",
+					 "log",
+					 "logf",
+					 "logl",
                                          "sqrt",
+					 "sqrtf",
+					 "sqrtl",
+					 "tanh",
+					 "tanhf",
+					 "tanhl",
                                          "copysign",
                                          "copysignf",
                                          "copysignl",
@@ -5454,7 +5465,7 @@ void Executor::getConstraintLog(const ExecutionState &state, std::string &res,
 }
 
 bool Executor::getSymbolicSolution(const ExecutionState &state,
-                                   std::vector< 
+                                   std::vector<
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) {
@@ -5633,7 +5644,7 @@ void Executor::doImpliedValueConcretization(ExecutionState &state,
   for (ImpliedValueList::iterator it = results.begin(), ie = results.end();
        it != ie; ++it) {
     ReadExpr *re = it->first.get();
-    
+
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(re->index)) {
       // FIXME: This is the sole remaining usage of the Array object
       // variable. Kill me.
@@ -5645,7 +5656,7 @@ void Executor::doImpliedValueConcretization(ExecutionState &state,
         // in other cases we would like to concretize the outstanding
         // reads, but we have no facility for that yet)
       } else {
-        assert(!os->readOnly && 
+        assert(!os->readOnly &&
                "not possible? read only object with static read?");
         ObjectState *wos = state.addressSpace.getWriteable(mo, os);
         wos->write(CE, KValue(it->second));
