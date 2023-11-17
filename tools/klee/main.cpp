@@ -113,6 +113,11 @@ namespace {
             cl::cat(TestCaseCat));
 
   cl::opt<bool>
+  WriteWaypoints("write-waypoints",
+              cl::desc("Write out witness waypoints to be used in a YML violation witness (default=false)"),
+              cl::cat(TestCaseCat));
+
+  cl::opt<bool>
   WriteHarness("write-harness",
             cl::desc("Write .C file with definitions of nondeterministic functions (default=false)"),
             cl::cat(TestCaseCat));
@@ -774,6 +779,35 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
       } else {
         klee_warning("unable to write witness file, losing it");
+      }
+    }
+
+    if (WriteWaypoints) {
+      if (auto file = openTestFile("waypoints", id)) {
+
+        auto testvec = m_interpreter->getTestVector(state);
+
+        for (auto& input : testvec) {
+          const auto& name = input.getName();
+          if (name.compare(0, 17 , "__VERIFIER_nondet") != 0)
+              continue;
+
+          if (input.line > 0 && input.col > 0)
+            *file << input.getName() << ":"
+                  << input.line << ":"
+                  << input.col << ":"
+                  << input.toString() << "\n";
+         }
+
+        auto errorLoc = m_interpreter->getErrorLocation();
+        *file << "@TARGET:"
+              << std::get<0>(errorLoc) << ":"
+              << std::get<1>(errorLoc) << ":"
+              << std::get<2>(errorLoc) << "\n";
+
+
+      } else {
+        klee_warning("unable to write waypoint file, losing it");
       }
     }
 
