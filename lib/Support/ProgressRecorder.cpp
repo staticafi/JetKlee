@@ -46,10 +46,36 @@ namespace klee {
 
   static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane) {
     if (plane == nullptr) return;
+
+    int id = plane->getParent() ? plane->getParent()->getObject()->id : -1;
+    ostr << "\"memoryObjectID\": " << id << ", ";
+    
+    std::string name = plane->getUpdateList().root ? plane->getUpdateList().root->getName() : "";
+    ostr << "\"rootObject\": " << "\"" << name << "\", ";
     ostr << "\"sizeBound\": " << plane->sizeBound << ", ";
     ostr << "\"initialized\": " << plane->initialized << ", ";
     ostr << "\"symbolic\": " << plane->symbolic << ", ";
-    ostr << "\"initialValue\": " << (int)plane->initialValue << " ";
+    ostr << "\"initialValue\": " << (int)plane->initialValue << ",\n";
+
+    ostr << "      \"bytes\": [\n";
+    for (unsigned i = 0; i < plane->sizeBound; ++i) {
+      ostr << "        {";
+      ostr << "\"concrete\": " << plane->isByteConcrete(i) << ", ";
+      ostr << "\"knownSym\": " << plane->isByteKnownSymbolic(i) << ", ";
+      ostr << "\"unflushed\": " << plane->isByteUnflushed(i) << ", ";
+      ostr << "\"value\": " << "\"" << expr2str(plane->read8(i)) << "\"";
+      ostr << "}" << (i + 1U < plane->sizeBound ? ",\n" : "\n");
+  }
+  ostr << "      ],\n";
+
+  ostr << "      \"updates\": [\n";
+  for (const auto *un = plane->getUpdateList().head.get(); un; ) {
+    ostr << "        {";
+    ostr << "\"" << expr2str(un->index) << "\"" << " : " << "\"" << expr2str(un->value) << "\"" << "\n";
+    un = un->next.get();
+    ostr << "        }" << (un != nullptr ? ",\n" : "\n");
+  }
+  ostr << "      ]\n";
   }
 
   ProgressRecorder& ProgressRecorder::instance() {
@@ -124,6 +150,7 @@ namespace klee {
 
   void ProgressRecorder::onEraseNode(const PTreeNode *const node) {
     roundActions.push_back(std::make_unique<EraseNode>(nodeIDs.at(node)));
+    nodeIDs.erase(node);
   }
 
   void ProgressRecorder::InsertNode::toJson(std::ostream& ostr) {
@@ -137,6 +164,9 @@ namespace klee {
          << instrInfo->line << ","
          << instrInfo->column << ","
          << instrInfo->assemblyLine << "], ";
+    ostr << "\"depth\": " << node->state->depth << ", ";
+    ostr << "\"coveredNew\": " << node->state->coveredNew << ", ";
+    ostr << "\"forkDisabled\": " << node->state->forkDisabled << ", ";
     ostr << "\"stack\": [";
     for (std::size_t i = 0U; i != node->state->stack.size(); ++i)
       if (node->state->stack.at(i).callPathNode->callSite != nullptr) {
@@ -176,17 +206,17 @@ namespace klee {
     ostr << "    ],\n";
     ostr << "    \"objectStates\": [\n";
     for (auto it = node->state->addressSpace.objects.begin(); it != node->state->addressSpace.objects.end(); ) {
-      ostr << "      { ";
-      ostr << "\"objID\": " << it->first->id << ", ";
+      ostr << "      {\n";
+      ostr << "      \"objID\": " << it->first->id << ", ";
       ostr << "\"copyOnWriteOwner\": " << it->second->copyOnWriteOwner << ", ";
-      ostr << "\"readOnly\": " << it->second->readOnly << ", ";
-      ostr << "\"segmentPlane\": { ";
+      ostr << "\"readOnly\": " << it->second->readOnly << ",\n";
+      ostr << "      \"segmentPlane\": { ";
       plane2json(ostr, it->second->segmentPlane);
-      ostr << "}, ";
-      ostr << "\"offsetPlane\": { ";
+      ostr << "\n      },\n";
+      ostr << "      \"offsetPlane\": { ";
       plane2json(ostr, it->second->offsetPlane);
-      ostr << "}";
-      ostr << " }";
+      ostr << "      }";
+      ostr << "\n      }";
       ++it;
       ostr << (it != node->state->addressSpace.objects.end() ? ",\n" : "\n");
     }
