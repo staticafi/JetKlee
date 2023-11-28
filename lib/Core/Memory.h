@@ -360,6 +360,18 @@ public:
   void write64(unsigned offset, uint64_t value);
   void print() const;
 
+  ref<const ObjectState> getParent() const;
+  UpdateList getUpdateList() const;
+
+  /// isByteConcrete ==> !isByteKnownSymbolic
+  bool isByteConcrete(unsigned offset) const;
+
+  /// isByteKnownSymbolic ==> !isByteConcrete
+  bool isByteKnownSymbolic(unsigned offset) const;
+
+  /// isByteUnflushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
+  bool isByteUnflushed(unsigned offset) const;
+
   /*
     Looks at all the symbolic bytes of this object, gets a value for them
     from the solver and puts them in the concreteStore.
@@ -378,15 +390,6 @@ private:
 
   void flushForRead() const;
   void flushForWrite();
-
-  /// isByteConcrete ==> !isByteKnownSymbolic
-  bool isByteConcrete(unsigned offset) const;
-
-  /// isByteKnownSymbolic ==> !isByteConcrete
-  bool isByteKnownSymbolic(unsigned offset) const;
-
-  /// isByteUnflushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
-  bool isByteUnflushed(unsigned offset) const;
 
   void markByteConcrete(unsigned offset);
   void markByteSymbolic(unsigned offset);

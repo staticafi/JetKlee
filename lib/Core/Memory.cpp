@@ -586,6 +586,14 @@ void ObjectStatePlane::print() const {
   }
 }
 
+ref<const ObjectState> ObjectStatePlane::getParent() const {
+  return parent;
+}
+
+UpdateList ObjectStatePlane::getUpdateList() const{
+  return updates;
+}
+
 /****/
 
 ObjectState::ObjectState(const MemoryObject *mo)
