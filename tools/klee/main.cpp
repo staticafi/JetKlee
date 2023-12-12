@@ -1809,8 +1809,8 @@ int main(int argc, char **argv, char **envp) {
   handler->setInterpreter(interpreter);
 
   if (ProgressRecording)
-    recorder().start(handler->getOutputFilename(ProgressRecorder::rootDirName));
-
+    recorder().start(handler->getOutputFilename(ProgressRecorder::rootDirName), InputFile);
+    
   for (int i=0; i<argc; i++) {
     handler->getInfoStream() << argv[i] << (i+1<argc ? " ":"\n");
   }

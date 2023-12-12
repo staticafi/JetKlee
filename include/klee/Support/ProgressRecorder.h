@@ -74,7 +74,7 @@ namespace klee {
     static ProgressRecorder& instance();
     static const std::string rootDirName;
 
-    bool start(const std::string &underDir);
+    bool start(const std::string &underDir, std::string fileName);
     void stop();
     bool started() const;
 
