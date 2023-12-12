@@ -99,10 +99,30 @@ namespace klee {
     , roundActions{}
   {}
  
-  bool ProgressRecorder::start(const std::string &underDir) {
+  bool ProgressRecorder::start(const std::string &underDir, std::string fileName) {
     if (!createDir(underDir))
         return false;
     rootOutputDir = underDir;
+
+    char bcFilePath[PATH_MAX];
+    if (realpath(fileName.c_str(), bcFilePath)){
+      std::string bcFilePathStr(bcFilePath);
+      std::string command = "llvm-dis " + bcFilePathStr + " -o " + rootOutputDir + "/source.ll";
+      std::system(command.c_str());
+    }
+  
+    // file.bc -> file.c
+    fileName.erase(fileName.size() - 2, 1);
+    char cFilePath[PATH_MAX];
+    
+    if (realpath(fileName.c_str(), cFilePath)){
+      std::ifstream sourceFile(cFilePath);
+      std::ofstream destinationFile(rootOutputDir + "/source.c");
+      if (sourceFile && destinationFile){
+        destinationFile << sourceFile.rdbuf();
+      }
+    }
+
     return true;
   }
 
