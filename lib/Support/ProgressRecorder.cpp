@@ -86,7 +86,7 @@ namespace klee {
     ostr << "    ],\n";
   }
 
-    static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane) {
+  static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane) {
     if (plane == nullptr) return;
 
     int id = plane->getParent() ? plane->getParent()->getObject()->id : -1;
@@ -113,9 +113,9 @@ namespace klee {
     ostr << "      \"updates\": [\n";
     for (const auto *un = plane->getUpdateList().head.get(); un; ) {
       ostr << "        {";
-      ostr << "\"" << expr2str(un->index) << "\"" << " : " << "\"" << expr2str(un->value) << "\"" << "\n";
+      ostr << "\"" << expr2str(un->index) << "\"" << " : " << "\"" << expr2str(un->value) << "\"";
       un = un->next.get();
-      ostr << "        }" << (un != nullptr ? ",\n" : "\n");
+      ostr << "}" << (un != nullptr ? ",\n" : "\n");
     }
     ostr << "      ]\n";
   }
@@ -238,6 +238,11 @@ namespace klee {
     ostr << "\"forkDisabled\": " << node->state->forkDisabled << ", ";
     ostr << "\"instsSinceCovNew\": " << node->state->instsSinceCovNew << ", ";
     ostr << "\"nextID\": " << node->state->nextID << ", ";
+    ostr << "\"steppedInstructions\": " << node->state->steppedInstructions << ", ";
+    if (node->state->unwindingInformation != nullptr){
+      ostr << "\"unwindingKind\": " << (node->state->unwindingInformation->getKind() == UnwindingInformation::Kind::SearchPhase ? "\"SearchPhase\"" : "\"CleanupPhase\"") << ", ";
+      ostr << "\"unwindingException\": \"" << expr2str(node->state->unwindingInformation->exceptionObject) << "\", ";
+    }
 
     stack2json(ostr, node->state->stack);
     constraints2json(ostr, node->state->constraints);
@@ -247,6 +252,19 @@ namespace klee {
       return;
     }
     ostr << ",\n";
+
+    ostr << "    \"nondetValues\": [\n";
+    for (auto it = node->state->nondetValues.begin(); it != node->state->nondetValues.end(); ) {
+      ostr << "      {";
+      ostr << "\"value\": \"" << expr2str(it->value.getValue()) << "\", ";
+      ostr << "\"segment\": " << expr2str(it->value.getSegment()) << ", ";
+      ostr << "\"isSigned\": " << it->isSigned << ", ";
+      ostr << "\"name\": \"" << it->name << "\"";
+      ostr << "}";
+      ++it;
+      ostr << (it != node->state->nondetValues.end() ? ",\n" : "\n");
+    }
+    ostr << "    ], \n";
 
     memoryObjs2json(ostr, node->state->addressSpace.objects);
     ostr << "    \"objectStates\": [\n";
@@ -269,8 +287,8 @@ namespace klee {
 
     ostr << "    \"concreteAddressMap\": [\n";
     for (auto it = node->state->addressSpace.concreteAddressMap.begin(); it != node->state->addressSpace.concreteAddressMap.end(); ) {
-      ostr << "    {";
-      ostr << "      \"address\": " << it->first << ", ";
+      ostr << "      {";
+      ostr << "\"address\": " << it->first << ", ";
       ostr << "\"segment\": " << it->second;
       ostr << "}";
       ++it;
@@ -280,8 +298,8 @@ namespace klee {
 
     ostr << "    \"removedObjectsMap\": [\n";
     for (auto it = node->state->addressSpace.removedObjectsMap.begin(); it != node->state->addressSpace.removedObjectsMap.end(); ) {
-      ostr << "      {\n";
-      ostr << "      \"segment\": " << it->first << "\", ";
+      ostr << "      {";
+      ostr << "\"segment\": " << it->first << "\", ";
       ostr << "\"symbolicArray\": \"" << expr2str(it->second) << "\"";
       ostr << "\n      }";
       ++it;
@@ -291,8 +309,8 @@ namespace klee {
 
     ostr << "    \"lazyObjectsMap\": [\n";
     for (auto it = node->state->addressSpace.lazyObjectsMap.begin(); it != node->state->addressSpace.lazyObjectsMap.end(); ) {
-      ostr << "      {\n";
-      ostr << "      \"pointerSegment\": " << it->first << "\", ";
+      ostr << "      {";
+      ostr << "\"pointerSegment\": " << it->first << "\", ";
       ostr << "\"offsets\": [\n";
       for (auto a = it->second.begin(); a != it->second.end(); ) {
         ostr << expr2str(*a);
@@ -306,38 +324,31 @@ namespace klee {
     }
     ostr << "    ], \n";
 
-    ostr << "    \"nondetValues\": [\n";
-    for (auto it = node->state->nondetValues.begin(); it != node->state->nondetValues.end(); ) {
-      ostr << "      {\n";
-      ostr << "        \"value\": \"" << expr2str(it->value.getValue()) << "\", ";
-      ostr << "\"offset\": \"" << expr2str(it->value.getOffset()) << "\", ";
-      ostr << "\"segment\": \"" << expr2str(it->value.getSegment()) << "\", ";
-      ostr << "\"isSigned\": \"" << it->isSigned << "\", ";
-      ostr << "\"name\": \"" << it->name << "\"";
-      ostr << "\n      }";
+    ostr << "    \"symbolics\": [\n";
+    for (auto it = node->state->symbolics.begin(); it != node->state->symbolics.end(); ) {
+      ostr << "\"objID\": " << it->first->id << ", ";
+      ostr << "\"name\": " << it->second->name << ", ";
+      ostr << "\"size\": " << it->second->size << ", ";
+      ostr << "\"domain\": " << it->second->domain << ", ";
+      ostr << "\"range\": " << it->second->range << ", ";
+      ostr << "\"isSymbolicArray\": " << it->second->isSymbolicArray() << ", ";
+      ostr << "\"constantValues\": [\n";
+      for (auto a = it->second->constantValues.begin(); a != it->second->constantValues.end(); ) {
+        ostr << "\"" << expr2str(*a) << "\"";
+        ++a;
+        ostr << (a != it->second->constantValues.end() ? ", " : "");
+      }
+      ostr << "    ], \n";
       ++it;
-      ostr << (it != node->state->nondetValues.end() ? ",\n" : "\n");
+      ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
     }
     ostr << "    ], \n";
 
-    // ostr << "    \"symbolics\": [\n";
-    // for (auto it = node->state->symbolics.begin(); it != node->state->symbolics.end(); ) {
-    //   ostr << "\"objID\": " << it->first->id << ", ";
-    //   for (auto a = it->second.begin(); a != it->second.end(); ) {
-    //     ostr << expr2str(*a);
-    //     ++a;
-    //     ostr << (a != it->second.end() ? ", " : "");
-    //   }
-    //   ++it;
-    //   ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
-    // }
-    // ostr << "    ], \n";
-
-    ostr << "    \"arrayNames\": [\n";
-    for (auto it = node->state->arrayNames.begin(); it != node->state->arrayNames.end(); ) {
-      ostr << "      \"" << *it << "\"";
+    ostr << "    \"cexPreferences\": [\n";
+    for (auto it = node->state->cexPreferences.begin(); it != node->state->cexPreferences.end(); ) {
+      ostr << "      \"" << expr2str(*it) << "\"";
       ++it;
-      ostr << (it != node->state->arrayNames.end() ? ", " : "");
+      ostr << (it != node->state->cexPreferences.end() ? ", " : "");
     }
     ostr << "    ]\n";
   }
