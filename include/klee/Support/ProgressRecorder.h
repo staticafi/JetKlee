@@ -20,7 +20,7 @@ namespace klee {
 
   class PTreeNode;
   class ExecutionState;
-  class InstructionInfo;
+  struct InstructionInfo;
 
   class ProgressRecorder {
 

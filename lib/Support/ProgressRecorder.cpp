@@ -99,30 +99,45 @@ namespace klee {
     ostr << "\"symbolic\": " << plane->symbolic << ", ";
     ostr << "\"initialValue\": " << (int)plane->initialValue << ",\n";
 
-    ostr << "      \"bytes\": [\n";
+    ostr << "        \"bytes\": [\n";
     for (unsigned i = 0; i < plane->sizeBound; ++i) {
-      ostr << "        {";
+      ostr << "          {";
       ostr << "\"concrete\": " << plane->isByteConcrete(i) << ", ";
       ostr << "\"knownSym\": " << plane->isByteKnownSymbolic(i) << ", ";
       ostr << "\"unflushed\": " << plane->isByteUnflushed(i) << ", ";
       ostr << "\"value\": " << "\"" << expr2str(plane->read8(i)) << "\"";
       ostr << "}" << (i + 1U < plane->sizeBound ? ",\n" : "\n");
     }
-    ostr << "      ],\n";
+    ostr << "        ],\n";
 
-    ostr << "      \"updates\": [\n";
+    ostr << "        \"updates\": [\n";
     for (const auto *un = plane->getUpdateList().head.get(); un; ) {
-      ostr << "        {";
+      ostr << "          {";
       ostr << "\"" << expr2str(un->index) << "\"" << " : " << "\"" << expr2str(un->value) << "\"";
       un = un->next.get();
       ostr << "}" << (un != nullptr ? ",\n" : "\n");
     }
-    ostr << "      ]\n";
+    ostr << "        ]\n";
   }
 
   ProgressRecorder& ProgressRecorder::instance() {
     static ProgressRecorder rec;
     return rec;
+  }
+
+  static std::string replaceFileExtension(const std::string& fileName, const std::string& extension) {
+    size_t dotPos = fileName.rfind('.');
+    return fileName.substr(0, dotPos) + extension;
+  }
+  
+  static void copyFile(const std::string& originalFile, const std::string& copyFile) {
+    std::ifstream original(originalFile);
+    if (original){
+      std::ofstream copy(copyFile);
+      if (copy){
+        copy << original.rdbuf();
+      }
+    }
   }
 
   const std::string ProgressRecorder::rootDirName{ "__JetKleeProgressRecording__" };
@@ -140,30 +155,20 @@ namespace klee {
 
     , roundActions{}
   {}
- 
-  bool ProgressRecorder::start(const std::string &underDir, std::string fileName) {
+
+  bool ProgressRecorder::start(const std::string &underDir,
+                               std::string fileName) {
     if (!createDir(underDir))
         return false;
     rootOutputDir = underDir;
 
-    char bcFilePath[PATH_MAX];
-    if (realpath(fileName.c_str(), bcFilePath)){
-      std::string bcFilePathStr(bcFilePath);
-      std::string command = "llvm-dis " + bcFilePathStr + " -o " + rootOutputDir + "/source.ll";
-      std::system(command.c_str());
-    }
-  
-    // file.bc -> file.c
-    fileName.erase(fileName.size() - 2, 1);
-    char cFilePath[PATH_MAX];
-    
-    if (realpath(fileName.c_str(), cFilePath)){
-      std::ifstream sourceFile(cFilePath);
-      std::ofstream destinationFile(rootOutputDir + "/source.c");
-      if (sourceFile && destinationFile){
-        destinationFile << sourceFile.rdbuf();
-      }
-    }
+    std::string command = "llvm-dis " + fileName + " -o " + rootOutputDir + "/source.ll";
+    std::system(command.c_str());
+
+    const std::string cFile = replaceFileExtension(fileName, ".c");
+    const std::string iFile = replaceFileExtension(fileName, ".i");
+    copyFile(cFile, rootOutputDir + "/source.c");
+    copyFile(iFile, rootOutputDir + "/source.i");
 
     return true;
   }
@@ -195,7 +200,8 @@ namespace klee {
   }
 
   void ProgressRecorder::onInsertNode(const PTreeNode *const node) {
-    auto nr = nodeIDs.insert({ node, ++nodeCounter });
+    int nodeID = ++nodeCounter;
+    auto nr = nodeIDs.insert({ node, nodeID });
     assert(nr.second);
     bool uniqueState{ false };
     auto sit = stateIDs.find(node->state);
@@ -310,35 +316,39 @@ namespace klee {
     ostr << "    \"lazyObjectsMap\": [\n";
     for (auto it = node->state->addressSpace.lazyObjectsMap.begin(); it != node->state->addressSpace.lazyObjectsMap.end(); ) {
       ostr << "      {";
-      ostr << "\"pointerSegment\": " << it->first << "\", ";
-      ostr << "\"offsets\": [\n";
+      ostr << "\"pointerSegment\": " << it->first << ", ";
+      ostr << "\"offsets\": [";
       for (auto a = it->second.begin(); a != it->second.end(); ) {
         ostr << expr2str(*a);
         ++a;
         ostr << (a != it->second.end() ? ", " : "");
       }
       ostr << "    ], \n";
-      ostr << "\n      }";
+      ostr << "}";
       ++it;
       ostr << (it != node->state->addressSpace.lazyObjectsMap.end() ? ", " : "");
     }
     ostr << "    ], \n";
 
     ostr << "    \"symbolics\": [\n";
-    for (auto it = node->state->symbolics.begin(); it != node->state->symbolics.end(); ) {
-      ostr << "\"objID\": " << it->first->id << ", ";
-      ostr << "\"name\": " << it->second->name << ", ";
+    for (auto it = node->state->symbolics.begin();
+        it != node->state->symbolics.end();) {
+      ostr << "      {\n";
+      ostr << "        \"objID\": " << it->first->id << ", ";
+      ostr << "\"name\": \"" << it->second->name << "\", ";
       ostr << "\"size\": " << it->second->size << ", ";
       ostr << "\"domain\": " << it->second->domain << ", ";
       ostr << "\"range\": " << it->second->range << ", ";
       ostr << "\"isSymbolicArray\": " << it->second->isSymbolicArray() << ", ";
-      ostr << "\"constantValues\": [\n";
-      for (auto a = it->second->constantValues.begin(); a != it->second->constantValues.end(); ) {
+      ostr << "\"constantValues\": [";
+      for (auto a = it->second->constantValues.begin();
+          a != it->second->constantValues.end();) {
         ostr << "\"" << expr2str(*a) << "\"";
         ++a;
         ostr << (a != it->second->constantValues.end() ? ", " : "");
       }
-      ostr << "    ], \n";
+      ostr << "] \n";
+      ostr << "      }";
       ++it;
       ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
     }

@@ -4,6 +4,8 @@ Debug/
 Debug+Asserts/
 Output/
 examples/
+klee-uclibc/
+CMakeFiles/
 
 # commonly used as cmake build directory
 /build
