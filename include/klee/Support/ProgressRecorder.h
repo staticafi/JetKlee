@@ -15,6 +15,9 @@
 #include <unordered_map>
 #include <memory>
 #include <iosfwd>
+#include "klee/ADT/Ref.h"
+#include "klee/Expr/Expr.h"
+
 
 namespace klee {
 
@@ -22,6 +25,55 @@ namespace klee {
   class ExecutionState;
   struct InstructionInfo;
 
+  struct ByteInfo {
+    unsigned int byteID;
+    bool isConcrete;
+    bool isKnownSym;
+    bool isUnflushed;
+    klee::ref<klee::Expr> value;
+
+    bool operator==(const ByteInfo& other) const {
+        return byteID == other.byteID;
+    }
+    bool operator<(const ByteInfo& other) const {
+        return byteID < other.byteID;
+    }
+    bool operator>(const ByteInfo& other) const {
+        return byteID > other.byteID;
+    }
+  };
+
+  struct ObjectInfo {
+    unsigned int objID;
+    int segment;
+    std::string name;
+    klee::ref<klee::Expr> size;
+    bool isLocal;
+    bool isGlobal;
+    bool isFixed;
+    bool isUserSpecified;
+    bool isLazyInitialized;
+    llvm::Optional<klee::ref<klee::Expr>> symbolicAddress;
+
+    bool operator==(const ObjectInfo& other) const {
+        return objID == other.objID;
+    }
+    bool operator<(const ObjectInfo& other) const {
+        return objID < other.objID;
+    }
+    bool operator>(const ObjectInfo& other) const {
+        return objID > other.objID;
+    }
+  };
+
+  struct pair_hash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1,T2> &pair) const {
+        auto hash1 = std::hash<T1>{}(pair.first);
+        auto hash2 = std::hash<T2>{}(pair.second);
+        return hash1 ^ hash2;
+    }
+};
   class ProgressRecorder {
 
     struct Action {
@@ -59,7 +111,14 @@ namespace klee {
     int roundCounter;
 
     int nodeCounter;
+    
     std::unordered_map<const PTreeNode *, int> nodeIDs;
+    std::unordered_map<int, int> nodeJSONs;
+
+    std::unordered_map<int, int> accessCount;
+    std::unordered_map<int, std::vector<ObjectInfo>> objectStates;
+    std::unordered_map<std::pair<int, int>, std::vector<ByteInfo>, pair_hash> segmentBytes;
+    std::unordered_map<std::pair<int, int>, std::vector<ByteInfo>, pair_hash> offsetBytes;
 
     int stateCounter;
     std::unordered_map<const ExecutionState *, int> stateIDs;
@@ -81,6 +140,7 @@ namespace klee {
     void onRoundBegin();
     void onRoundEnd();
 
+    void DeleteParentInfo(const int parentID);
     void onInsertNode(const PTreeNode *node);
     void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
     void onEraseNode(const PTreeNode *node);

@@ -65,31 +65,122 @@ namespace klee {
     ostr << "    ]";
   }
 
-  static void memoryObjs2json(std::ostream& ostr, const MemoryMap objects){
-    ostr << "    \"objects\": [\n";
-    for (auto it = objects.begin(); it != objects.end(); ) {
-      ostr << "      { ";
-      ostr << "\"objID\": " << it->first->id << ", ";
-      ostr << "\"segment\": " << it->first->segment << ", ";
-      ostr << "\"name\": \"" << it->first->name << "\", ";
-      ostr << "\"size\": \"" << expr2str(it->first->size) << "\", ";
-      ostr << "\"isLocal\": " << it->first->isLocal << ", ";
-      ostr << "\"isGlobal\": " << it->first->isGlobal << ", ";
-      ostr << "\"isFixed\": " << it->first->isFixed << ", ";
-      ostr << "\"isUserSpecified\": " << it->first->isUserSpecified << ", ";
-      ostr << "\"isLazy\": " << it->first->isLazyInitialized << ", ";
-      ostr << "\"symAddress\": \"" << (it->first->symbolicAddress ? expr2str(*it->first->symbolicAddress) : "") << "\" ";
-      ostr << "}";
-      ++it;
-      ostr << (it != objects.end() ? ",\n" : "\n");
-    }
-    ostr << "    ],\n";
+  static void objectInfoToJson(std::ostream& ostr, const ObjectInfo& obj) {
+    ostr << "        { ";
+    ostr << "\"objID\": " << obj.objID << ", ";
+    ostr << "\"segment\": " << obj.segment << ", ";
+    ostr << "\"name\": \"" << obj.name << "\", ";
+    ostr << "\"size\": \"" << expr2str(obj.size) << "\", ";
+    ostr << "\"isLocal\": " << obj.isLocal << ", ";
+    ostr << "\"isGlobal\": " << obj.isGlobal << ", ";
+    ostr << "\"isFixed\": " << obj.isFixed << ", ";
+    ostr << "\"isUserSpecified\": " << obj.isUserSpecified << ", ";
+    ostr << "\"isLazyInitialized\": " << obj.isLazyInitialized << ", ";
+    ostr << "\"symbolicAddress\": \"" << (obj.symbolicAddress ? expr2str(*obj.symbolicAddress) : "null") << "\" ";
+    ostr << "}";
   }
 
-  static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane) {
+  static void byteInfoToJson(std::ostream& ostr, const ByteInfo& byte) {
+      ostr << "            {";
+      ostr <<  "\"byteID\": " << byte.byteID << ", ";
+      ostr << "\"concrete\": " << byte.isConcrete << ", ";
+      ostr << "\"knownSym\": " << byte.isKnownSym << ", ";
+      ostr << "\"unflushed\": " << byte.isUnflushed << ", ";
+      ostr << "\"value\": " << "\"" << expr2str(byte.value) << "\"";
+      ostr << "}";
+  }
+
+  static void objectInfoDiffToJson(std::ostream& ostr, const std::vector<ObjectInfo>& parent, const std::vector<ObjectInfo>& child) {
+    ostr << "    \"objects\": {\n";
+    
+    ostr << "      \"add\": [\n";
+    size_t i = 0, j = 0;
+    while (i < child.size()) {
+      if (j >= parent.size() || child[i] < parent[j]) {
+        objectInfoToJson(ostr, child[i]);
+        i++;
+        ostr << (i < child.size() ? ",\n" : "\n");
+      }
+      else if (child[i] > parent[j]) {
+        j++;
+      }
+      else { // child[i] == parent[j])
+          // no change
+          i++;
+          j++;
+      }
+    }
+    ostr << "      ],\n";
+
+    ostr << "      \"del\": [\n";
+    i = 0, j = 0;
+    while (j < parent.size()) {
+      if (i >= child.size() || parent[j] < child[i]) {
+        objectInfoToJson(ostr, parent[j]);
+        j++;
+        ostr << (j < parent.size() ? ",\n" : "\n");
+      }
+      else if (parent[j] > child[i]) {
+        i++;
+      }
+      else { // child[i] == parent[j])
+          // no change
+          i++;
+          j++;
+      }
+    }
+    ostr << "      ]\n";
+
+    ostr << "    },\n";
+  }
+
+  static void byteInfoDiffToJson(std::ostream& ostr, const std::vector<ByteInfo>& parent, const std::vector<ByteInfo>& child) {
+    ostr << "        \"bytes\": {\n";
+    
+    ostr << "          \"add\": [\n";
+    size_t i = 0, j = 0;
+    while (i < child.size()) {
+      if (j >= parent.size() || child[i] < parent[j]) {
+        byteInfoToJson(ostr, child[i]);
+        i++;
+        ostr << (i < child.size() ? ",\n" : "\n");
+      }
+      else if (child[i] > parent[j]) {
+        j++;
+      }
+      else { // child[i] == parent[j])
+          // no change
+          i++;
+          j++;
+      }
+    }
+    ostr << "          ],\n";
+
+    ostr << "          \"del\": [\n";
+    i = 0, j = 0;
+    while (j < parent.size()) {
+      if (i >= child.size() || parent[j] < child[i]) {
+        byteInfoToJson(ostr, parent[j]);
+        j++;
+        ostr << (j < parent.size() ? ",\n" : "\n");
+      }
+      else if (parent[j] > child[i]) {
+        i++;
+      }
+      else { // child[i] == parent[j])
+          // no change
+          i++;
+          j++;
+      }
+    }
+    ostr << "          ]\n";
+
+    ostr << "        },\n";
+  }
+
+  static void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int id, std::vector<ByteInfo> parentBytes, std::vector<ByteInfo> bytes) {
     if (plane == nullptr) return;
 
-    int id = plane->getParent() ? plane->getParent()->getObject()->id : -1;
     ostr << "\"memoryObjectID\": " << id << ", ";
     
     std::string name = plane->getUpdateList().root ? plane->getUpdateList().root->getName() : "";
@@ -99,25 +190,16 @@ namespace klee {
     ostr << "\"symbolic\": " << plane->symbolic << ", ";
     ostr << "\"initialValue\": " << (int)plane->initialValue << ",\n";
 
-    ostr << "        \"bytes\": [\n";
-    for (unsigned i = 0; i < plane->sizeBound; ++i) {
-      ostr << "          {";
-      ostr << "\"concrete\": " << plane->isByteConcrete(i) << ", ";
-      ostr << "\"knownSym\": " << plane->isByteKnownSymbolic(i) << ", ";
-      ostr << "\"unflushed\": " << plane->isByteUnflushed(i) << ", ";
-      ostr << "\"value\": " << "\"" << expr2str(plane->read8(i)) << "\"";
-      ostr << "}" << (i + 1U < plane->sizeBound ? ",\n" : "\n");
-    }
-    ostr << "        ],\n";
+    byteInfoDiffToJson(ostr, parentBytes, bytes);
 
-    ostr << "        \"updates\": [\n";
+    ostr << "      \"updates\": [\n";
     for (const auto *un = plane->getUpdateList().head.get(); un; ) {
-      ostr << "          {";
+      ostr << "        {";
       ostr << "\"" << expr2str(un->index) << "\"" << " : " << "\"" << expr2str(un->value) << "\"";
       un = un->next.get();
       ostr << "}" << (un != nullptr ? ",\n" : "\n");
     }
-    ostr << "        ]\n";
+    ostr << "      ]\n";
   }
 
   ProgressRecorder& ProgressRecorder::instance() {
@@ -156,14 +238,54 @@ namespace klee {
     , roundActions{}
   {}
 
+  std::vector<ObjectInfo> getObjectInfo(const MemoryMap& objects) {
+    std::vector<ObjectInfo> objectsInfo;
+
+    for (auto it = objects.begin(); it != objects.end(); ) {
+      ObjectInfo info;
+      info.objID = it->first->id;
+      info.segment = it->first->segment;
+      info.size = it->first->size;
+      info.isLocal = it->first->isLocal;
+      info.isGlobal = it->first->isGlobal;
+      info.isFixed = it->first->isFixed;
+      info.isUserSpecified = it->first->isUserSpecified;
+      info.isLazyInitialized = it->first->isLazyInitialized;
+      info.symbolicAddress = it->first->symbolicAddress;
+      ++it;
+      objectsInfo.push_back(info);
+    }
+    return objectsInfo;
+  }
+
+  std::vector<ByteInfo> getByteInfo(const ObjectStatePlane *const plane) {
+    std::vector<ByteInfo> byteInfo;
+    
+    for (unsigned i = 0; i < plane->sizeBound; ++i) {
+      ByteInfo byte;
+      byte.byteID = i;
+      byte.isConcrete = plane->isByteConcrete(i);
+      byte.isKnownSym = plane->isByteKnownSymbolic(i);
+      byte.isUnflushed = plane->isByteUnflushed(i);
+      byte.value = plane->read8(i);
+      byteInfo.push_back(byte);
+    }
+    return byteInfo;
+  }
+
+
   bool ProgressRecorder::start(const std::string &underDir,
                                std::string fileName) {
     if (!createDir(underDir))
         return false;
     rootOutputDir = underDir;
 
-    std::string command = "llvm-dis " + fileName + " -o " + rootOutputDir + "/source.ll";
-    std::system(command.c_str());
+    char bcFilePath[PATH_MAX];
+    if (realpath(fileName.c_str(), bcFilePath)){
+      std::string bcFilePathStr(bcFilePath);
+      std::string command = "llvm-dis " + bcFilePathStr + " -o " + rootOutputDir + "/source.ll";
+      std::system(command.c_str());
+    }
 
     const std::string cFile = replaceFileExtension(fileName, ".c");
     const std::string iFile = replaceFileExtension(fileName, ".i");
@@ -209,6 +331,7 @@ namespace klee {
         sit = stateIDs.insert({ node->state, ++stateCounter }).first;
         uniqueState = true;
     }
+    nodeJSONs.insert({ nodeID, std::max(1, roundCounter)});
     roundActions.push_back(std::make_unique<InsertNode>(node, nr.first->second, sit->second, uniqueState));
   }
 
@@ -222,10 +345,15 @@ namespace klee {
   }
 
   void ProgressRecorder::InsertNode::toJson(std::ostream& ostr) {
+    int parentID = instance().nodeIDs.at(node->parent);
+
     ostr << "    \"action\": \"InsertNode\", ";
     ostr << "\"nodeID\": " << nodeID << ", ";
     ostr << "\"stateID\": " << stateID << ", ";
     ostr << "\"uniqueState\": " << uniqueState << ", ";
+    ostr << "\"parentID\": " << parentID << ", ";
+    ostr << "\"parentJSON\": " << (parentID == 0 ? 0 : instance().nodeJSONs.at(parentID)) << ", ";
+
     const InstructionInfo *const instrInfo{ node->state->prevPC->info };
     ostr << "\"location\": ["
          << "\"" << instrInfo->file << "\","
@@ -272,19 +400,52 @@ namespace klee {
     }
     ostr << "    ], \n";
 
-    memoryObjs2json(ostr, node->state->addressSpace.objects);
+    // memoryObjs2json(ostr, node->state->addressSpace.objects);
+
+    instance().accessCount[nodeID] += 1;
+    std::vector<ObjectInfo> nodeInfo = getObjectInfo(node->state->addressSpace.objects);
+    instance().objectStates.insert({ nodeID, nodeInfo });
+    std::vector<ObjectInfo> parentInfo;
+
+    if (parentID != 0){
+      parentInfo = instance().objectStates.at(parentID);
+    }
+    objectInfoDiffToJson(ostr, parentInfo, nodeInfo);
+
     ostr << "    \"objectStates\": [\n";
     for (auto it = node->state->addressSpace.objects.begin(); it != node->state->addressSpace.objects.end(); ) {
       ostr << "      {\n";
       ostr << "      \"objID\": " << it->first->id << ", ";
       ostr << "\"copyOnWriteOwner\": " << it->second->copyOnWriteOwner << ", ";
       ostr << "\"readOnly\": " << it->second->readOnly << ",\n";
+
       ostr << "      \"segmentPlane\": { ";
-      plane2json(ostr, it->second->segmentPlane);
+      if (it->second->segmentPlane != nullptr) {
+        int id = it->second->segmentPlane->getParent() ? it->second->segmentPlane->getParent()->getObject()->id : -1;
+        std::vector<ByteInfo> bytes = getByteInfo(it->second->segmentPlane);
+        std::vector<ByteInfo> parentBytes;
+
+        instance().segmentBytes.insert({ {nodeID, id}, bytes });
+        if (parentID != 0){
+          parentBytes = instance().segmentBytes.at({parentID, id});
+        }
+        plane2json(ostr, it->second->segmentPlane, id, parentBytes, bytes);
+      }
       ostr << "\n      },\n";
+
       ostr << "      \"offsetPlane\": { ";
-      plane2json(ostr, it->second->offsetPlane);
-      ostr << "      }";
+      if (it->second->offsetPlane != nullptr) {
+        int id = it->second->offsetPlane->getParent() ? it->second->offsetPlane->getParent()->getObject()->id : -1;
+        std::vector<ByteInfo> bytes = getByteInfo(it->second->offsetPlane);
+        std::vector<ByteInfo> parentBytes;
+
+        instance().offsetBytes.insert({ {nodeID, id }, bytes });
+        if (parentID != 0){
+          parentBytes = instance().offsetBytes.at({ parentID, id });
+        }
+        plane2json(ostr, it->second->offsetPlane, id, parentBytes, bytes);
+      }
+      ostr << "\n      }";
       ostr << "\n      }";
       ++it;
       ostr << (it != node->state->addressSpace.objects.end() ? ",\n" : "\n");
@@ -361,6 +522,17 @@ namespace klee {
       ostr << (it != node->state->cexPreferences.end() ? ", " : "");
     }
     ostr << "    ]\n";
+
+    if (instance().accessCount[parentID] == 2) {
+      instance().DeleteParentInfo(parentID);
+    }
+  }
+
+  void ProgressRecorder::DeleteParentInfo(const int parentID) {
+    nodeJSONs.erase(parentID);
+    accessCount.erase(parentID);
+    objectStates.erase(parentID);
+    // TODO erase bytes
   }
 
   void ProgressRecorder::InsertEdge::toJson(std::ostream& ostr) {
