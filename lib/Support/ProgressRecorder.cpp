@@ -402,7 +402,7 @@ namespace klee {
 
     // memoryObjs2json(ostr, node->state->addressSpace.objects);
 
-    instance().accessCount[nodeID] += 1;
+    instance().accessCount[parentID] += 1;
     std::vector<ObjectInfo> nodeInfo = getObjectInfo(node->state->addressSpace.objects);
     instance().objectStates.insert({ nodeID, nodeInfo });
     std::vector<ObjectInfo> parentInfo;
@@ -426,8 +426,9 @@ namespace klee {
         std::vector<ByteInfo> parentBytes;
 
         instance().segmentBytes.insert({ {nodeID, id}, bytes });
-        if (parentID != 0){
-          parentBytes = instance().segmentBytes.at({parentID, id});
+        auto itBytes = instance().segmentBytes.find({ parentID, id });
+        if (itBytes != instance().segmentBytes.end()) {
+          parentBytes = itBytes->second;
         }
         plane2json(ostr, it->second->segmentPlane, id, parentBytes, bytes);
       }
@@ -440,8 +441,9 @@ namespace klee {
         std::vector<ByteInfo> parentBytes;
 
         instance().offsetBytes.insert({ {nodeID, id }, bytes });
-        if (parentID != 0){
-          parentBytes = instance().offsetBytes.at({ parentID, id });
+        auto itBytes = instance().offsetBytes.find({ parentID, id });
+        if (itBytes != instance().offsetBytes.end()) {
+          parentBytes = itBytes->second;
         }
         plane2json(ostr, it->second->offsetPlane, id, parentBytes, bytes);
       }
@@ -532,7 +534,22 @@ namespace klee {
     nodeJSONs.erase(parentID);
     accessCount.erase(parentID);
     objectStates.erase(parentID);
-    // TODO erase bytes
+    
+    for (auto it = segmentBytes.begin(); it != segmentBytes.end(); ) {
+      if (it->first.first == parentID) {
+          it = instance().segmentBytes.erase(it);
+      } else {
+          ++it;
+      }
+    }
+
+    for (auto it = offsetBytes.begin(); it != offsetBytes.end(); ) {
+      if (it->first.first == parentID) {
+          it = instance().offsetBytes.erase(it);
+      } else {
+          ++it;
+      }
+    }
   }
 
   void ProgressRecorder::InsertEdge::toJson(std::ostream& ostr) {
