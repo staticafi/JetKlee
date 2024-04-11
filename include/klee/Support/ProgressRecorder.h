@@ -17,6 +17,8 @@
 #include <iosfwd>
 #include "klee/ADT/Ref.h"
 #include "klee/Expr/Expr.h"
+#include "../../../lib/Core/Memory.h"
+#include "../../../lib/Core/AddressSpace.h"
 
 
 namespace klee {
@@ -41,6 +43,8 @@ namespace klee {
     bool operator>(const ByteInfo& other) const {
         return byteID > other.byteID;
     }
+
+    void toJson(std::ostream& ostr) const;
   };
 
   struct ObjectInfo {
@@ -64,6 +68,8 @@ namespace klee {
     bool operator>(const ObjectInfo& other) const {
         return objID > other.objID;
     }
+
+    void toJson(std::ostream& ostr) const;
   };
 
   struct pair_hash {
@@ -140,7 +146,10 @@ namespace klee {
     void onRoundBegin();
     void onRoundEnd();
 
-    void DeleteParentInfo(const int parentID);
+    void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID);
+    void objects2json(std::ostream &ostr, const MemoryMap objects, int nodeID, int parentID);
+
+    void deleteParentInfo(const int parentID);
     void onInsertNode(const PTreeNode *node);
     void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
     void onEraseNode(const PTreeNode *node);
