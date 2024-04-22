@@ -28,23 +28,28 @@ namespace klee {
   struct InstructionInfo;
 
   struct ByteInfo {
-    unsigned int byteID;
+    int byteID;
     bool isConcrete;
     bool isKnownSym;
     bool isUnflushed;
     klee::ref<klee::Expr> value;
 
     bool operator==(const ByteInfo& other) const {
-        return byteID == other.byteID;
-    }
-    bool operator<(const ByteInfo& other) const {
-        return byteID < other.byteID;
-    }
-    bool operator>(const ByteInfo& other) const {
-        return byteID > other.byteID;
+      return isConcrete == other.isConcrete &&
+               isKnownSym == other.isKnownSym &&
+               isUnflushed == other.isUnflushed &&
+               value == other.value;           
     }
 
-    void toJson(std::ostream& ostr) const;
+    bool operator<(const ByteInfo& other) const {
+      return byteID < other.byteID;           
+    }
+
+    bool operator>(const ByteInfo& other) const {
+      return byteID > other.byteID;           
+    }
+
+    // void toJson(std::ostream& ostr) const;
   };
 
   struct ObjectInfo {
@@ -148,6 +153,7 @@ namespace klee {
 
     void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID);
     void objects2json(std::ostream &ostr, const MemoryMap objects, int nodeID, int parentID);
+    void recordInfo(int nodeID, int parentID, const MemoryMap objects);
 
     void deleteParentInfo(const int parentID);
     void onInsertNode(const PTreeNode *node);
