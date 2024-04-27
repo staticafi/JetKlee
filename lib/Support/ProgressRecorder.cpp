@@ -190,43 +190,32 @@ void ObjectInfo::toJson(std::ostream &ostr) const {
   ostr << "\"isUserSpec\": " << isUserSpecified << ", ";
   ostr << "\"isLazyInit\": " << isLazyInitialized << ", ";
   ostr << "\"symAddress\": \""
-       << (symbolicAddress ? expr2str(*symbolicAddress) : "null") << "\" ";
+       << (symbolicAddress ? expr2str(*symbolicAddress) : "") << "\" ";
   ostr << "}";
 }
 
-template <typename T>
-std::vector<T> vectorDifference(const std::vector<T>& vector1, const std::vector<T>& vector2) {
-  std::vector<T> diff;
-  for (const auto& item1 : vector1) {
-    auto it = std::find_if(
-      vector2.begin(), vector2.end(), [&item1](const T& item2)
-      {return item1 == item2;}
-    );
-    if (it == vector2.end()) { // item1 not found in vector2
-      diff.push_back(item1);
-    }
-  }
-  return diff;
-}
+template <typename Containter>
+std::tuple<Containter, Containter> getDiff(const Containter &parent, const Containter &child) {
+  Containter additions;
+  Containter deletions;
 
-template <typename T>
-std::tuple<std::vector<T>, std::vector<T>> getDiff(const std::vector<T> &parent, const std::vector<T> &child) {
-  std::vector<T> additions;
-  std::vector<T> deletions;
-
-  additions = vectorDifference(child, parent);
-  deletions = vectorDifference(parent, child);
+  std::set_difference(child.begin(), child.end(), parent.begin(), parent.end(), std::inserter(additions, additions.end()));
+  std::set_difference(parent.begin(), parent.end(), child.begin(), child.end(), std::inserter(deletions, deletions.end()));
 
   return std::make_tuple(additions, deletions);
 }
 
 using GroupMap = std::map<std::tuple<bool, bool, bool>, std::map<klee::ref<klee::Expr>, std::vector<int>>>;
-GroupMap groupByteInfo(const std::vector<ByteInfo> &byteInfo) {
+GroupMap groupByteInfo(const std::map<ByteInfo, std::vector<int>> &byteInfo) {
   GroupMap groupedBytes;
-  for (auto b = byteInfo.begin(); b != byteInfo.end(); ++b) {
-    std::tuple<bool, bool, bool> bytes = std::make_tuple(b->isConcrete, b->isKnownSym, b->isUnflushed);
-    groupedBytes[bytes][b->value].push_back(b->byteID);
-  }
+    for (const auto& b : byteInfo) {
+      const ByteInfo& byteInfo = b.first;
+      const std::vector<int>& ids = b.second;
+      std::tuple<bool, bool, bool> flags = std::make_tuple(byteInfo.isConcrete, byteInfo.isKnownSym, byteInfo.isUnflushed);
+      for (int id : ids) {
+        groupedBytes[flags][byteInfo.value].push_back(id);
+      }
+    }
   return groupedBytes;
 }
 
@@ -267,8 +256,7 @@ void byteDiffToJson(std::ostream &ostr, const GroupMap &additions, const GroupMa
   ostr << indent << "]\n";
 }
 
-template <typename T>
-void diffToJson(std::ostream &ostr, const std::vector<T> &additions, const std::vector<T> &deletions, int indentSize) {
+void objDiffToJson(std::ostream &ostr, const std::set<ObjectInfo> &additions, const std::set<ObjectInfo> &deletions, int indentSize) {
   std::string indent(indentSize, ' ');
 
   ostr << indent << "\"add\": [\n";
@@ -288,8 +276,8 @@ void diffToJson(std::ostream &ostr, const std::vector<T> &additions, const std::
   ostr << indent << "]\n";
 }
 
-std::vector<ObjectInfo> getObjectInfo(const MemoryMap &objects) {
-  std::vector<ObjectInfo> objectsInfo;
+std::set<ObjectInfo> getObjectInfo(const MemoryMap &objects) {
+  std::set<ObjectInfo> objectsInfo;
 
   for (auto it = objects.begin(); it != objects.end(); ++it) {
     ObjectInfo info;
@@ -302,41 +290,48 @@ std::vector<ObjectInfo> getObjectInfo(const MemoryMap &objects) {
     info.isUserSpecified = it->first->isUserSpecified;
     info.isLazyInitialized = it->first->isLazyInitialized;
     info.symbolicAddress = it->first->symbolicAddress;
-    objectsInfo.push_back(info);
+    objectsInfo.insert(info);
   }
   return objectsInfo;
 }
 
-std::vector<ByteInfo> getByteInfo(const ObjectStatePlane *const plane) {
-  std::vector<ByteInfo> byteInfo;
-
+std::map<ByteInfo, std::vector<int>> getByteInfo(const ObjectStatePlane *const plane) {
+  std::map<ByteInfo, std::vector<int>> byteInfo;
   for (unsigned i = 0; i < plane->sizeBound; ++i) {
     ByteInfo byte;
-    byte.byteID = i;
     byte.isConcrete = plane->isByteConcrete(i);
     byte.isKnownSym = plane->isByteKnownSymbolic(i);
     byte.isUnflushed = plane->isByteUnflushed(i);
     byte.value = plane->read8(i);
-    byteInfo.push_back(byte);
+    byteInfo[byte].push_back(i);
   }
   return byteInfo;
 }
 
 void ProgressRecorder::plane2json(std::ostream &ostr,
                                   const ObjectStatePlane *const plane,
-                                  int nodeID, int parentID) {
+                                  int nodeID, int parentID, bool isOffset) {
   if (plane == nullptr)
     return;
   int planeID = plane->getParent() ? plane->getParent()->getObject()->id : -1;
 
-  std::vector<ByteInfo> bytes = getByteInfo(plane);
-  std::vector<ByteInfo> parentBytes;
+  std::map<ByteInfo, std::vector<int>> bytes = getByteInfo(plane);
+  std::map<ByteInfo, std::vector<int>> parentBytes;
 
-  instance().segmentBytes.insert({{nodeID, planeID}, bytes});
-  auto itBytes = instance().segmentBytes.find({parentID, planeID});
+  if (isOffset) {
+    instance().offsetBytes.insert({{nodeID, planeID}, bytes});
+    auto itBytes = instance().offsetBytes.find({parentID, planeID});
 
-  if (itBytes != instance().segmentBytes.end()) {
-    parentBytes = itBytes->second;
+    if (itBytes != instance().offsetBytes.end()) {
+      parentBytes = itBytes->second;
+    }
+  } else {
+    instance().segmentBytes.insert({{nodeID, planeID}, bytes});
+    auto itBytes = instance().segmentBytes.find({parentID, planeID});
+
+    if (itBytes != instance().segmentBytes.end()) {
+      parentBytes = itBytes->second;
+    }
   }
 
   ostr << "\"memoryObjectID\": " << planeID << ", ";
@@ -350,7 +345,7 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   ostr << "\"symbolic\": " << plane->symbolic << ", ";
   ostr << "\"initialValue\": " << (int)plane->initialValue;
 
-  std::tuple<std::vector<ByteInfo>, std::vector<ByteInfo>> diff = getDiff(parentBytes, bytes);
+  std::tuple<std::map<ByteInfo, std::vector<int>>, std::map<ByteInfo, std::vector<int>>> diff = getDiff(parentBytes, bytes);
   GroupMap groupedAdd = groupByteInfo(std::get<0>(diff));
   GroupMap groupedDel = groupByteInfo(std::get<1>(diff));
 
@@ -377,20 +372,20 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
 void ProgressRecorder::objects2json(std::ostream &ostr, const MemoryMap objects,
                                     int nodeID, int parentID) {
   instance().accessCount[parentID] += 1;
-  std::vector<ObjectInfo> childObjectInfo = getObjectInfo(objects);
-  std::vector<ObjectInfo> parentObjectInfo;
+  std::set<ObjectInfo> childObjectInfo = getObjectInfo(objects);
+  std::set<ObjectInfo> parentObjectInfo;
   instance().objectStates.insert({nodeID, childObjectInfo});
 
   auto it = instance().objectStates.find(parentID);
   if (it != instance().objectStates.end()) {
     parentObjectInfo = it->second;
   }
-  std::tuple<std::vector<ObjectInfo>, std::vector<ObjectInfo>> diff = getDiff(parentObjectInfo, childObjectInfo);
-  std::vector<ObjectInfo> additions = std::get<0>(diff);
-  std::vector<ObjectInfo> deletions = std::get<1>(diff);
+  std::tuple<std::set<ObjectInfo>, std::set<ObjectInfo>> diff = getDiff(parentObjectInfo, childObjectInfo);
+  std::set<ObjectInfo> additions = std::get<0>(diff);
+  std::set<ObjectInfo> deletions = std::get<1>(diff);
   if (!(additions.empty() && deletions.empty())) {
     ostr << "    \"objects\": {\n";
-    diffToJson(ostr, additions, deletions, 6);
+    objDiffToJson(ostr, additions, deletions, 6);
     ostr << "    },\n";
   }
 }
@@ -419,18 +414,18 @@ nondetValues2json(std::ostream &ostr,
 
 void ProgressRecorder::recordInfo(int nodeID, int parentID, const MemoryMap objects) {
   instance().accessCount[parentID] += 1;
-  std::vector<ObjectInfo> childObjectInfo = getObjectInfo(objects);
+  std::set<ObjectInfo> childObjectInfo = getObjectInfo(objects);
   instance().objectStates.insert({nodeID, childObjectInfo});
 
   for (auto it = objects.begin(); it != objects.end(); ++it) {
     if (it->second->segmentPlane != nullptr) {
       int planeID = it->second->segmentPlane->getParent() ? it->second->segmentPlane->getParent()->getObject()->id : -1;
-      std::vector<ByteInfo> bytes = getByteInfo(it->second->segmentPlane);
+      std::map<ByteInfo, std::vector<int>> bytes = getByteInfo(it->second->segmentPlane);
       instance().segmentBytes.insert({{nodeID, planeID}, bytes});
     }
     if (it->second->offsetPlane != nullptr) {
       int planeID = it->second->offsetPlane->getParent() ? it->second->offsetPlane->getParent()->getObject()->id : -1;
-      std::vector<ByteInfo> bytes = getByteInfo(it->second->offsetPlane);
+      std::map<ByteInfo, std::vector<int>> bytes = getByteInfo(it->second->offsetPlane);
       instance().offsetBytes.insert({{nodeID, planeID}, bytes});
     }
   }
@@ -505,11 +500,11 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
     ostr << "\"readOnly\": " << it->second->readOnly << ",\n";
 
     ostr << "      \"segmentPlane\": {";
-    instance().plane2json(ostr, it->second->segmentPlane, nodeID, parentID);
+    instance().plane2json(ostr, it->second->segmentPlane, nodeID, parentID, false);
     ostr << "\n      },\n";
 
     ostr << "      \"offsetPlane\": {";
-    instance().plane2json(ostr, it->second->offsetPlane, nodeID, parentID);
+    instance().plane2json(ostr, it->second->offsetPlane, nodeID, parentID, true);
     ostr << "\n      }";
     ostr << "\n      }";
     ++it;

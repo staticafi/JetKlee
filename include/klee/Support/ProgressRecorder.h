@@ -28,7 +28,6 @@ namespace klee {
   struct InstructionInfo;
 
   struct ByteInfo {
-    int byteID;
     bool isConcrete;
     bool isKnownSym;
     bool isUnflushed;
@@ -42,11 +41,15 @@ namespace klee {
     }
 
     bool operator<(const ByteInfo& other) const {
-      return byteID < other.byteID;           
-    }
-
-    bool operator>(const ByteInfo& other) const {
-      return byteID > other.byteID;           
+      if (isConcrete != other.isConcrete) {
+        return !isConcrete;
+      } else if (isKnownSym != other.isKnownSym) {
+        return !isKnownSym;
+      } else if (isUnflushed != other.isUnflushed) {
+        return !isUnflushed;
+      } else {
+        return value < other.value;
+      }
     }
 
     // void toJson(std::ostream& ostr) const;
@@ -127,14 +130,14 @@ namespace klee {
     std::unordered_map<int, int> nodeJSONs;
 
     std::unordered_map<int, int> accessCount;
-    std::unordered_map<int, std::vector<ObjectInfo>> objectStates;
-    std::unordered_map<std::pair<int, int>, std::vector<ByteInfo>, pair_hash> segmentBytes;
-    std::unordered_map<std::pair<int, int>, std::vector<ByteInfo>, pair_hash> offsetBytes;
+    std::unordered_map<int, std::set<ObjectInfo>> objectStates;
+    std::unordered_map<std::pair<int, int>, std::map<ByteInfo, std::vector<int>>, pair_hash> segmentBytes;
+    std::unordered_map<std::pair<int, int>, std::map<ByteInfo, std::vector<int>>, pair_hash> offsetBytes;
 
     int stateCounter;
     std::unordered_map<const ExecutionState *, int> stateIDs;
 
-    std::vector<std::unique_ptr<Action> > roundActions;
+    std::vector<std::unique_ptr<Action>> roundActions;
 
     ProgressRecorder();
     ProgressRecorder(ProgressRecorder const&) = default;
@@ -151,7 +154,7 @@ namespace klee {
     void onRoundBegin();
     void onRoundEnd();
 
-    void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID);
+    void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
     void objects2json(std::ostream &ostr, const MemoryMap objects, int nodeID, int parentID);
     void recordInfo(int nodeID, int parentID, const MemoryMap objects);
 
