@@ -28,20 +28,24 @@ namespace klee {
   struct InstructionInfo;
 
   struct ByteInfo {
+    int offset;
     bool isConcrete;
     bool isKnownSym;
     bool isUnflushed;
     klee::ref<klee::Expr> value;
 
     bool operator==(const ByteInfo& other) const {
-      return isConcrete == other.isConcrete &&
-               isKnownSym == other.isKnownSym &&
-               isUnflushed == other.isUnflushed &&
-               value == other.value;           
+      return offset == other.offset &
+            isConcrete == other.isConcrete &&
+            isKnownSym == other.isKnownSym &&
+            isUnflushed == other.isUnflushed &&
+            value == other.value;      
     }
 
     bool operator<(const ByteInfo& other) const {
-      if (isConcrete != other.isConcrete) {
+      if (offset != other.offset) {
+        return offset < other.offset;
+      } else if (isConcrete != other.isConcrete) {
         return !isConcrete;
       } else if (isKnownSym != other.isKnownSym) {
         return !isKnownSym;
@@ -51,7 +55,6 @@ namespace klee {
         return value < other.value;
       }
     }
-
     // void toJson(std::ostream& ostr) const;
   };
 
@@ -131,8 +134,8 @@ namespace klee {
 
     std::unordered_map<int, int> accessCount;
     std::unordered_map<int, std::set<ObjectInfo>> objectStates;
-    std::unordered_map<std::pair<int, int>, std::map<ByteInfo, std::vector<int>>, pair_hash> segmentBytes;
-    std::unordered_map<std::pair<int, int>, std::map<ByteInfo, std::vector<int>>, pair_hash> offsetBytes;
+    std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> segmentBytes;
+    std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> offsetBytes;
 
     int stateCounter;
     std::unordered_map<const ExecutionState *, int> stateIDs;
