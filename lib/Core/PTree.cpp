@@ -15,6 +15,7 @@
 #include "klee/Expr/ExprPPrinter.h"
 #include "klee/Support/OptionCategories.h"
 #include "klee/Support/ProgressRecorder.h"
+#include "klee/Support/ProgressRecorderLong.h"
 
 #include <bitset>
 #include <vector>
@@ -36,8 +37,10 @@ PTree::PTree(ExecutionState *initialState)
     : root(PTreeNodePtr(new PTreeNode(nullptr, initialState))) {
   initialState->ptreeNode = root.getPointer();
 
-  if (CompressProcessTree)
+  if (CompressProcessTree) {
     recorder().stop();
+    recorderLong().stop();
+  }
 }
 
 void PTree::attach(PTreeNode *node, ExecutionState *leftState,
@@ -49,6 +52,7 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   node->left = PTreeNodePtr(new PTreeNode(node, leftState));
 
   recorder().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
+  recorderLong().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
 
   // The current node inherits the tag
   uint8_t currentNodeTag = root.getInt();
@@ -59,12 +63,14 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   node->right = PTreeNodePtr(new PTreeNode(node, rightState), currentNodeTag);
 
   recorder().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
+  recorderLong().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
 }
 
 void PTree::remove(PTreeNode *n) {
   assert(!n->left.getPointer() && !n->right.getPointer());
   do {
     recorder().onEraseNode(n);
+    recorderLong().onEraseNode(n);
 
     PTreeNode *p = n->parent;
     if (p) {
@@ -145,4 +151,5 @@ PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent},
   right = PTreeNodePtr(nullptr);
 
   recorder().onInsertNode(this);
+  recorderLong().onInsertNode(this);
 }

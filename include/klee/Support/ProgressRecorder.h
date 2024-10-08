@@ -35,7 +35,7 @@ namespace klee {
     klee::ref<klee::Expr> value;
 
     bool operator==(const ByteInfo& other) const {
-      return offset == other.offset &
+      return offset == other.offset &&
             isConcrete == other.isConcrete &&
             isKnownSym == other.isKnownSym &&
             isUnflushed == other.isUnflushed &&
@@ -56,31 +56,6 @@ namespace klee {
       }
     }
     // void toJson(std::ostream& ostr) const;
-  };
-
-  struct ObjectInfo {
-    unsigned int objID;
-    int segment;
-    std::string name;
-    klee::ref<klee::Expr> size;
-    bool isLocal;
-    bool isGlobal;
-    bool isFixed;
-    bool isUserSpecified;
-    bool isLazyInitialized;
-    llvm::Optional<klee::ref<klee::Expr>> symbolicAddress;
-
-    bool operator==(const ObjectInfo& other) const {
-        return objID == other.objID;
-    }
-    bool operator<(const ObjectInfo& other) const {
-        return objID < other.objID;
-    }
-    bool operator>(const ObjectInfo& other) const {
-        return objID > other.objID;
-    }
-
-    void toJson(std::ostream& ostr) const;
   };
 
   struct pair_hash {
@@ -133,7 +108,8 @@ namespace klee {
     std::unordered_map<int, int> nodeJSONs;
 
     std::unordered_map<int, int> accessCount;
-    std::unordered_map<int, std::set<ObjectInfo>> objectStates;
+    // list of Object ids for parent nodes
+    std::unordered_map<int, std::set<int>> parentIds;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> segmentBytes;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> offsetBytes;
 
@@ -157,6 +133,8 @@ namespace klee {
     void onRoundBegin();
     void onRoundEnd();
 
+    std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> getByteDiff(std::ostream &ostr,
+      const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
     void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
     void objects2json(std::ostream &ostr, const MemoryMap objects, int nodeID, int parentID);
     void recordInfo(int nodeID, int parentID, const MemoryMap objects);
