@@ -256,8 +256,30 @@ std::set<ByteInfo> getByteInfo(const ObjectStatePlane *const plane) {
   return byteInfo;
 }
 
-std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> ProgressRecorder::getByteDiff(std::ostream &ostr,
-                                  const ObjectStatePlane *const plane,
+Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID, int parentID) {
+  Updates additions;
+  Updates childUpdates;
+  Updates parentUpdates;
+
+  if (updateList.head.get() == nullptr)
+    return additions;
+
+  for (const auto *un = updateList.head.get(); un; un = un->next.get()) {
+    childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
+  }
+
+  instance().updates.insert({nodeID, childUpdates});
+  auto itUpdates = instance().updates.find({parentID});
+  if (itUpdates != instance().updates.end()) {
+      parentUpdates = itUpdates->second;
+    }
+
+  std::tuple<Updates, Updates> diff = getDiff(parentUpdates, childUpdates);
+  return std::get<0>(diff); // TODO refactor -> constant ADD_INDEX
+}
+
+// TODO refactor -> define type aliases
+std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> ProgressRecorder::getByteDiff(const ObjectStatePlane *const plane,
                                   int nodeID, int parentID, bool isOffset) {
   std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> diff;
   if (plane == nullptr)
@@ -305,29 +327,32 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   ostr << "\"symbolic\": " << plane->symbolic << ", ";
   ostr << "\"initialValue\": " << (int)plane->initialValue;
 
-  // TODO it function parameter
   std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> diff =
-      getByteDiff(ostr, plane, nodeID, parentID, isOffset);
+      getByteDiff(plane, nodeID, parentID, isOffset);
   GroupMap groupedAdd = groupByteInfo(std::get<0>(diff));
   GroupMap groupedDel = groupByteInfo(std::get<1>(diff));
 
   if (!(groupedAdd.empty() && groupedDel.empty())) {
-    ostr << ",\n        \"bytes\": {\n";
-    byteDiffToJson(ostr, groupedAdd, groupedDel, 10);
-    ostr << "        }";
+    ostr << ",\n            \"bytes\": {\n";
+    byteDiffToJson(ostr, groupedAdd, groupedDel, 14);
+    ostr << "            }";
   }
 
+  Updates updatesAdd = getUpdateDiff(plane->getUpdateList(), nodeID, parentID);
   if (plane->getUpdateList().head.get() != nullptr) {
-    ostr << ",\n        \"updates\": [\n";
-    for (const auto *un = plane->getUpdateList().head.get(); un;) {
-      ostr << "        {";
-      ostr << "\"" << expr2str(un->index) << "\""
+    ostr << ",\n            \"updates\": [\n";
+    for (auto it = updatesAdd.begin(); it != updatesAdd.end();) {
+      const std::string& offset = std::get<0>(*it);
+      const std::string& value = std::get<1>(*it);
+
+      ostr << "              {";
+      ostr << "\"" << offset << "\""
            << " : "
-           << "\"" << expr2str(un->value) << "\"";
-      un = un->next.get();
-      ostr << "}" << (un != nullptr ? ",\n" : "\n");
+           << "\"" << value << "\"";
+      ++it;
+      ostr << "}" << (it != updatesAdd.end() ? ",\n" : "\n");
     }
-    ostr << "        ]";
+    ostr << "            ]";
   }
 }
 
@@ -356,6 +381,15 @@ nondetValues2json(std::ostream &ostr,
 void ProgressRecorder::recordInfo(int nodeID, int parentID,
                                   const MemoryMap objects) {
   instance().accessCount[parentID] += 1;
+  std::set<int> childIds;
+
+  for (auto it = objects.begin();
+       it != objects.end();) {
+    childIds.insert(it->first->id);
+    ++it;
+  }
+
+  instance().parentIds.insert({nodeID, childIds});
 
   for (auto it = objects.begin(); it != objects.end(); ++it) {
     if (it->second->segmentPlane != nullptr) {
@@ -364,6 +398,17 @@ void ProgressRecorder::recordInfo(int nodeID, int parentID,
                         : -1;
       std::set<ByteInfo> bytes = getByteInfo(it->second->segmentPlane);
       instance().segmentBytes.insert({{nodeID, planeID}, bytes});
+
+      Updates childUpdates;
+
+      if (it->second->segmentPlane->getUpdateList().head.get() != nullptr) {
+        for (const auto *un = it->second->segmentPlane->getUpdateList().head.get(); un; un = un->next.get()) {
+          childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
+        }
+      }
+
+      instance().updates.insert({nodeID, childUpdates});
+
     }
     if (it->second->offsetPlane != nullptr) {
       int planeID = it->second->offsetPlane->getParent()
@@ -371,11 +416,51 @@ void ProgressRecorder::recordInfo(int nodeID, int parentID,
                         : -1;
       std::set<ByteInfo> bytes = getByteInfo(it->second->offsetPlane);
       instance().offsetBytes.insert({{nodeID, planeID}, bytes});
+
+      Updates childUpdates;
+
+      if (it->second->offsetPlane->getUpdateList().head.get() != nullptr) {
+        for (const auto *un = it->second->offsetPlane->getUpdateList().head.get(); un; un = un->next.get()) {
+          childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
+        }
+      }
+
+      instance().updates.insert({nodeID, childUpdates});
     }
   }
   if (instance().accessCount[parentID] == 2) {
     instance().deleteParentInfo(parentID);
   }
+}
+
+void ProgressRecorder::object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID) {
+  // OBJECT INFO
+  ostr << "        {";
+  ostr << "\"objID\": " << obj->id << ", ";
+  ostr << "\"segment\": " << obj->segment << ", ";
+  ostr << "\"name\": \"" << obj->name << "\", ";
+  ostr << "\"size\": \"" << expr2str(obj->size) << "\", ";
+  ostr << "\"isLocal\": " << obj->isLocal << ", ";
+  ostr << "\"isGlobal\": " << obj->isGlobal << ", ";
+  ostr << "\"isFixed\": " << obj->isFixed << ", ";
+  ostr << "\"isUserSpec\": " << obj->isUserSpecified << ", ";
+  ostr << "\"isLazy\": " << obj->isLazyInitialized << ", ";
+  ostr << "\"symAddress\": \""
+      << (obj->symbolicAddress ? expr2str(*obj->symbolicAddress) : "") << "\", ";
+  
+  // OBJECT STATE INFO
+  ostr << "\"copyOnWriteOwner\": " << state->copyOnWriteOwner << ", ";
+  ostr << "\"readOnly\": " << state->readOnly << ",\n";
+
+  ostr << "          \"segmentPlane\": {";
+  instance().plane2json(ostr, state->segmentPlane, nodeID, parentID,
+  false); ostr << "\n          },\n";
+
+  ostr << "          \"offsetPlane\": {";
+  instance().plane2json(ostr, state->offsetPlane, nodeID, parentID,
+  true); ostr << "\n          }";
+  
+  ostr << "\n        }";
 }
 
 void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
@@ -432,8 +517,6 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
   ostr << ",\n";
 
   nondetValues2json(ostr, node->state->nondetValues);
-  // instance().objects2json(ostr, node->state->addressSpace.objects, nodeID,
-  //                         parentID);
 
   std::set<int> currentParentIds;
   auto it = instance().parentIds.find(parentID);
@@ -449,112 +532,61 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
     childIds.insert(it->first->id);
     ++it;
   }
-  instance().parentIds.insert({nodeID, childIds});
 
   std::tuple<std::set<int>, std::set<int>> diff =
       getDiff(currentParentIds, childIds);
   std::set<int> additionsIds = std::get<0>(diff);
   std::set<int> deletionsIds = std::get<1>(diff);
 
-  int indentSize = 6;
-  std::string indent(indentSize, ' ');
+  instance().parentIds[nodeID] = childIds;
 
   bool addComma = false;
   instance().accessCount[parentID] += 1;
 
   ostr << "    \"objects\": {\n";
 
-  ostr << indent << "\"added\": [";
+  ostr << "      \"added\": [";
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end(); ++it) {
     if (additionsIds.find(it->first->id) != additionsIds.end()) {
       ostr << (addComma ? ",\n" : "\n");
       addComma = true;
-      ostr << indent;
-
-      // OBJECT INFO
-      ostr << "{";
-      ostr << "\"objID\": " << it->first->id << ", ";
-      ostr << "\"segment\": " << it->first->segment << ", ";
-      ostr << "\"name\": \"" << it->first->name << "\", ";
-      ostr << "\"size\": \"" << expr2str(it->first->size) << "\", ";
-      ostr << "\"isLocal\": " << it->first->isLocal << ", ";
-      ostr << "\"isGlobal\": " << it->first->isGlobal << ", ";
-      ostr << "\"isFixed\": " << it->first->isFixed << ", ";
-      ostr << "\"isUserSpec\": " << it->first->isUserSpecified << ", ";
-      ostr << "\"isLazy\": " << it->first->isLazyInitialized << ", ";
-      ostr << "\"symAddress\": \""
-          << (it->first->symbolicAddress ? expr2str(*it->first->symbolicAddress) : "") << "\", ";
-      
-      // OBJECT STATE INFO
-      ostr << "\"copyOnWriteOwner\": " << it->second->copyOnWriteOwner << ", ";
-      ostr << "\"readOnly\": " << it->second->readOnly << ",\n";
-
-      ostr << "      \"segmentPlane\": {";
-      instance().plane2json(ostr, it->second->segmentPlane, nodeID, parentID,
-      false); ostr << "\n      },\n";
-
-      ostr << "      \"offsetPlane\": {";
-      instance().plane2json(ostr, it->second->offsetPlane, nodeID, parentID,
-      true); ostr << "\n      }"; ostr << "\n      }";
-
-      // ostr << "}";
+      instance().object2json(ostr, it->first, it->second, nodeID, parentID);
     }
 
   }
-  ostr << "\n    ],\n";
+  ostr << "\n      ],\n";
 
   addComma = false;
 
   // TODO do the same for changed and refactor
-  ostr << indent << "\"changed\": [";
+  ostr << "      \"changed\": [";
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end(); ++it) {
     
-    auto segmentDiff = instance().getByteDiff(ostr, it->second->segmentPlane, nodeID, parentID, false);
-    auto offsetDiff = instance().getByteDiff(ostr, it->second->offsetPlane, nodeID, parentID, true);
+    auto segmentDiff = instance().getByteDiff(it->second->segmentPlane, nodeID, parentID, false);
+    auto offsetDiff = instance().getByteDiff(it->second->offsetPlane, nodeID, parentID, true);
     
     if (additionsIds.find(it->first->id) == additionsIds.end() &&
         (!std::get<0>(segmentDiff).empty() || !std::get<1>(segmentDiff).empty() || 
          !std::get<0>(offsetDiff).empty() || !std::get<1>(offsetDiff).empty())) {
       ostr << (addComma ? ",\n" : "\n");
       addComma = true;
-      ostr << indent;
-      ostr << it->first->id;
+      instance().object2json(ostr, it->first, it->second, nodeID, parentID);
     }
   }
-  ostr << "\n    ],\n";
+  ostr << "\n      ],\n";
 
-  ostr << indent << "\"deleted\": [\n";
+  ostr << "      \"deleted\": [\n";
   for (auto it = deletionsIds.begin(); it != deletionsIds.end();) {
-    ostr << indent;
-    ostr << *it;
+    klee_message("deleted object id: %d", *it);
+    ostr << "        " << *it;
     ++it;
     ostr << (it != deletionsIds.end() ? ", " : "\n");
   }
-  ostr << "    ]\n";
+  ostr << "      ]\n";
 
   ostr << "    },\n";
-
-  // ostr << "    \"objectStates\": [\n";
-  // for (auto it = node->state->addressSpace.objects.begin();
-  //      it != node->state->addressSpace.objects.end();) {
-  //   ostr << "      {\n";
-  //   ostr << "      \"objID\": " << it->first->id << ", ";
-  //   ostr << "\"copyOnWriteOwner\": " << it->second->copyOnWriteOwner << ", ";
-  //   ostr << "\"readOnly\": " << it->second->readOnly << ",\n";
-
-  //   ostr << "      \"segmentPlane\": {";
-  //   instance().plane2json(ostr, it->second->segmentPlane, nodeID, parentID,
-  //   false); ostr << "\n      },\n";
-
-  //   ostr << "      \"offsetPlane\": {";
-  //   instance().plane2json(ostr, it->second->offsetPlane, nodeID, parentID,
-  //   true); ostr << "\n      }"; ostr << "\n      }";
-  //   ++it;
-  //   ostr << (it != node->state->addressSpace.objects.end() ? ",\n" : "\n");
-  // }
-  // ostr << "    ],\n";
 
   ostr << "    \"concreteAddressMap\": [\n";
   for (auto it = node->state->addressSpace.concreteAddressMap.begin();
@@ -642,6 +674,7 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
   parentIds.erase(parentID);
   nodeJSONs.erase(parentID);
   accessCount.erase(parentID);
+  updates.erase(parentID);
 
   for (auto it = segmentBytes.begin(); it != segmentBytes.end();) {
     if (it->first.first == parentID) {

@@ -26,6 +26,7 @@ namespace klee {
   class PTreeNode;
   class ExecutionState;
   struct InstructionInfo;
+  using Updates = std::set<std::tuple<std::string, std::string>>;
 
   struct ByteInfo {
     int offset;
@@ -110,6 +111,7 @@ namespace klee {
     std::unordered_map<int, int> accessCount;
     // list of Object ids for parent nodes
     std::unordered_map<int, std::set<int>> parentIds;
+    std::unordered_map<int, Updates> updates;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> segmentBytes;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> offsetBytes;
 
@@ -133,10 +135,10 @@ namespace klee {
     void onRoundBegin();
     void onRoundEnd();
 
-    std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> getByteDiff(std::ostream &ostr,
-      const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
+    std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> getByteDiff(const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
+    Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID);
     void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
-    void objects2json(std::ostream &ostr, const MemoryMap objects, int nodeID, int parentID);
+    void object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID);
     void recordInfo(int nodeID, int parentID, const MemoryMap objects);
 
     void deleteParentInfo(const int parentID);
