@@ -27,6 +27,8 @@ ProgressRecorder &ProgressRecorder::instance() {
 }
 
 const std::string ProgressRecorder::rootDirName{"__JetKleeProgressRecording__"};
+const std::string ProgressRecorder::treeDirName{"Tree"};
+const std::string ProgressRecorder::memoryDirName{"Memory"};
 
 ProgressRecorder::ProgressRecorder()
     : rootOutputDir{}
@@ -46,6 +48,8 @@ ProgressRecorder::ProgressRecorder()
 static bool createDir(const std::string &dir) {
   return mkdir(dir.c_str(), 0775) >= 0;
 }
+
+int ProgressRecorder::getNodeCounter() { return instance().nodeCounter; }
 
 static std::string replaceFileExtension(const std::string &fileName,
                                         const std::string &extension) {
@@ -69,6 +73,13 @@ bool ProgressRecorder::start(const std::string &underDir,
   if (!createDir(underDir))
     return false;
   rootOutputDir = underDir;
+
+  treeDir = rootOutputDir + "/" + treeDirName;
+  memoryDir = rootOutputDir + "/" + memoryDirName;
+  
+  if (!createDir(treeDir) || !createDir(memoryDir)) {
+    return false;
+  }
 
   char bcFilePath[PATH_MAX];
   if (realpath(fileName.c_str(), bcFilePath)) {
@@ -96,7 +107,7 @@ void ProgressRecorder::onRoundEnd() {
   if (roundActions.empty())
     return;
   std::string pathName =
-      rootOutputDir + "/" + std::to_string(roundCounter) + ".json";
+      treeDir + "/" + std::to_string(roundCounter) + ".json";
   std::ofstream ostr(pathName.c_str());
   ostr << "[\n";
   for (std::size_t i = 0U; i != roundActions.size(); ++i) {
@@ -106,6 +117,26 @@ void ProgressRecorder::onRoundEnd() {
   }
   ostr << "]\n";
   roundActions.clear();
+}
+
+void ProgressRecorder::onInsertMemory(int nodeID, const PTreeNode *const node) {
+  bool uniqueState = instance().nodeUniqueStates.at(nodeID);
+  int parentID = node->parent == nullptr ? -1 : instance().nodeIDs.at(node->parent);
+
+  if (!uniqueState) {
+    instance().recordInfo(nodeID, parentID, node->state->addressSpace.objects);
+    return;
+  }
+
+  recordedNodesIDs.push_back(nodeID);
+  std::string pathName =
+      memoryDir + "/" + std::to_string(nodeID) + ".json";
+  std::ofstream ostr(pathName.c_str());
+  ostr << "{\n";
+  InsertMemory insertMemory(node, nodeID);
+  insertMemory.toJson(ostr);
+  // std::make_unique<InsertMemory>(node, nodeID)->toJson(ostr);
+  ostr << "}";
 }
 
 void ProgressRecorder::onInsertNode(const PTreeNode *const node) {
@@ -118,6 +149,7 @@ void ProgressRecorder::onInsertNode(const PTreeNode *const node) {
     sit = stateIDs.insert({node->state, ++stateCounter}).first;
     uniqueState = true;
   }
+  nodeUniqueStates.insert({nodeID, uniqueState});
   nodeJSONs.insert({nodeID, std::max(1, roundCounter)});
   roundActions.push_back(std::make_unique<InsertNode>(
       node, nr.first->second, sit->second, uniqueState));
@@ -508,13 +540,14 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
 
   stack2json(ostr, node->state->stack);
   constraints2json(ostr, node->state->constraints);
+}
 
-  if (!uniqueState) {
-    ostr << "\n";
-    instance().recordInfo(nodeID, parentID, node->state->addressSpace.objects);
-    return;
-  }
-  ostr << ",\n";
+void ProgressRecorder::InsertMemory::toJson(std::ostream &ostr) {
+  int parentID =
+      node->parent == nullptr ? -1 : instance().nodeIDs.at(node->parent);
+
+  ostr << "    \"action\": \"InsertMemory\", ";
+  ostr << "\"nodeID\": " << nodeID << ",\n";
 
   nondetValues2json(ostr, node->state->nondetValues);
 
@@ -559,7 +592,6 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
 
   addComma = false;
 
-  // TODO do the same for changed and refactor
   ostr << "      \"changed\": [";
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end(); ++it) {
@@ -587,19 +619,6 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
   ostr << "      ]\n";
 
   ostr << "    },\n";
-
-  ostr << "    \"concreteAddressMap\": [\n";
-  for (auto it = node->state->addressSpace.concreteAddressMap.begin();
-       it != node->state->addressSpace.concreteAddressMap.end();) {
-    ostr << "      {";
-    ostr << "\"address\": " << it->first << ", ";
-    ostr << "\"segment\": " << it->second;
-    ostr << "}";
-    ++it;
-    ostr << (it != node->state->addressSpace.concreteAddressMap.end() ? ",\n"
-                                                                      : "\n");
-  }
-  ostr << "    ], \n";
 
   ostr << "    \"removedObjectsMap\": [\n";
   for (auto it = node->state->addressSpace.removedObjectsMap.begin();

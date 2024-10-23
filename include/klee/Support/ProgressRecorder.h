@@ -74,9 +74,17 @@ namespace klee {
       virtual void toJson(std::ostream& ostr) = 0;
     };
 
+    struct InsertMemory : public Action {
+      InsertMemory(const PTreeNode *node_, int nodeID_)
+        : node{ node_ }, nodeID{ nodeID_ } {}
+      void toJson(std::ostream& ostr) override;
+      const PTreeNode *node;
+      int nodeID;
+    };
+
     struct InsertNode : public Action {
       InsertNode(const PTreeNode *node_, int nodeID_, int stateID_, bool uniqueState_)
-        : node{ node_ }, nodeID{ nodeID_ }, stateID{ stateID_ }, uniqueState{ uniqueState_ } {}
+        : node{ node_ }, nodeID{ nodeID_ }, stateID{ stateID_ }, uniqueState{ uniqueState_ }{}
       void toJson(std::ostream& ostr) override;
       const PTreeNode *node;
       int nodeID;
@@ -100,13 +108,15 @@ namespace klee {
     };
 
     std::string rootOutputDir;
+    std::string treeDir;
+    std::string memoryDir;  
 
     int roundCounter;
 
     int nodeCounter;
     
-    std::unordered_map<const PTreeNode *, int> nodeIDs;
     std::unordered_map<int, int> nodeJSONs;
+    std::unordered_map<int, bool> nodeUniqueStates;
 
     std::unordered_map<int, int> accessCount;
     // list of Object ids for parent nodes
@@ -125,8 +135,14 @@ namespace klee {
     ProgressRecorder& operator=(ProgressRecorder const&) = default;
 
   public:
+    std::unordered_map<const PTreeNode *, int> nodeIDs;
+    std::vector<int> recordedNodesIDs;
     static ProgressRecorder& instance();
     static const std::string rootDirName;
+    static const std::string treeDirName;
+    static const std::string memoryDirName;
+
+    static int getNodeCounter();
 
     bool start(const std::string &underDir, std::string fileName);
     void stop();
@@ -142,6 +158,8 @@ namespace klee {
     void recordInfo(int nodeID, int parentID, const MemoryMap objects);
 
     void deleteParentInfo(const int parentID);
+
+    void onInsertMemory(int nodeID, const PTreeNode *node);
     void onInsertNode(const PTreeNode *node);
     void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
     void onEraseNode(const PTreeNode *node);

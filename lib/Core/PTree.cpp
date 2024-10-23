@@ -39,7 +39,7 @@ PTree::PTree(ExecutionState *initialState)
 
   if (CompressProcessTree) {
     recorder().stop();
-    recorderLong().stop();
+    // recorderLong().stop();
   }
 }
 
@@ -48,11 +48,16 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   assert(node && !node->left.getPointer() && !node->right.getPointer());
   assert(node == rightState->ptreeNode &&
          "Attach assumes the right state is the current state");
+  
+  int parentID = recorder().instance().nodeIDs.at(node);
+  klee_message("Inserting node memory %u", parentID);
+  recorder().onInsertMemory(parentID, node);
+  
   node->state = nullptr;
   node->left = PTreeNodePtr(new PTreeNode(node, leftState));
 
   recorder().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
-  recorderLong().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
+  // recorderLong().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
 
   // The current node inherits the tag
   uint8_t currentNodeTag = root.getInt();
@@ -63,14 +68,25 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   node->right = PTreeNodePtr(new PTreeNode(node, rightState), currentNodeTag);
 
   recorder().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
-  recorderLong().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
+  // recorderLong().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
 }
 
 void PTree::remove(PTreeNode *n) {
   assert(!n->left.getPointer() && !n->right.getPointer());
   do {
+
+    // Check if the node was recorded
+    auto it = recorder().nodeIDs.find(n); 
+    if (it != recorder().nodeIDs.end()) {
+      int nodeId = it->second;
+      if (std::find(recorder().recordedNodesIDs.begin(), recorder().recordedNodesIDs.end(), nodeId) == recorder().recordedNodesIDs.end()) {
+        klee_message("Inserting node memory %u", nodeId);
+        recorder().onInsertMemory(nodeId, n);
+      }
+    }
+
     recorder().onEraseNode(n);
-    recorderLong().onEraseNode(n);
+    // recorderLong().onEraseNode(n);
 
     PTreeNode *p = n->parent;
     if (p) {
@@ -151,5 +167,7 @@ PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent},
   right = PTreeNodePtr(nullptr);
 
   recorder().onInsertNode(this);
-  recorderLong().onInsertNode(this);
+  klee_message("Inserting node %u", recorder().getNodeCounter());
+
+  // recorderLong().onInsertNode(this);
 }
