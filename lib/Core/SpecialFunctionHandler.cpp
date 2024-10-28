@@ -1106,7 +1106,7 @@ void SpecialFunctionHandler::handleVerifierNondetType(ExecutionState &state,
      //             std::get<0>(nondet).c_str(), std::get<1>(nondet),
      //             std::get<2>(nondet), val.getZExtValue());
 
-      putConcreteValue(state, name, val.isSigned(), target,
+      putConcreteValue(state, name, isSigned, target,
                        ConstantExpr::alloc(val.getZExtValue(), size));
 
     ++position; // matched, move on
