@@ -56,7 +56,6 @@ namespace klee {
         return value < other.value;
       }
     }
-    // void toJson(std::ostream& ostr) const;
   };
 
   struct pair_hash {
@@ -136,15 +135,17 @@ namespace klee {
 
   public:
     std::unordered_map<const PTreeNode *, int> nodeIDs;
-    std::vector<int> recordedNodesIDs;
+    std::set<int> recordedNodesIDs;
     static ProgressRecorder& instance();
     static const std::string rootDirName;
     static const std::string treeDirName;
     static const std::string memoryDirName;
+    static const mode_t dirPermissions;
 
     static int getNodeCounter();
 
     bool start(const std::string &underDir, std::string fileName);
+    void end();
     void stop();
     bool started() const;
 
@@ -156,6 +157,7 @@ namespace klee {
     void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
     void object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID);
     void recordInfo(int nodeID, int parentID, const MemoryMap objects);
+    void recordPlane(int nodeId, const ObjectStatePlane *const plane, int parentID, bool isSegment);
 
     void deleteParentInfo(const int parentID);
 

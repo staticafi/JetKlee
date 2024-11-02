@@ -17,6 +17,7 @@
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
+#include "klee/Support/ProgressRecorder.h"
 
 #include <inttypes.h>
 #include <sys/mman.h>
@@ -228,6 +229,7 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache, unsigned pointerWidth)
       lastSegment(FIRST_ORDINARY_SEGMENT) {}
 
 MemoryManager::~MemoryManager() {
+  // TODO record deletion of memory objects
   while (!objects.empty()) {
     MemoryObject *mo = *objects.begin();
     objects.erase(mo);

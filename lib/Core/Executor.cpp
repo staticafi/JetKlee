@@ -3840,6 +3840,8 @@ void Executor::run(ExecutionState &initialState) {
     // recorderLong().onRoundEnd();
   }
 
+  recorder().end();
+
   delete searcher;
   searcher = nullptr;
 
@@ -5367,6 +5369,7 @@ void Executor::runFunctionAsMain(Function *f,
   initializeGlobals(*state, isEntryFunctionMain);
 
   processTree = std::make_unique<PTree>(state);
+  // tu sa pusti main iterpreter loop
   run(*state);
   processTree = nullptr;
 
