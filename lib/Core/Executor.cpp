@@ -5369,7 +5369,6 @@ void Executor::runFunctionAsMain(Function *f,
   initializeGlobals(*state, isEntryFunctionMain);
 
   processTree = std::make_unique<PTree>(state);
-  // tu sa pusti main iterpreter loop
   run(*state);
   processTree = nullptr;
 

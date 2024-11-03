@@ -348,9 +348,9 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   if (plane == nullptr)
     return;
 
-  std::string name =
-      plane->getUpdateList().root ? plane->getUpdateList().root->getName() : "";
-  ostr << "\"rootObject\": " << "\"" << name << "\", ";
+  int objID = plane->getParent() ? plane->getParent()->getObject()->id : -1;
+  ostr << "\"objID\": " << objID << ", ";
+  ostr << "\"rootObject\": " << "\"" << plane->getUpdates().root->getName() << "\", ";
   ostr << "\"sizeBound\": " << plane->sizeBound << ", ";
   ostr << "\"initialized\": " << plane->initialized << ", ";
   ostr << "\"symbolic\": " << plane->symbolic << ", ";
@@ -416,9 +416,9 @@ void ProgressRecorder::recordPlane(int nodeId, const ObjectStatePlane *const pla
 
   std::set<ByteInfo> bytes = getByteInfo(plane);
   if (isSegment) {
-    instance().segmentBytes.insert({{planeID, planeID}, bytes});
+    instance().segmentBytes.insert({{nodeId, planeID}, bytes});
   } else {
-    instance().offsetBytes.insert({{planeID, planeID}, bytes});
+    instance().offsetBytes.insert({{nodeId, planeID}, bytes});
   }
 
   Updates childUpdates;
@@ -666,8 +666,6 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
   nodeJSONs.erase(parentID);
   accessCount.erase(parentID);
   updates.erase(parentID);
-  recordedNodesIDs.erase(parentID);
-  nodeUniqueStates.erase(parentID);
 
   for (auto it = segmentBytes.begin(); it != segmentBytes.end();) {
     if (it->first.first == parentID) {

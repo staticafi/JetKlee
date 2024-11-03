@@ -123,6 +123,8 @@ namespace klee {
     std::unordered_map<int, Updates> updates;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> segmentBytes;
     std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> offsetBytes;
+    std::unordered_map<const PTreeNode *, int> nodeIDs;
+    std::set<int> recordedNodesIDs;
 
     int stateCounter;
     std::unordered_map<const ExecutionState *, int> stateIDs;
@@ -134,8 +136,6 @@ namespace klee {
     ProgressRecorder& operator=(ProgressRecorder const&) = default;
 
   public:
-    std::unordered_map<const PTreeNode *, int> nodeIDs;
-    std::set<int> recordedNodesIDs;
     static ProgressRecorder& instance();
     static const std::string rootDirName;
     static const std::string treeDirName;
@@ -165,6 +165,9 @@ namespace klee {
     void onInsertNode(const PTreeNode *node);
     void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
     void onEraseNode(const PTreeNode *node);
+
+    const std::unordered_map<const PTreeNode *, int>& getNodeIDs() const { return nodeIDs; }
+    const std::set<int>& getRecordedNodeIDs() const { return recordedNodesIDs; }
   };
 
   inline ProgressRecorder& recorder() { return ProgressRecorder::instance(); }
