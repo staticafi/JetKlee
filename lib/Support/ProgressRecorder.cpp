@@ -14,6 +14,7 @@
 #include "../Core/PTree.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KInstruction.h"
+#include "llvm/IR/Function.h"
 #include <assert.h>
 #include <fstream>
 #include <sstream>
@@ -123,10 +124,11 @@ void ProgressRecorder::onRoundEnd() {
 }
 
 void ProgressRecorder::onInsertMemory(int nodeID, const PTreeNode *const node) {
-  bool isUniqueState = instance().nodeUniqueStates.at(nodeID);
+  //bool isUniqueState = instance().nodeUniqueStates.at(nodeID);
   int parentID = node->parent == nullptr ? -1 : instance().nodeIDs.at(node->parent);
   
-  if (isUniqueState) {  
+  //if (isUniqueState)
+  {  
     std::string pathName = memoryDir + "/" + std::to_string(nodeID) + ".json";
     std::ofstream ostr(pathName.c_str());
     InsertMemory insertMemory(node, nodeID);
@@ -313,6 +315,9 @@ Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID,
     }
 
   std::tuple<Updates, Updates> diff = getDiff(parentUpdates, childUpdates);
+
+  // TODO: Missing data from updateList->root.
+
   return std::get<0>(diff);
 }
 
@@ -360,6 +365,40 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
       getByteDiff(plane, nodeID, parentID, isOffset);
   GroupMap groupedAdd = groupByteInfo(std::get<0>(diff));
   GroupMap groupedDel = groupByteInfo(std::get<1>(diff));
+
+  {
+    ostr << ",\n            \"concreteStore\": [ ";
+    bool start = true;
+    for (auto x : plane->concreteStore)
+    {
+      if (start) start = false; else ostr << ",";
+      ostr << (unsigned int)x;
+    }
+    ostr << "]";
+  }
+  {
+    ostr << ",\n            \"concreteMask\": [ ";
+    bool start = true;
+    for (auto i = 0U;  i < plane->concreteMask.size(); ++i)
+    {
+      if (start) start = false; else ostr << ",";
+      ostr << (unsigned int)plane->isByteConcrete(i);
+    }
+    ostr << "]";
+  }
+  {
+    ostr << ",\n            \"knownSymbolics\": [ ";
+    bool start = true;
+    for (auto i = 0U;  i < plane->sizeBound; ++i)
+    {
+      if (start) start = false; else ostr << ",";
+      ostr << "\"";
+      if (plane->isByteKnownSymbolic(i))
+        ostr << expr2str(plane->knownSymbolics[i]);
+      ostr << "\"";
+    }
+    ostr << "]";
+  }
 
   if (!(groupedAdd.empty() && groupedDel.empty())) {
     ostr << ",\n            \"bytes\": {\n";
@@ -464,6 +503,22 @@ void ProgressRecorder::object2json(std::ostream &ostr, const MemoryObject *const
   // OBJECT STATE INFO
   ostr << "\"copyOnWriteOwner\": " << state->copyOnWriteOwner << ", ";
   ostr << "\"readOnly\": " << state->readOnly << ",\n";
+
+  ostr << "          \"allocSite\": { ";
+  if (obj->allocSite != nullptr) {
+    std::string result;
+    llvm::raw_string_ostream info(result);
+    if (const llvm::Instruction *instr = llvm::dyn_cast<llvm::Instruction>(obj->allocSite)) {
+      info << "\"scope\": \"function\", \"name\": \"" << instr->getParent()->getParent()->getName() << "\", \"code\": \"" << *instr << "\" ";
+    } else if (const llvm::GlobalValue *gv = dyn_cast<llvm::GlobalValue>(obj->allocSite)) {
+      info << "\"scope\": \"static\", \"name\": \"" << gv->getName() << "\" ";
+    } else {
+      info << "\"scope\": \"value\", \"code\": \"" << *obj->allocSite << "\" ";
+    }
+    info.flush();
+    ostr << result;
+  }
+  ostr << "},\n";
 
   ostr << "          \"segmentPlane\": {";
   instance().plane2json(ostr, state->segmentPlane, nodeID, parentID,

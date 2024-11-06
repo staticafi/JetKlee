@@ -95,6 +95,28 @@ typedef unsigned TypeSize;
 #include <sys/mman.h>
 #include <vector>
 
+template<typename T>
+static std::string __llvm_to_str(T const* const x)
+{
+    std::string str;
+    llvm::raw_string_ostream rso(str);
+    x->print(rso);
+    return rso.str();
+}
+
+
+std::string llvm_to_str(llvm::Value const* const value)
+{
+    return __llvm_to_str(value);
+}
+
+
+std::string llvm_to_str(llvm::Type const* const type)
+{
+    return __llvm_to_str(type);
+}
+
+
 using namespace llvm;
 using namespace klee;
 
@@ -3816,12 +3838,14 @@ void Executor::run(ExecutionState &initialState) {
 
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
-    klee_message("Main interpreter loop: instruction for state %u", recorder().getNodeCounter());
+    // klee_message("Main interpreter loop: instruction for state %u", recorder().getNodeCounter());
     recorder().onRoundBegin();
     // recorderLong().onRoundBegin();
 
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
+static int __cnt =  0; ++__cnt;
+klee_message("%u, %d: %s",recorder().getNodeCounter(), __cnt, llvm_to_str(ki->inst).c_str());
     stepInstruction(state);
 
     executeInstruction(state, ki);
