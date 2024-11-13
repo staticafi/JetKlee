@@ -27,151 +27,179 @@ namespace klee {
   class ExecutionState;
   struct InstructionInfo;
   using Updates = std::set<std::tuple<std::string, std::string>>;
+using Bytes = std::vector<std::string>;
+using BytesMap =
+    std::map<std::string, std::vector<int>>; // value -> list of offsets
+using BytesDiff = std::tuple<BytesMap, BytesMap>;
 
-  struct ByteInfo {
-    int offset;
-    bool isConcrete;
-    bool isKnownSym;
-    bool isUnflushed;
-    klee::ref<klee::Expr> value;
-
-    bool operator==(const ByteInfo& other) const {
-      return offset == other.offset &&
-            isConcrete == other.isConcrete &&
-            isKnownSym == other.isKnownSym &&
-            isUnflushed == other.isUnflushed &&
-            value == other.value;      
-    }
-
-    bool operator<(const ByteInfo& other) const {
-      if (offset != other.offset) {
-        return offset < other.offset;
-      } else if (isConcrete != other.isConcrete) {
-        return !isConcrete;
-      } else if (isKnownSym != other.isKnownSym) {
-        return !isKnownSym;
-      } else if (isUnflushed != other.isUnflushed) {
-        return !isUnflushed;
-      } else {
-        return value < other.value;
-      }
-    }
-  };
-
-  struct pair_hash {
-    template <class T1, class T2>
-    std::size_t operator () (const std::pair<T1,T2> &pair) const {
-        auto hash1 = std::hash<T1>{}(pair.first);
-        auto hash2 = std::hash<T2>{}(pair.second);
-        return hash1 ^ hash2;
-    }
+struct Memory {
+  const Bytes concreteStore;
+  const Bytes concreteMask;
+  const Bytes knownSymbolics;
 };
-  class ProgressRecorder {
 
-    struct Action {
-      virtual ~Action() {}
-      virtual void toJson(std::ostream& ostr) = 0;
-    };
+enum ByteType {
+    CONCRETE,
+    SYMBOLIC,
+    MASK
+};
 
-    struct InsertMemory : public Action {
-      InsertMemory(const PTreeNode *node_, int nodeID_)
-        : node{ node_ }, nodeID{ nodeID_ } {}
-      void toJson(std::ostream& ostr) override;
-      const PTreeNode *node;
-      int nodeID;
-    };
+struct ByteInfo {
+  int offset;
+  bool isConcrete;
+  bool isKnownSym;
+  bool isUnflushed;
+  klee::ref<klee::Expr> value;
 
-    struct InsertNode : public Action {
-      InsertNode(const PTreeNode *node_, int nodeID_, int stateID_, bool uniqueState_)
-        : node{ node_ }, nodeID{ nodeID_ }, stateID{ stateID_ }, uniqueState{ uniqueState_ }{}
-      void toJson(std::ostream& ostr) override;
-      const PTreeNode *node;
-      int nodeID;
-      int stateID;
-      bool uniqueState;
-    };
+  bool operator==(const ByteInfo &other) const {
+    return offset == other.offset && isConcrete == other.isConcrete &&
+           isKnownSym == other.isKnownSym && isUnflushed == other.isUnflushed &&
+           value == other.value;
+  }
 
-    struct InsertEdge : public Action {
-      InsertEdge(const int parentID_, const int childID_, uint8_t tag_)
-        : parentID{ parentID_ }, childID{ childID_ }, tag{ tag_ } {}
-      void toJson(std::ostream& ostr) override;
-      const int parentID;
-      const int childID;
-      uint8_t tag;
-    };
+  bool operator<(const ByteInfo &other) const {
+    if (offset != other.offset) {
+      return offset < other.offset;
+    } else if (isConcrete != other.isConcrete) {
+      return !isConcrete;
+    } else if (isKnownSym != other.isKnownSym) {
+      return !isKnownSym;
+    } else if (isUnflushed != other.isUnflushed) {
+      return !isUnflushed;
+    } else {
+      return value < other.value;
+    }
+  }
+};
 
-    struct EraseNode : public Action {
-      explicit EraseNode(const int ID_) : ID{ ID_ } {}
-      void toJson(std::ostream& ostr) override;
-      const int ID;
-    };
+struct pair_hash {
+  template <class T1, class T2>
+  std::size_t operator()(const std::pair<T1, T2> &pair) const {
+    auto hash1 = std::hash<T1>{}(pair.first);
+    auto hash2 = std::hash<T2>{}(pair.second);
+    return hash1 ^ hash2;
+  }
+};
+class ProgressRecorder {
 
-    std::string rootOutputDir;
-    std::string treeDir;
-    std::string memoryDir;  
-
-    int roundCounter;
-
-    int nodeCounter;
-    
-    std::unordered_map<int, int> nodeJSONs;
-    std::unordered_map<int, bool> nodeUniqueStates;
-
-    std::unordered_map<int, int> accessCount;
-    // list of Object ids for parent nodes
-    std::unordered_map<int, std::set<int>> parentIds;
-    std::unordered_map<int, Updates> updates;
-    std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> segmentBytes;
-    std::unordered_map<std::pair<int, int>, std::set<ByteInfo>, pair_hash> offsetBytes;
-    std::unordered_map<const PTreeNode *, int> nodeIDs;
-    std::set<int> recordedNodesIDs;
-
-    int stateCounter;
-    std::unordered_map<const ExecutionState *, int> stateIDs;
-
-    std::vector<std::unique_ptr<Action>> roundActions;
-
-    ProgressRecorder();
-    ProgressRecorder(ProgressRecorder const&) = default;
-    ProgressRecorder& operator=(ProgressRecorder const&) = default;
-
-  public:
-    static ProgressRecorder& instance();
-    static const std::string rootDirName;
-    static const std::string treeDirName;
-    static const std::string memoryDirName;
-    static const mode_t dirPermissions;
-
-    static int getNodeCounter();
-
-    bool start(const std::string &underDir, std::string fileName);
-    void end();
-    void stop();
-    bool started() const;
-
-    void onRoundBegin();
-    void onRoundEnd();
-
-    std::tuple<std::set<ByteInfo>, std::set<ByteInfo>> getByteDiff(const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
-    Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID);
-    void plane2json(std::ostream& ostr, const ObjectStatePlane *const plane, int nodeID, int parentID, bool isOffset);
-    void object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID);
-    void recordInfo(int nodeID, int parentID, const MemoryMap objects);
-    void recordPlane(int nodeId, const ObjectStatePlane *const plane, int parentID, bool isSegment);
-
-    void deleteParentInfo(const int parentID);
-
-    void onInsertMemory(int nodeID, const PTreeNode *node);
-    void onInsertNode(const PTreeNode *node);
-    void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
-    void onEraseNode(const PTreeNode *node);
-
-    const std::unordered_map<const PTreeNode *, int>& getNodeIDs() const { return nodeIDs; }
-    const std::set<int>& getRecordedNodeIDs() const { return recordedNodesIDs; }
+  struct Action {
+    virtual ~Action() {}
+    virtual void toJson(std::ostream &ostr) = 0;
   };
 
-  inline ProgressRecorder& recorder() { return ProgressRecorder::instance(); }
+  struct InsertMemory : public Action {
+    InsertMemory(const PTreeNode *node_, int nodeID_)
+        : node{node_}, nodeID{nodeID_} {}
+    void toJson(std::ostream &ostr) override;
+    const PTreeNode *node;
+    int nodeID;
+  };
 
-}
+  struct InsertNode : public Action {
+    InsertNode(const PTreeNode *node_, int nodeID_, int stateID_,
+               bool uniqueState_)
+        : node{node_}, nodeID{nodeID_}, stateID{stateID_},
+          uniqueState{uniqueState_} {}
+    void toJson(std::ostream &ostr) override;
+    const PTreeNode *node;
+    int nodeID;
+    int stateID;
+    bool uniqueState;
+  };
+
+  struct InsertEdge : public Action {
+    InsertEdge(const int parentID_, const int childID_, uint8_t tag_)
+        : parentID{parentID_}, childID{childID_}, tag{tag_} {}
+    void toJson(std::ostream &ostr) override;
+    const int parentID;
+    const int childID;
+    uint8_t tag;
+  };
+
+  struct EraseNode : public Action {
+    explicit EraseNode(const int ID_) : ID{ID_} {}
+    void toJson(std::ostream &ostr) override;
+    const int ID;
+  };
+
+  std::string rootOutputDir;
+  std::string treeDir;
+  std::string memoryDir;
+
+  int roundCounter;
+
+  int nodeCounter;
+
+  std::unordered_map<int, int> nodeJSONs;
+  std::unordered_map<int, bool> nodeUniqueStates;
+
+  std::unordered_map<int, int> accessCount;
+  // list of Object ids for parent nodes
+  std::unordered_map<int, std::set<int>> parentIds;
+  std::unordered_map<std::pair<int, int>, Updates, pair_hash> updates;
+  std::unordered_map<std::pair<int, int>, Memory, pair_hash> segmentMemory;
+  std::unordered_map<std::pair<int, int>, Memory, pair_hash> offsetMemory;
+  std::unordered_map<const PTreeNode *, int> nodeIDs;
+  std::set<int> recordedNodesIDs;
+
+  int stateCounter;
+  std::unordered_map<const ExecutionState *, int> stateIDs;
+
+  std::vector<std::unique_ptr<Action>> roundActions;
+
+  ProgressRecorder();
+  ProgressRecorder(ProgressRecorder const &) = default;
+  ProgressRecorder &operator=(ProgressRecorder const &) = default;
+
+public:
+  static ProgressRecorder &instance();
+  static const std::string rootDirName;
+  static const std::string treeDirName;
+  static const std::string memoryDirName;
+  static const mode_t dirPermissions;
+
+  static int getNodeCounter();
+
+  bool start(const std::string &underDir, std::string fileName);
+  void end();
+  void stop();
+  bool started() const;
+
+  void onRoundBegin();
+  void onRoundEnd();
+
+  bool hasChanged(int nodeID, int parentID, const ObjectStatePlane *const segmentPlane,
+                const ObjectStatePlane *const offsetPlane);
+  Memory getMemory(const ObjectStatePlane *const plane);
+  BytesDiff getByteDiff(const ObjectStatePlane *const plane,
+                                  int nodeID, int parentID, bool isOffset, enum ByteType type);
+  Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID);
+  void plane2json(std::ostream &ostr, const ObjectStatePlane *const plane,
+                  int nodeID, int parentID, bool isOffset);
+  void object2json(std::ostream &ostr, const MemoryObject *const obj,
+                   const klee::ref<klee::ObjectState> &state, int nodeID,
+                   int parentID);
+  void recordInfo(int nodeID, int parentID, const MemoryMap objects);
+  void recordPlanes(int nodeId,
+                    const ObjectStatePlane *const segmentPlane,
+                    const ObjectStatePlane *const offsetPlane);
+
+  void deleteParentInfo(const int parentID);
+
+  void onInsertMemory(int nodeID, const PTreeNode *node);
+  void onInsertNode(const PTreeNode *node);
+  void onInsertEdge(const PTreeNode *parent, const PTreeNode *child,
+                    uint8_t tag);
+  void onEraseNode(const PTreeNode *node);
+
+  const std::unordered_map<const PTreeNode *, int> &getNodeIDs() const {
+    return nodeIDs;
+  }
+  const std::set<int> &getRecordedNodeIDs() const { return recordedNodesIDs; }
+};
+
+inline ProgressRecorder &recorder() { return ProgressRecorder::instance(); }
+
+} // namespace klee
 
 #endif
