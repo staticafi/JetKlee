@@ -23,10 +23,10 @@
 
 namespace klee {
 
-  class PTreeNode;
-  class ExecutionState;
-  struct InstructionInfo;
-  using Updates = std::set<std::tuple<std::string, std::string>>;
+class PTreeNode;
+class ExecutionState;
+struct InstructionInfo;
+using Updates = std::set<std::tuple<std::string, std::string>>;
 using Bytes = std::vector<std::string>;
 using BytesMap =
     std::map<std::string, std::vector<int>>; // value -> list of offsets
@@ -136,7 +136,8 @@ class ProgressRecorder {
   std::unordered_map<int, int> accessCount;
   // list of Object ids for parent nodes
   std::unordered_map<int, std::set<int>> parentIds;
-  std::unordered_map<std::pair<int, int>, Updates, pair_hash> updates;
+  std::unordered_map<std::pair<int, int>, Updates, pair_hash> segmentUpdates;
+  std::unordered_map<std::pair<int, int>, Updates, pair_hash> offsetUpdates;
   std::unordered_map<std::pair<int, int>, Memory, pair_hash> segmentMemory;
   std::unordered_map<std::pair<int, int>, Memory, pair_hash> offsetMemory;
   std::unordered_map<const PTreeNode *, int> nodeIDs;
@@ -173,7 +174,7 @@ public:
   Memory getMemory(const ObjectStatePlane *const plane);
   BytesDiff getByteDiff(const ObjectStatePlane *const plane,
                                   int nodeID, int parentID, bool isOffset, enum ByteType type);
-  Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID);
+  Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID, bool isOffset, int planeID);
   void plane2json(std::ostream &ostr, const ObjectStatePlane *const plane,
                   int nodeID, int parentID, bool isOffset);
   void object2json(std::ostream &ostr, const MemoryObject *const obj,

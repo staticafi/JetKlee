@@ -230,30 +230,43 @@ void bytesMapToJson(std::ostream &ostr, const BytesMap &bytesMap) {
     ostr << "\n" << indent14;
 }
 
+template <typename T>
+std::tuple<std::set<T>, std::set<T>> getDiff(const std::set<T> &parent,
+                                             const std::set<T> &child) {
+  std::set<T> additions;
+  std::set<T> deletions;
 
-// Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID, int parentID) {
-//   Updates additions;
-//   Updates childUpdates;
-//   Updates parentUpdates;
+  std::set_difference(child.begin(), child.end(), parent.begin(), parent.end(),
+                      std::inserter(additions, additions.begin()));
+  std::set_difference(parent.begin(), parent.end(), child.begin(), child.end(),
+                      std::inserter(deletions, deletions.begin()));
 
-//   if (updateList.head.get() == nullptr)
-//     return additions;
+  return std::make_tuple(additions, deletions);
+}
 
-//   for (const auto *un = updateList.head.get(); un; un = un->next.get()) {
-//     childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
-//   }
+Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID, int parentID, bool isOffset, int planeID) {
+  Updates additions;
+  if (planeID == -1)
+    return additions;
 
-//   auto itUpdates = instance().updates.find({parentID});
-//   if (itUpdates != instance().updates.end()) {
-//       parentUpdates = itUpdates->second;
-//     }
+  Updates childUpdates;
+  Updates parentUpdates;
+  const auto& updatesMap = isOffset ? instance().offsetUpdates : instance().segmentUpdates;
 
-//   std::tuple<Updates, Updates> diff = getDiff(parentUpdates, childUpdates);
+  auto itUpdates = updatesMap.find({nodeID, planeID});
+  if (itUpdates != updatesMap.end()) {
+    childUpdates = itUpdates->second;
+  }
 
-//   // TODO: Missing data from updateList->root.
+  itUpdates = updatesMap.find({parentID, planeID});
+  if (itUpdates != updatesMap.end()) {
+    parentUpdates = itUpdates->second;
+  }
 
-//   return std::get<0>(diff);
-// }
+  std::tuple<Updates, Updates> diff = getDiff(parentUpdates, childUpdates);
+
+  return std::get<0>(diff);
+}
 
 BytesDiff getVecDiff(const std::vector<std::string>& parentValues, const std::vector<std::string>& childValues) {
     BytesMap bytesAdd;
@@ -329,8 +342,8 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   if (plane == nullptr)
     return;
 
-  int objID = plane->getParent() ? plane->getParent()->getObject()->id : -1;
-  ostr << "\"objID\": " << objID << ", ";
+  int planeID = plane->getParent() ? plane->getParent()->getObject()->id : -1;
+  ostr << "\"objID\": " << planeID << ", ";
   ostr << "\"rootObject\": " << "\"" << plane->getUpdates().root->getName() << "\", ";
   ostr << "\"sizeBound\": " << plane->sizeBound << ", ";
   ostr << "\"initialized\": " << plane->initialized << ", ";
@@ -414,22 +427,32 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     ostr << "]";
   }
 
-  // Updates updatesAdd = getUpdateDiff(plane->getUpdateList(), nodeID, parentID);
-  // if (!updatesAdd.empty()) {
-  //   ostr << ",\n            \"updates\": [\n";
-  //   for (auto it = updatesAdd.begin(); it != updatesAdd.end();) {
-  //     const std::string& offset = std::get<0>(*it);
-  //     const std::string& value = std::get<1>(*it);
+  Updates updatesAdd = getUpdateDiff(plane->getUpdateList(), nodeID, parentID, isOffset, planeID);
+  if (!updatesAdd.empty()) {
+    ostr << ",\n            \"updates\": [\n";
+    for (auto it = updatesAdd.begin(); it != updatesAdd.end();) {
+      const std::string& offset = std::get<0>(*it);
+      const std::string& value = std::get<1>(*it);
 
-  //     ostr << "              {";
-  //     ostr << "\"" << value << "\""
-  //          << " : "
-  //          << "\"" << offset << "\"";
-  //     ++it;
-  //     ostr << "}" << (it != updatesAdd.end() ? ",\n" : "\n");
-  //   }
-  //   ostr << "            ]";
-  // }
+      ostr << "              {";
+      ostr << "\"" << value << "\""
+           << " : "
+           << "\"" << offset << "\"";
+      ++it;
+      ostr << "}" << (it != updatesAdd.end() ? ",\n" : "\n");
+    }
+    ostr << "            ]";
+
+    ostr << ",\n            \"constantValues\": [\n";
+    ostr << indent14;
+    const Array *array = plane->getUpdateList().root;
+    for (auto it = array->constantValues.begin(); it != array->constantValues.end();) {
+      ostr << "\"" << expr2str(*it) << "\"";
+      ++it;
+      ostr << (it != array->constantValues.end() ? "," : "");
+    }
+    ostr << "            ]";
+  }
 }
 
 static void instr2json(std::ostream &ostr, const InstructionInfo *const instr) {
@@ -496,7 +519,7 @@ void ProgressRecorder::recordPlanes(int nodeId, const ObjectStatePlane *const se
         childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
       }
     }
-    instance().updates.insert({{nodeId, segmentPlaneId}, childUpdates});
+    instance().segmentUpdates.insert({{nodeId, segmentPlaneId}, childUpdates});
   }
 
   if (offsetPlane != nullptr) {
@@ -512,7 +535,7 @@ void ProgressRecorder::recordPlanes(int nodeId, const ObjectStatePlane *const se
         childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
       }
     }
-    instance().updates.insert({{nodeId, offsetPlaneId}, childUpdates});
+    instance().offsetUpdates.insert({{nodeId, offsetPlaneId}, childUpdates});
   }
 }
 
@@ -529,21 +552,6 @@ void ProgressRecorder::recordInfo(int nodeID, int parentID,
 
   instance().parentIds.insert({nodeID, currentIds});
 }
-
-template <typename T>
-std::tuple<std::set<T>, std::set<T>> getDiff(const std::set<T> &parent,
-                                             const std::set<T> &child) {
-  std::set<T> additions;
-  std::set<T> deletions;
-
-  std::set_difference(child.begin(), child.end(), parent.begin(), parent.end(),
-                      std::inserter(additions, additions.begin()));
-  std::set_difference(parent.begin(), parent.end(), child.begin(), child.end(),
-                      std::inserter(deletions, deletions.begin()));
-
-  return std::make_tuple(additions, deletions);
-}
-
 
 void ProgressRecorder::object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID) {
   // OBJECT INFO
@@ -805,9 +813,17 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
   nodeJSONs.erase(parentID);
   accessCount.erase(parentID);
 
-  for (auto it = updates.begin(); it != updates.end();) {
+  for (auto it = segmentUpdates.begin(); it != segmentUpdates.end();) {
     if (it->first.first == parentID) {
-      it = instance().updates.erase(it);
+      it = segmentUpdates.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  for (auto it = offsetUpdates.begin(); it != offsetUpdates.end();) {
+    if (it->first.first == parentID) {
+      it = offsetUpdates.erase(it);
     } else {
       ++it;
     }
@@ -815,7 +831,7 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
 
   for (auto it = segmentMemory.begin(); it != segmentMemory.end();) {
     if (it->first.first == parentID) {
-      it = instance().segmentMemory.erase(it);
+      it = segmentMemory.erase(it);
     } else {
       ++it;
     }
@@ -823,7 +839,7 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
 
   for (auto it = offsetMemory.begin(); it != offsetMemory.end();) {
     if (it->first.first == parentID) {
-      it = instance().offsetMemory.erase(it);
+      it = offsetMemory.erase(it);
     } else {
       ++it;
     }
