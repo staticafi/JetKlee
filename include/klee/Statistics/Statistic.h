@@ -11,6 +11,7 @@
 #define KLEE_STATISTIC_H
 
 #include <string>
+#include <cstdint>
 
 namespace klee {
   class Statistic;
