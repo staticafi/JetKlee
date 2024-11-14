@@ -4282,6 +4282,7 @@ void Executor::terminateStateOnSolverError(ExecutionState &state,
 // XXX shoot me
 static const char *okExternalsList[] = { "printf",
                                          "fprintf",
+					 "vsnprintf",
                                          "sscanf",
                                          "snprintf",
                                          "puts",
