@@ -3845,7 +3845,10 @@ void Executor::run(ExecutionState &initialState) {
   delete searcher;
   searcher = nullptr;
 
+  // record states removed in dump states
+  recorder().onRoundBegin();
   doDumpStates();
+  recorder().onRoundEnd();
 }
 
 std::string Executor::getKValueInfo(ExecutionState &state,

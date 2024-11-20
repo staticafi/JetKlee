@@ -268,6 +268,74 @@ Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID,
   return std::get<0>(diff);
 }
 
+BytesMap bytesMapFromVector(const std::vector<std::string>& vec) {
+    BytesMap result;
+
+    for (size_t i = 0; i < vec.size(); ++i) {
+        result[vec[i]].push_back(static_cast<int>(i));
+    }
+
+    return result;
+}
+
+BytesDiff getVecDiff2(
+    const std::vector<std::string>& parentValues,
+    const std::vector<std::string>& childValues
+) {
+    
+    auto parentBytesMap = bytesMapFromVector(parentValues);
+    auto childBytesMap = bytesMapFromVector(childValues);
+
+    BytesMap added;
+    BytesMap deleted;
+
+    // Collect all unique keys from both maps
+    std::set<std::string> allKeys;
+    for (const auto& pair : parentBytesMap) {
+        allKeys.insert(pair.first);
+    }
+    for (const auto& pair : childBytesMap) {
+        allKeys.insert(pair.first);
+    }
+
+    // Iterate over each key to compute differences
+    for (const auto& key : allKeys) {
+        std::set<int> firstSet, secondSet;
+
+        // Convert vectors to sets for set operations
+        if (parentBytesMap.count(key)) {
+            firstSet.insert(parentBytesMap.at(key).begin(), parentBytesMap.at(key).end());
+        }
+        if (childBytesMap.count(key)) {
+            secondSet.insert(childBytesMap.at(key).begin(), childBytesMap.at(key).end());
+        }
+
+        // Compute added values: values in secondSet but not in firstSet
+        std::vector<int> addedValues;
+        std::set_difference(
+            secondSet.begin(), secondSet.end(),
+            firstSet.begin(), firstSet.end(),
+            std::back_inserter(addedValues)
+        );
+        if (!addedValues.empty()) {
+            added[key] = addedValues;
+        }
+
+        // Compute deleted values: values in firstSet but not in secondSet
+        std::vector<int> deletedValues;
+        std::set_difference(
+            firstSet.begin(), firstSet.end(),
+            secondSet.begin(), secondSet.end(),
+            std::back_inserter(deletedValues)
+        );
+        if (!deletedValues.empty()) {
+            deleted[key] = deletedValues;
+        }
+    }
+
+    return std::make_tuple(added, deleted);
+}
+
 BytesDiff getVecDiff(const std::vector<std::string>& parentValues, const std::vector<std::string>& childValues) {
     BytesMap bytesAdd;
     BytesMap bytesDel;
@@ -275,17 +343,19 @@ BytesDiff getVecDiff(const std::vector<std::string>& parentValues, const std::ve
     // Track indices of elements in child that are missing in parent (additions)
     for (size_t i = 0; i < childValues.size(); ++i) {
         if (std::find(parentValues.begin(), parentValues.end(), childValues[i]) == parentValues.end()) {
+            auto x = childValues[i];
             bytesAdd[childValues[i]].push_back(i);
+
         }
     }
     
     // Track indices of elements in parent that are missing in child (deletions)
     for (size_t i = 0; i < parentValues.size(); ++i) {
         if (std::find(childValues.begin(), childValues.end(), parentValues[i]) == childValues.end()) {
+            auto x = parentValues[i];
             bytesDel[parentValues[i]].push_back(i);
         }
     }
-
     return std::make_tuple(bytesAdd, bytesDel);
 }
 
@@ -332,7 +402,39 @@ BytesDiff ProgressRecorder::getByteDiff(const ObjectStatePlane *const plane,
     }
   }
 
-  diff = getVecDiff(parentBytes, bytes);
+  if (planeID == 11) {
+  klee_message("Node ID: %d", nodeID);
+  klee_message("Plane ID: %d", planeID);
+  klee_message("Parent bytes: %d", parentBytes.size());
+  klee_message("Child bytes length: %d", bytes.size());
+  for (auto i = 0U; i < bytes.size(); ++i)
+  {
+    klee_message("Child bytes[%d]: %s", i, bytes[i].c_str());
+  }
+  klee_message("--------------------");
+  klee_message("Parent bytes length: %d", parentBytes.size());
+  for (auto i = 0U; i < parentBytes.size(); ++i)
+  {
+    klee_message("Parent bytes[%d]: %s", i, parentBytes[i].c_str());
+  }
+  klee_message("--------------------");
+  }
+
+  diff = getVecDiff2(parentBytes, bytes);
+
+  if (planeID == 11) {
+    // auto add = std::get<0>(diff);
+    auto del = std::get<1>(diff);
+    klee_message("Size of del: %d", del.size());
+
+    for (auto it = del.begin(); it != del.end(); ++it) {
+      klee_message("Deleted: %s", it->first.c_str());
+      for (auto i = 0U; i < it->second.size(); ++i)
+      {
+        klee_message("Index: %d", it->second[i]);
+      }
+    }
+  }
   return diff;
 }
 
@@ -451,7 +553,7 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
       ++it;
       ostr << (it != array->constantValues.end() ? "," : "");
     }
-    ostr << "            ]";
+    ostr << "]";
   }
 }
 
