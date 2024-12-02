@@ -336,29 +336,6 @@ BytesDiff getVecDiff2(
     return std::make_tuple(added, deleted);
 }
 
-BytesDiff getVecDiff(const std::vector<std::string>& parentValues, const std::vector<std::string>& childValues) {
-    BytesMap bytesAdd;
-    BytesMap bytesDel;
-
-    // Track indices of elements in child that are missing in parent (additions)
-    for (size_t i = 0; i < childValues.size(); ++i) {
-        if (std::find(parentValues.begin(), parentValues.end(), childValues[i]) == parentValues.end()) {
-            auto x = childValues[i];
-            bytesAdd[childValues[i]].push_back(i);
-
-        }
-    }
-    
-    // Track indices of elements in parent that are missing in child (deletions)
-    for (size_t i = 0; i < parentValues.size(); ++i) {
-        if (std::find(childValues.begin(), childValues.end(), parentValues[i]) == childValues.end()) {
-            auto x = parentValues[i];
-            bytesDel[parentValues[i]].push_back(i);
-        }
-    }
-    return std::make_tuple(bytesAdd, bytesDel);
-}
-
 BytesDiff ProgressRecorder::getByteDiff(const ObjectStatePlane *const plane,
                                   int nodeID, int parentID, bool isOffset, enum ByteType type) {
   BytesDiff diff;
@@ -401,41 +378,7 @@ BytesDiff ProgressRecorder::getByteDiff(const ObjectStatePlane *const plane,
       break;
     }
   }
-
-  if (planeID == 11) {
-  klee_message("Node ID: %d", nodeID);
-  klee_message("Plane ID: %d", planeID);
-  klee_message("Parent bytes: %d", parentBytes.size());
-  klee_message("Child bytes length: %d", bytes.size());
-  for (auto i = 0U; i < bytes.size(); ++i)
-  {
-    klee_message("Child bytes[%d]: %s", i, bytes[i].c_str());
-  }
-  klee_message("--------------------");
-  klee_message("Parent bytes length: %d", parentBytes.size());
-  for (auto i = 0U; i < parentBytes.size(); ++i)
-  {
-    klee_message("Parent bytes[%d]: %s", i, parentBytes[i].c_str());
-  }
-  klee_message("--------------------");
-  }
-
-  diff = getVecDiff2(parentBytes, bytes);
-
-  if (planeID == 11) {
-    // auto add = std::get<0>(diff);
-    auto del = std::get<1>(diff);
-    klee_message("Size of del: %d", del.size());
-
-    for (auto it = del.begin(); it != del.end(); ++it) {
-      klee_message("Deleted: %s", it->first.c_str());
-      for (auto i = 0U; i < it->second.size(); ++i)
-      {
-        klee_message("Index: %d", it->second[i]);
-      }
-    }
-  }
-  return diff;
+  return getVecDiff2(parentBytes, bytes);
 }
 
 void ProgressRecorder::plane2json(std::ostream &ostr,
@@ -451,8 +394,6 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   ostr << "\"initialized\": " << plane->initialized << ", ";
   ostr << "\"symbolic\": " << plane->symbolic << ", ";
   ostr << "\"initialValue\": " << (int)plane->initialValue;
-
-  
 
   std::string indent14 = std::string(14, ' ');
   
@@ -756,6 +697,29 @@ void ProgressRecorder::InsertMemory::toJson(std::ostream &ostr) {
   ostr << "\"nodeID\": " << nodeID << ",\n";
 
   nondetValues2json(ostr, node->state->nondetValues);
+    ostr << "    \"symbolics\": [\n";
+  for (auto it = node->state->symbolics.begin();
+       it != node->state->symbolics.end();) {
+    ostr << "      {\n";
+    ostr << "        \"objID\": " << it->first->id << ", ";
+    ostr << "\"name\": \"" << it->second->name << "\", ";
+    ostr << "\"size\": " << it->second->size << ", ";
+    ostr << "\"domain\": " << it->second->domain << ", ";
+    ostr << "\"range\": " << it->second->range << ", ";
+    ostr << "\"isSymbolicArray\": " << it->second->isSymbolicArray() << ", ";
+    ostr << "\"constantValues\": [";
+    for (auto a = it->second->constantValues.begin();
+         a != it->second->constantValues.end();) {
+      ostr << "\"" << expr2str(*a) << "\"";
+      ++a;
+      ostr << (a != it->second->constantValues.end() ? ", " : "");
+    }
+    ostr << "] \n";
+    ostr << "      }";
+    ++it;
+    ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
+  }
+  ostr << "    ],\n";
 
   std::set<int> currentParentIds;
   auto it = instance().parentIds.find(parentID);
@@ -815,71 +779,7 @@ void ProgressRecorder::InsertMemory::toJson(std::ostream &ostr) {
   }
   ostr << "      ]\n";
 
-  ostr << "    },\n";
-
-  ostr << "    \"removedObjectsMap\": [\n";
-  for (auto it = node->state->addressSpace.removedObjectsMap.begin();
-       it != node->state->addressSpace.removedObjectsMap.end();) {
-    ostr << "      {";
-    ostr << "\"segment\": " << it->first << "\", ";
-    ostr << "\"symbolicArray\": \"" << expr2str(it->second) << "\"";
-    ostr << "\n      }";
-    ++it;
-    ostr << (it != node->state->addressSpace.removedObjectsMap.end() ? ", "
-                                                                     : "");
-  }
-  ostr << "    ], \n";
-
-  ostr << "    \"lazyObjectsMap\": [\n";
-  for (auto it = node->state->addressSpace.lazyObjectsMap.begin();
-       it != node->state->addressSpace.lazyObjectsMap.end();) {
-    ostr << "      {";
-    ostr << "\"pointerSegment\": " << it->first << ", ";
-    ostr << "\"offsets\": [";
-    for (auto a = it->second.begin(); a != it->second.end();) {
-      ostr << expr2str(*a);
-      ++a;
-      ostr << (a != it->second.end() ? ", " : "");
-    }
-    ostr << "    ], \n";
-    ostr << "}";
-    ++it;
-    ostr << (it != node->state->addressSpace.lazyObjectsMap.end() ? ", " : "");
-  }
-  ostr << "    ], \n";
-
-  ostr << "    \"symbolics\": [\n";
-  for (auto it = node->state->symbolics.begin();
-       it != node->state->symbolics.end();) {
-    ostr << "      {\n";
-    ostr << "        \"objID\": " << it->first->id << ", ";
-    ostr << "\"name\": \"" << it->second->name << "\", ";
-    ostr << "\"size\": " << it->second->size << ", ";
-    ostr << "\"domain\": " << it->second->domain << ", ";
-    ostr << "\"range\": " << it->second->range << ", ";
-    ostr << "\"isSymbolicArray\": " << it->second->isSymbolicArray() << ", ";
-    ostr << "\"constantValues\": [";
-    for (auto a = it->second->constantValues.begin();
-         a != it->second->constantValues.end();) {
-      ostr << "\"" << expr2str(*a) << "\"";
-      ++a;
-      ostr << (a != it->second->constantValues.end() ? ", " : "");
-    }
-    ostr << "] \n";
-    ostr << "      }";
-    ++it;
-    ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
-  }
-  ostr << "    ], \n";
-
-  ostr << "    \"cexPreferences\": [\n";
-  for (auto it = node->state->cexPreferences.begin();
-       it != node->state->cexPreferences.end();) {
-    ostr << "      \"" << expr2str(*it) << "\"";
-    ++it;
-    ostr << (it != node->state->cexPreferences.end() ? ", " : "");
-  }
-  ostr << "    ]\n";
+  ostr << "    }";
 }
 
 bool ProgressRecorder::hasChanged(int nodeID, int parentID, 
@@ -895,6 +795,15 @@ bool ProgressRecorder::hasChanged(int nodeID, int parentID,
     auto segmentMaskDiff = instance().getByteDiff(segmentPlane, nodeID, parentID, false, ByteType::MASK);
     auto offsetMaskDiff = instance().getByteDiff(offsetPlane, nodeID, parentID, true, ByteType::MASK);
 
+    Updates segmentUpdatesDiff;
+    Updates offsetUpdatesDiff;
+    if (segmentPlane != nullptr) {
+      segmentUpdatesDiff = instance().getUpdateDiff(segmentPlane->getUpdateList(), nodeID, parentID, false, segmentPlane->getParent() ? segmentPlane->getParent()->getObject()->id : -1);
+    }
+    if (offsetPlane != nullptr) {
+      offsetUpdatesDiff = instance().getUpdateDiff(offsetPlane->getUpdateList(), nodeID, parentID, true, offsetPlane->getParent() ? offsetPlane->getParent()->getObject()->id : -1);
+    }
+
     bool hasSegmentConcreteChanges = !std::get<0>(segmentConcreteDiff).empty() || !std::get<1>(segmentConcreteDiff).empty();
     bool hasOffsetConcreteChanges = !std::get<0>(offsetConcreteDiff).empty() || !std::get<1>(offsetConcreteDiff).empty();
     
@@ -904,9 +813,13 @@ bool ProgressRecorder::hasChanged(int nodeID, int parentID,
     bool hasSegmentMaskChanges = !std::get<0>(segmentMaskDiff).empty() || !std::get<1>(segmentMaskDiff).empty();
     bool hasOffsetMaskChanges = !std::get<0>(offsetMaskDiff).empty() || !std::get<1>(offsetMaskDiff).empty();
 
+    bool hasSegmentUpdates = !segmentUpdatesDiff.empty();
+    bool hasOffsetUpdates = !offsetUpdatesDiff.empty();
+
     return hasSegmentConcreteChanges || hasOffsetConcreteChanges ||
            hasSegmentSymbolicChanges || hasOffsetSymbolicChanges ||
-           hasSegmentMaskChanges || hasOffsetMaskChanges;
+           hasSegmentMaskChanges || hasOffsetMaskChanges ||
+            hasSegmentUpdates || hasOffsetUpdates;
 }
 
 
