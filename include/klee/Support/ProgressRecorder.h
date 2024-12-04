@@ -26,7 +26,7 @@ namespace klee {
 class PTreeNode;
 class ExecutionState;
 struct InstructionInfo;
-using Updates = std::set<std::tuple<std::string, std::string>>;
+using Updates = std::multiset<std::tuple<std::string, std::string>>;
 using Bytes = std::vector<std::string>;
 using BytesMap =
     std::map<std::string, std::vector<int>>; // value -> list of offsets
@@ -175,6 +175,7 @@ public:
   BytesDiff getByteDiff(const ObjectStatePlane *const plane,
                                   int nodeID, int parentID, bool isOffset, enum ByteType type);
   Updates getUpdateDiff(const UpdateList updateList, int nodeID, int parentID, bool isOffset, int planeID);
+  Updates getUpdateAdditions(const Updates &parentUpdates, const Updates &childUpdates);
   void plane2json(std::ostream &ostr, const ObjectStatePlane *const plane,
                   int nodeID, int parentID, bool isOffset);
   void object2json(std::ostream &ostr, const MemoryObject *const obj,

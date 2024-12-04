@@ -263,9 +263,37 @@ Updates ProgressRecorder::getUpdateDiff(const UpdateList updateList, int nodeID,
     parentUpdates = itUpdates->second;
   }
 
-  std::tuple<Updates, Updates> diff = getDiff(parentUpdates, childUpdates);
+  return getUpdateAdditions(parentUpdates, childUpdates);
+}
 
-  return std::get<0>(diff);
+Updates ProgressRecorder::getUpdateAdditions(const Updates& parentUpdates, const Updates& childUpdates) {
+    Updates additions;
+
+    // Count occurrences of each update in the parent and child multisets
+    std::map<std::tuple<std::string, std::string>, int> parentCounts;
+    for (const auto& update : parentUpdates) {
+        parentCounts[update]++;
+    }
+
+    std::map<std::tuple<std::string, std::string>, int> childCounts;
+    for (const auto& update : childUpdates) {
+        childCounts[update]++;
+    }
+
+    // Iterate over child updates
+    for (const auto& childUpdate : childCounts) {
+        const auto& update = childUpdate.first;
+        int childCount = childUpdate.second;
+        int parentCount = parentCounts.count(update) ? parentCounts[update] : 0;
+
+        // If child has more occurrences than the parent, add the difference to additions
+        int diffCount = childCount - parentCount;
+        for (int i = 0; i < diffCount; ++i) {
+            additions.insert(update);
+        }
+    }
+
+    return additions;
 }
 
 BytesMap bytesMapFromVector(const std::vector<std::string>& vec) {
@@ -470,6 +498,15 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     ostr << "]";
   }
 
+  ostr << ",\n            \"updatesLong\": [\n";
+  for (const auto *un = plane->getUpdateList().head.get(); un; un = un->next.get()) {
+    ostr << "              {";
+    ostr << "\"index\": " << "\"" << expr2str(un->index) << "\", ";
+    ostr << "\"value\": " << "\"" << expr2str(un->value) << "\"";
+    ostr << "}" << (un->next.get() ? ",\n" : "\n");
+  }
+  ostr << "            ]";
+
   Updates updatesAdd = getUpdateDiff(plane->getUpdateList(), nodeID, parentID, isOffset, planeID);
   if (!updatesAdd.empty()) {
     ostr << ",\n            \"updates\": [\n";
@@ -537,11 +574,9 @@ Memory ProgressRecorder::getMemory(const ObjectStatePlane *const plane) {
 
   for (std::size_t i = 0U; i < plane->sizeBound; ++i)
   {
-    std::string value = "";
     if (plane->isByteKnownSymbolic(i)) {
-      value = expr2str(plane->knownSymbolics[i]);
+      knownSymbolics.push_back(expr2str(plane->knownSymbolics[i]));
     }
-    knownSymbolics.push_back(value);
   }
 
   return {concreteStore, concreteMask, knownSymbolics};
