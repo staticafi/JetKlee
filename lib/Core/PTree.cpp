@@ -51,12 +51,12 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   
   int parentID = recorder().instance().getNodeIDs().at(node);
   klee_message("Inserting node memory in attach %u", parentID);
-  recorder().onInsertMemory(parentID, node);
+  recorder().onInsertInfo(parentID, node);
   
   node->state = nullptr;
   node->left = PTreeNodePtr(new PTreeNode(node, leftState));
 
-  recorder().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
+  recorder().onInsertEdge(node, node->left.getPointer());
   // recorderLong().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
 
   // The current node inherits the tag
@@ -67,7 +67,7 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
                          : node->parent->right.getInt();
   node->right = PTreeNodePtr(new PTreeNode(node, rightState), currentNodeTag);
 
-  recorder().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
+  recorder().onInsertEdge(node, node->right.getPointer());
   // recorderLong().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
 }
 
@@ -81,7 +81,7 @@ void PTree::remove(PTreeNode *n) {
       // Check if the node was recorded
       if (std::find(recorder().getRecordedNodeIDs().begin(), recorder().getRecordedNodeIDs().end(), nodeId) == recorder().getRecordedNodeIDs().end()) {
         klee_message("Inserting node memory in remove %u", nodeId);
-        recorder().onInsertMemory(nodeId, n);
+        recorder().onInsertInfo(nodeId, n);
       }
     }
 

@@ -29,7 +29,7 @@ struct InstructionInfo;
 using Updates = std::multiset<std::tuple<std::string, std::string>>;
 using Bytes = std::vector<std::string>;
 using BytesMap =
-    std::map<std::string, std::vector<int>>; // value -> list of offsets
+    std::map<std::string, std::vector<int>>; // value : list of offsets
 using BytesDiff = std::tuple<BytesMap, BytesMap>;
 
 struct Memory {
@@ -87,8 +87,8 @@ class ProgressRecorder {
     virtual void toJson(std::ostream &ostr) = 0;
   };
 
-  struct InsertMemory : public Action {
-    InsertMemory(const PTreeNode *node_, int nodeID_)
+  struct InsertInfo : public Action {
+    InsertInfo(const PTreeNode *node_, int nodeID_)
         : node{node_}, nodeID{nodeID_} {}
     void toJson(std::ostream &ostr) override;
     const PTreeNode *node;
@@ -108,12 +108,11 @@ class ProgressRecorder {
   };
 
   struct InsertEdge : public Action {
-    InsertEdge(const int parentID_, const int childID_, uint8_t tag_)
-        : parentID{parentID_}, childID{childID_}, tag{tag_} {}
+    InsertEdge(const int parentID_, const int childID_)
+        : parentID{parentID_}, childID{childID_} {}
     void toJson(std::ostream &ostr) override;
     const int parentID;
     const int childID;
-    uint8_t tag;
   };
 
   struct EraseNode : public Action {
@@ -188,10 +187,9 @@ public:
 
   void deleteParentInfo(const int parentID);
 
-  void onInsertMemory(int nodeID, const PTreeNode *node);
+  void onInsertInfo(int nodeID, const PTreeNode *node);
   void onInsertNode(const PTreeNode *node);
-  void onInsertEdge(const PTreeNode *parent, const PTreeNode *child,
-                    uint8_t tag);
+  void onInsertEdge(const PTreeNode *parent, const PTreeNode *child);
   void onEraseNode(const PTreeNode *node);
 
   const std::unordered_map<const PTreeNode *, int> &getNodeIDs() const {
