@@ -134,7 +134,7 @@ class ProgressRecorder {
 
   std::unordered_map<int, int> accessCount;
   // list of Object ids for parent nodes
-  std::unordered_map<int, std::set<int>> parentIds;
+  std::unordered_map<int, std::set<int>> parentIDs;
   std::unordered_map<std::pair<int, int>, Updates, pair_hash> segmentUpdates;
   std::unordered_map<std::pair<int, int>, Updates, pair_hash> offsetUpdates;
   std::unordered_map<std::pair<int, int>, Memory, pair_hash> segmentMemory;

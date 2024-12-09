@@ -202,20 +202,18 @@ static void stack2json(std::ostream &ostr,
 
 static void constraints2json(std::ostream &ostr,
                              const ConstraintSet constraints) {
-  ostr << "    \"constraints\": [\n";
+  ostr << "  \"constraints\": [\n";
   for (auto it = constraints.begin(); it != constraints.end();) {
-    ostr << "      \"" << expr2str(*it) << "\"";
+    ostr << "    \"" << expr2str(*it) << "\"";
     ++it;
     ostr << (it != constraints.end() ? ",\n" : "\n");
   }
-  ostr << "    ]";
+  ostr << "  ]";
 }
 
 void bytesMap2Json(std::ostream &ostr, const BytesMap &bytesMap) {
   std::string indent16 = std::string(16, ' ');
   std::string indent14 = std::string(14, ' ');
-  if (!bytesMap.empty())
-    ostr << "\n" << indent16;
   for (auto bm = bytesMap.begin(); bm != bytesMap.end();) {
     ostr << "{\"" << bm->first << "\"" << ":[";
     for (auto index = bm->second.begin(); index != bm->second.end();) {
@@ -226,8 +224,6 @@ void bytesMap2Json(std::ostream &ostr, const BytesMap &bytesMap) {
     ++bm;
     ostr << (bm != bytesMap.end() ? ", " : "");
   }
-  if (!bytesMap.empty())
-    ostr << "\n" << indent14;
 }
 
 template <typename T>
@@ -422,27 +418,27 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   ostr << "\"symbolic\": " << plane->symbolic << ", ";
   ostr << "\"initialValue\": " << (int)plane->initialValue;
 
-  std::string indent14 = std::string(14, ' ');
+  std::string indent12 = std::string(12, ' ');
   
   BytesDiff concreteStoreDiff = getByteDiff(plane, nodeID, parentID, isOffset, ByteType::CONCRETE);
   BytesMap concreteStoreAdd = std::get<0>(concreteStoreDiff);
   BytesMap concreteStoreDel = std::get<1>(concreteStoreDiff);
 
   if (!concreteStoreAdd.empty() || !concreteStoreDel.empty()) {
-    ostr << ",\n            \"concreteStore\": {";
+    ostr << ",\n          \"concreteStore\": {";
 
     if (!concreteStoreAdd.empty()) {
-      ostr << "\n" << indent14 << "\"add\": [";
+      ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, concreteStoreAdd);
       ostr << "]";
     }
 
     if (!concreteStoreDel.empty()) {
-      ostr << ",\n" << indent14 << "\"del\": [";
+      ostr << ",\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, concreteStoreDel);
       ostr << "]";
     }
-    ostr << "\n            }";
+    ostr << "\n          }";
   }
 
   BytesDiff concreteMaskDiff = getByteDiff(plane, nodeID, parentID, isOffset, ByteType::MASK);
@@ -450,20 +446,20 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   BytesMap concreteMaskDel = std::get<1>(concreteMaskDiff);
 
   if (!concreteMaskAdd.empty() || !concreteMaskDel.empty()) {
-    ostr << ",\n            \"concreteMask\": {";
+    ostr << ",\n          \"concreteMask\": {";
 
     if (!concreteMaskAdd.empty()) {
-      ostr << "\n" << indent14 << "\"add\": [";
+      ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, concreteMaskAdd);
       ostr << "]";
     }
 
     if (!concreteMaskDel.empty()) {
-      ostr << ",\n" << indent14 << "\"del\": [";
+      ostr << ",\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, concreteMaskDel);
       ostr << "]";
     }
-    ostr << "\n            }";
+    ostr << "\n          }";
   }
 
   BytesDiff knownSymbolicsDiff = getByteDiff(plane, nodeID, parentID, isOffset, ByteType::SYMBOLIC);
@@ -471,23 +467,23 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   BytesMap knownSymbolicsDel = std::get<1>(knownSymbolicsDiff);
 
   if (!knownSymbolicsAdd.empty() || !knownSymbolicsDel.empty()) {
-    ostr << ",\n            \"knownSymbolics\": {";
+    ostr << ",\n          \"knownSymbolics\": {";
     if (!knownSymbolicsAdd.empty()) {
-      ostr << "\n" << indent14 << "\"add\": [";
+      ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, knownSymbolicsAdd);
       ostr << "]";
     }
 
     if (!knownSymbolicsDel.empty()) {
-      ostr << ",\n" << indent14 << "\"del\": [";
+      ostr << ",\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, knownSymbolicsDel);
       ostr << "]";
     }
-    ostr << "\n            }";
+    ostr << "\n          }";
   }
 
   {
-    ostr << ",\n            \"concreteStoreLong\": [ ";
+    ostr << ",\n          \"concreteStoreLong\": [";
     bool start = true;
     for (auto x : plane->concreteStore)
     {
@@ -497,7 +493,7 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     ostr << "]";
   }
   {
-    ostr << ",\n            \"concreteMaskLong\": [ ";
+    ostr << ",\n          \"concreteMaskLong\": [";
     bool start = true;
     for (auto i = 0U;  i < plane->concreteMask.size(); ++i)
     {
@@ -507,7 +503,7 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     ostr << "]";
   }
   {
-    ostr << ",\n            \"knownSymbolicsLong\": [ ";
+    ostr << ",\n          \"knownSymbolicsLong\": [";
     bool start = true;
     for (auto i = 0U;  i < plane->sizeBound; ++i)
     {
@@ -520,40 +516,40 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     ostr << "]";
   }
 
-  // ostr << ",\n            \"updatesLong\": [\n";
-  // for (const auto *un = plane->getUpdates().head.get(); un; un = un->next.get()) {
-  //   ostr << "              {";
-  //   ostr << "\"index\": " << "\"" << expr2str(un->index) << "\", ";
-  //   ostr << "\"value\": " << "\"" << expr2str(un->value) << "\"";
-  //   ostr << "}" << (un->next.get() ? ",\n" : "\n");
-  // }
-  // ostr << "            ]";
+  ostr << ",\n            \"updatesLong\": [\n";
+  for (const auto *un = plane->getUpdates().head.get(); un; un = un->next.get()) {
+    ostr << "              {";
+    ostr << "\"index\": " << "\"" << expr2str(un->index) << "\", ";
+    ostr << "\"value\": " << "\"" << expr2str(un->value) << "\"";
+    ostr << "}" << (un->next.get() ? ",\n" : "\n");
+  }
+  ostr << "            ]";
 
   Updates updatesAdd = getUpdateDiff(plane->getUpdates(), nodeID, parentID, isOffset, planeID);
   if (!updatesAdd.empty()) {
-    ostr << ",\n            \"updates\": [\n";
+    ostr << ",\n          \"updates\": [\n";
     for (auto it = updatesAdd.begin(); it != updatesAdd.end();) {
       const std::string& index = std::get<0>(*it);
       const std::string& value = std::get<1>(*it);
 
-      ostr << "              {";
+      ostr << "            {";
       ostr << "\"" << value << "\""
            << " : "
            << "\"" << index << "\"";
       ++it;
       ostr << "}" << (it != updatesAdd.end() ? ",\n" : "\n");
     }
-    ostr << "            ]";
+    ostr << "          ]";
 
-    ostr << ",\n            \"constantValues\": [\n";
-    ostr << indent14;
-    const Array *array = plane->getUpdates().root;
-    for (auto it = array->constantValues.begin(); it != array->constantValues.end();) {
-      ostr << "\"" << expr2str(*it) << "\"";
-      ++it;
-      ostr << (it != array->constantValues.end() ? "," : "");
-    }
-    ostr << "]";
+    // ostr << ",\n            \"constantValues\": [\n";
+    // ostr << indent14;
+    // const Array *array = plane->getUpdates().root;
+    // for (auto it = array->constantValues.begin(); it != array->constantValues.end();) {
+    //   ostr << "\"" << expr2str(*it) << "\"";
+    //   ++it;
+    //   ostr << (it != array->constantValues.end() ? "," : "");
+    // }
+    // ostr << "]";
   }
 }
 
@@ -609,12 +605,12 @@ Memory ProgressRecorder::getMemory(const ObjectStatePlane *const plane) {
   return {concreteStore, concreteMask, knownSymbolics};
 }
 
-void ProgressRecorder::recordPlanes(int nodeId, const ObjectStatePlane *const segmentPlane, const ObjectStatePlane *const offsetPlane) {
+void ProgressRecorder::recordPlanes(int nodeID, const ObjectStatePlane *const segmentPlane, const ObjectStatePlane *const offsetPlane) {
   if (segmentPlane != nullptr) {
     // record plane's memory (concreteStore, concreteMask, knownSymbolics)
-    int segmentPlaneId = segmentPlane->getParent() ? segmentPlane->getParent()->getObject()->id : -1;
+    int segmentPlaneID = segmentPlane->getParent() ? segmentPlane->getParent()->getObject()->id : -1;
     Memory currSegmentMemory = getMemory(segmentPlane);
-    instance().segmentMemory.insert({{nodeId, segmentPlaneId}, currSegmentMemory});
+    instance().segmentMemory.insert({{nodeID, segmentPlaneID}, currSegmentMemory});
 
 
     // record plane's updates
@@ -624,14 +620,14 @@ void ProgressRecorder::recordPlanes(int nodeId, const ObjectStatePlane *const se
         childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
       }
     }
-    instance().segmentUpdates.insert({{nodeId, segmentPlaneId}, childUpdates});
+    instance().segmentUpdates.insert({{nodeID, segmentPlaneID}, childUpdates});
   }
 
   if (offsetPlane != nullptr) {
     // record plane's memory (concreteStore, concreteMask, knownSymbolics)
-    int offsetPlaneId = offsetPlane->getParent() ? offsetPlane->getParent()->getObject()->id : -1;
+    int offsetPlaneID = offsetPlane->getParent() ? offsetPlane->getParent()->getObject()->id : -1;
     Memory currOffsetMemory = getMemory(offsetPlane);
-    instance().offsetMemory.insert({{nodeId, offsetPlaneId}, currOffsetMemory});
+    instance().offsetMemory.insert({{nodeID, offsetPlaneID}, currOffsetMemory});
 
     // record plane's updates
     Updates childUpdates;
@@ -640,7 +636,7 @@ void ProgressRecorder::recordPlanes(int nodeId, const ObjectStatePlane *const se
         childUpdates.insert(std::make_tuple(expr2str(un->index), expr2str(un->value)));
       }
     }
-    instance().offsetUpdates.insert({{nodeId, offsetPlaneId}, childUpdates});
+    instance().offsetUpdates.insert({{nodeID, offsetPlaneID}, childUpdates});
   }
 }
 
@@ -648,19 +644,19 @@ void ProgressRecorder::recordInfo(int nodeID, int parentID,
                                   const MemoryMap objects) {
   instance().accessCount[parentID] += 1;
   instance().recordedNodesIDs.insert(nodeID);
-  std::set<int> currentIds;
+  std::set<int> currentIDs;
 
   for (auto it = objects.begin(); it != objects.end(); ++it) {
-    currentIds.insert(it->first->id);
+    currentIDs.insert(it->first->id);
     instance().recordPlanes(nodeID, it->second->segmentPlane, it->second->offsetPlane);
   }
 
-  instance().parentIds.insert({nodeID, currentIds});
+  instance().parentIDs.insert({nodeID, currentIDs});
 }
 
 void ProgressRecorder::object2json(std::ostream &ostr, const MemoryObject *const obj, const klee::ref<klee::ObjectState>& state, int nodeID, int parentID) {
   // OBJECT INFO
-  ostr << "        {";
+  ostr << "      {";
   ostr << "\"objID\": " << obj->id << ", ";
   ostr << "\"segment\": " << obj->segment << ", ";
   ostr << "\"name\": \"" << obj->name << "\", ";
@@ -674,31 +670,31 @@ void ProgressRecorder::object2json(std::ostream &ostr, const MemoryObject *const
   ostr << "\"copyOnWriteOwner\": " << state->copyOnWriteOwner << ", ";
   ostr << "\"readOnly\": " << state->readOnly << ",\n";
 
-  ostr << "          \"allocSite\": { ";
+  ostr << "        \"allocSite\": {";
   if (obj->allocSite != nullptr) {
     std::string result;
     llvm::raw_string_ostream info(result);
     if (const llvm::Instruction *instr = llvm::dyn_cast<llvm::Instruction>(obj->allocSite)) {
-      info << "\"scope\": \"function\", \"name\": \"" << instr->getParent()->getParent()->getName() << "\", \"code\": \"" << *instr << "\" ";
+      info << "\"scope\": \"function\", \"name\": \"" << instr->getParent()->getParent()->getName() << "\", \"code\": \"" << *instr << "\"";
     } else if (const llvm::GlobalValue *gv = dyn_cast<llvm::GlobalValue>(obj->allocSite)) {
-      info << "\"scope\": \"static\", \"name\": \"" << gv->getName() << "\" ";
+      info << "\"scope\": \"static\", \"name\": \"" << gv->getName() << "\"";
     } else {
-      info << "\"scope\": \"value\", \"code\": \"" << *obj->allocSite << "\" ";
+      info << "\"scope\": \"value\", \"code\": \"" << *obj->allocSite << "\"";
     }
     info.flush();
     ostr << result;
   }
   ostr << "},\n";
 
-  ostr << "          \"segmentPlane\": {";
+  ostr << "        \"segmentPlane\": {";
   instance().plane2json(ostr, state->segmentPlane, nodeID, parentID,
-  false); ostr << "\n          },\n";
+  false); ostr << "\n        },\n";
 
-  ostr << "          \"offsetPlane\": {";
+  ostr << "        \"offsetPlane\": {";
   instance().plane2json(ostr, state->offsetPlane, nodeID, parentID,
-  true); ostr << "\n          }";
+  true); ostr << "\n        }";
   
-  ostr << "\n        }";
+  ostr << "\n      }";
 }
 
 void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
@@ -708,10 +704,10 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
   ostr << "\"uniqueState\": " << uniqueState << ", ";
 
   const InstructionInfo *const instrInfo{node->state->prevPC->info};
-  ostr << "\"startLocation\": [";
+  ostr << "\"firstLocation\": [";
   instr2json(ostr, instrInfo);
   ostr << "], ";
-  ostr << "\"nextStateId\": " << node->state->nextID;
+  ostr << "\"nextStateID\": " << node->state->nextID;
 }
 
 void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
@@ -726,7 +722,7 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
        << ",\n";
 
   const InstructionInfo *const instrInfo{node->state->prevPC->info};
-  ostr << "  \"endLocation\": [";
+  ostr << "  \"lastLocation\": [";
   instr2json(ostr, instrInfo);
   ostr << "], ";
   ostr << "\"depth\": " << node->state->depth << ", ";
@@ -766,25 +762,25 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   // }
   // ostr << "  ],\n";
 
-  std::set<int> currentParentIds;
-  auto it = instance().parentIds.find(parentID);
-  if (it != instance().parentIds.end()) {
-    currentParentIds = it->second;
+  std::set<int> currentParentIDs;
+  auto it = instance().parentIDs.find(parentID);
+  if (it != instance().parentIDs.end()) {
+    currentParentIDs = it->second;
   }
 
-  std::set<int> childIds;
-  std::set<int> changesIds;
+  std::set<int> childIDs;
+  std::set<int> changesIDs;
 
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end();) {
-    childIds.insert(it->first->id);
+    childIDs.insert(it->first->id);
     ++it;
   }
 
   std::tuple<std::set<int>, std::set<int>> diff =
-      getDiff(currentParentIds, childIds);
-  std::set<int> additionsIds = std::get<0>(diff);
-  std::set<int> deletionsIds = std::get<1>(diff);
+      getDiff(currentParentIDs, childIDs);
+  std::set<int> additionsIDs = std::get<0>(diff);
+  std::set<int> deletionsIDs = std::get<1>(diff);
 
   bool addComma = false;
 
@@ -793,13 +789,13 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   ostr << "    \"added\": [";
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end(); ++it) {
-    if (additionsIds.find(it->first->id) != additionsIds.end()) {
+    if (additionsIDs.find(it->first->id) != additionsIDs.end()) {
       ostr << (addComma ? ",\n" : "\n");
       addComma = true;
       instance().object2json(ostr, it->first, it->second, nodeID, parentID);
     }
   }
-  ostr << "\n  ],\n";
+  ostr << "\n    ],\n";
 
   addComma = false;
 
@@ -807,7 +803,7 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   for (auto it = node->state->addressSpace.objects.begin();
        it != node->state->addressSpace.objects.end(); ++it) {
     
-    if (additionsIds.find(it->first->id) == additionsIds.end() &&
+    if (additionsIDs.find(it->first->id) == additionsIDs.end() &&
         instance().hasChanged(nodeID, parentID, it->second->segmentPlane, it->second->offsetPlane)) {
       ostr << (addComma ? ",\n" : "\n");
       addComma = true;
@@ -817,10 +813,10 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   ostr << "\n    ],\n";
 
   ostr << "    \"deleted\": [\n";
-  for (auto it = deletionsIds.begin(); it != deletionsIds.end();) {
-    ostr << "        " << *it;
+  for (auto it = deletionsIDs.begin(); it != deletionsIDs.end();) {
+    ostr << "      " <<  *it;
     ++it;
-    ostr << (it != deletionsIds.end() ? ", " : "\n");
+    ostr << (it != deletionsIDs.end() ? ",\n" : "\n");
   }
   ostr << "    ]\n";
 
@@ -869,7 +865,7 @@ bool ProgressRecorder::hasChanged(int nodeID, int parentID,
 
 
 void ProgressRecorder::deleteParentInfo(const int parentID) {
-  parentIds.erase(parentID);
+  parentIDs.erase(parentID);
   nodeJSONs.erase(parentID);
   accessCount.erase(parentID);
 
