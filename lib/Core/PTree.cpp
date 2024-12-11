@@ -39,7 +39,7 @@ PTree::PTree(ExecutionState *initialState)
 
   if (CompressProcessTree) {
     recorder().stop();
-    // recorderLong().stop();
+    recorderLong().stop();
   }
 }
 
@@ -51,12 +51,13 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   
   int parentID = recorder().instance().getNodeIDs().at(node);
   recorder().onInsertInfo(parentID, node);
+  recorderLong().onInsertInfo(parentID, node);
   
   node->state = nullptr;
   node->left = PTreeNodePtr(new PTreeNode(node, leftState));
 
   recorder().onInsertEdge(node, node->left.getPointer());
-  // recorderLong().onInsertEdge(node, node->left.getPointer(), node->left.getInt());
+  recorderLong().onInsertEdge(node, node->left.getPointer());
 
   // The current node inherits the tag
   uint8_t currentNodeTag = root.getInt();
@@ -67,7 +68,7 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
   node->right = PTreeNodePtr(new PTreeNode(node, rightState), currentNodeTag);
 
   recorder().onInsertEdge(node, node->right.getPointer());
-  // recorderLong().onInsertEdge(node, node->right.getPointer(), node->right.getInt());
+  recorderLong().onInsertEdge(node, node->right.getPointer());
 }
 
 void PTree::remove(PTreeNode *n) {
@@ -80,11 +81,12 @@ void PTree::remove(PTreeNode *n) {
       // Check if the node was recorded
       if (std::find(recorder().getRecordedNodeIDs().begin(), recorder().getRecordedNodeIDs().end(), nodeId) == recorder().getRecordedNodeIDs().end()) {
         recorder().onInsertInfo(nodeId, n);
+        recorderLong().onInsertInfo(nodeId, n);
       }
     }
 
     recorder().onEraseNode(n);
-    // recorderLong().onEraseNode(n);
+    recorderLong().onEraseNode(n);
 
     PTreeNode *p = n->parent;
     if (p) {
@@ -165,6 +167,5 @@ PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent},
   right = PTreeNodePtr(nullptr);
 
   recorder().onInsertNode(this);
-
-  // recorderLong().onInsertNode(this);
+  recorderLong().onInsertNode(this);
 }

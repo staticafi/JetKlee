@@ -15,79 +15,132 @@
 #include <unordered_map>
 #include <memory>
 #include <iosfwd>
+#include "klee/ADT/Ref.h"
+#include "klee/Expr/Expr.h"
+#include "../../../lib/Core/Memory.h"
+#include "../../../lib/Core/AddressSpace.h"
+
 
 namespace klee {
 
-  class PTreeNode;
-  class ExecutionState;
-  struct InstructionInfo;
+class PTreeNode;
+class ExecutionState;
+struct InstructionInfo;
+using Updates = std::multiset<std::tuple<std::string, std::string>>;
+using Bytes = std::vector<std::string>;
+using BytesMap =
+    std::map<std::string, std::vector<int>>; // value : list of offsets
+using BytesDiff = std::tuple<BytesMap, BytesMap>;
 
-  class ProgressRecorderLong {
+class ProgressRecorderLong {
 
-    struct Action {
-      virtual ~Action() {}
-      virtual void toJson(std::ostream& ostr) = 0;
-    };
-
-    struct InsertNode : public Action {
-      InsertNode(const PTreeNode *node_, int nodeID_, int stateID_, bool uniqueState_)
-        : node{ node_ }, nodeID{ nodeID_ }, stateID{ stateID_ }, uniqueState{ uniqueState_ } {}
-      void toJson(std::ostream& ostr) override;
-      const PTreeNode *node;
-      int nodeID;
-      int stateID;
-      bool uniqueState;
-    };
-
-    struct InsertEdge : public Action {
-      InsertEdge(const int parentID_, const int childID_, uint8_t tag_)
-        : parentID{ parentID_ }, childID{ childID_ }, tag{ tag_ } {}
-      void toJson(std::ostream& ostr) override;
-      const int parentID;
-      const int childID;
-      uint8_t tag;
-    };
-
-    struct EraseNode : public Action {
-      explicit EraseNode(const int ID_) : ID{ ID_ } {}
-      void toJson(std::ostream& ostr) override;
-      const int ID;
-    };
-
-    std::string rootOutputDir;
-
-    int roundCounter;
-
-    int nodeCounter;
-    std::unordered_map<const PTreeNode *, int> nodeIDs;
-
-    int stateCounter;
-    std::unordered_map<const ExecutionState *, int> stateIDs;
-
-    std::vector<std::unique_ptr<Action> > roundActions;
-
-    ProgressRecorderLong();
-    ProgressRecorderLong(ProgressRecorderLong const&) = default;
-    ProgressRecorderLong& operator=(ProgressRecorderLong const&) = default;
-
-  public:
-    static ProgressRecorderLong& instance();
-    static const std::string rootDirName;
-
-    bool start(const std::string &underDir, std::string fileName);
-    void stop();
-    bool started() const;
-
-    void onRoundBegin();
-    void onRoundEnd();
-
-    void onInsertNode(const PTreeNode *node);
-    void onInsertEdge(const PTreeNode *parent, const PTreeNode *child, uint8_t tag);
-    void onEraseNode(const PTreeNode *node);
+  struct Action {
+    virtual ~Action() {}
+    virtual void toJson(std::ostream &ostr) = 0;
   };
 
-  inline ProgressRecorderLong& recorderLong() { return ProgressRecorderLong::instance(); }
+  struct InsertInfo : public Action {
+    InsertInfo(const PTreeNode *node_, int nodeID_)
+        : node{node_}, nodeID{nodeID_} {}
+    void toJson(std::ostream &ostr) override;
+    const PTreeNode *node;
+    int nodeID;
+  };
 
-}
+  struct InsertNode : public Action {
+    InsertNode(const PTreeNode *node_, int nodeID_, int stateID_,
+               bool uniqueState_)
+        : node{node_}, nodeID{nodeID_}, stateID{stateID_},
+          uniqueState{uniqueState_} {}
+    void toJson(std::ostream &ostr) override;
+    const PTreeNode *node;
+    int nodeID;
+    int stateID;
+    bool uniqueState;
+  };
+
+  struct InsertEdge : public Action {
+    InsertEdge(const int parentID_, const int childID_)
+        : parentID{parentID_}, childID{childID_} {}
+    void toJson(std::ostream &ostr) override;
+    const int parentID;
+    const int childID;
+  };
+
+  struct EraseNode : public Action {
+    explicit EraseNode(const int ID_) : ID{ID_} {}
+    void toJson(std::ostream &ostr) override;
+    const int ID;
+  };
+
+  std::string rootOutputDir;
+  std::string treeDir;
+  std::string memoryDir;
+
+  int roundCounter;
+
+  int nodeCounter;
+
+  std::unordered_map<int, int> nodeJSONs;
+  std::unordered_map<int, bool> nodeUniqueStates;
+
+  std::unordered_map<int, int> accessCount;
+  // list of Object ids for parent nodes
+  std::unordered_map<int, std::set<int>> parentIDs;
+  std::unordered_map<const PTreeNode *, int> nodeIDs;
+  std::set<int> recordedNodesIDs;
+
+  int stateCounter;
+  std::unordered_map<const ExecutionState *, int> stateIDs;
+
+  std::vector<std::unique_ptr<Action>> roundActions;
+
+  ProgressRecorderLong();
+  ProgressRecorderLong(ProgressRecorderLong const &) = default;
+  ProgressRecorderLong &operator=(ProgressRecorderLong const &) = default;
+
+public:
+  static ProgressRecorderLong &instance();
+  static const std::string rootDirName;
+  static const std::string treeDirName;
+  static const std::string memoryDirName;
+  static const mode_t dirPermissions;
+
+  static int getNodeCounter();
+
+  bool start(const std::string &underDir, std::string fileName);
+  void end();
+  void stop();
+  bool started() const;
+
+  void onRoundBegin();
+  void onRoundEnd();
+
+  void plane2json(std::ostream &ostr, const ObjectStatePlane *const plane,
+                  int nodeID, int parentID, bool isOffset);
+  void object2json(std::ostream &ostr, const MemoryObject *const obj,
+                   const klee::ref<klee::ObjectState> &state, int nodeID,
+                   int parentID);
+  void recordInfo(int nodeID, int parentID, const MemoryMap objects);
+  void recordPlanes(int nodeId,
+                    const ObjectStatePlane *const segmentPlane,
+                    const ObjectStatePlane *const offsetPlane);
+
+  void deleteParentInfo(const int parentID);
+
+  void onInsertInfo(int nodeID, const PTreeNode *node);
+  void onInsertNode(const PTreeNode *node);
+  void onInsertEdge(const PTreeNode *parent, const PTreeNode *child);
+  void onEraseNode(const PTreeNode *node);
+
+  const std::unordered_map<const PTreeNode *, int> &getNodeIDs() const {
+    return nodeIDs;
+  }
+  const std::set<int> &getRecordedNodeIDs() const { return recordedNodesIDs; }
+};
+
+inline ProgressRecorderLong &recorderLong() { return ProgressRecorderLong::instance(); }
+
+} // namespace klee
 
 #endif

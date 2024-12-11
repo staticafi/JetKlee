@@ -44,34 +44,6 @@ enum ByteType {
     MASK
 };
 
-struct ByteInfo {
-  int offset;
-  bool isConcrete;
-  bool isKnownSym;
-  bool isUnflushed;
-  klee::ref<klee::Expr> value;
-
-  bool operator==(const ByteInfo &other) const {
-    return offset == other.offset && isConcrete == other.isConcrete &&
-           isKnownSym == other.isKnownSym && isUnflushed == other.isUnflushed &&
-           value == other.value;
-  }
-
-  bool operator<(const ByteInfo &other) const {
-    if (offset != other.offset) {
-      return offset < other.offset;
-    } else if (isConcrete != other.isConcrete) {
-      return !isConcrete;
-    } else if (isKnownSym != other.isKnownSym) {
-      return !isKnownSym;
-    } else if (isUnflushed != other.isUnflushed) {
-      return !isUnflushed;
-    } else {
-      return value < other.value;
-    }
-  }
-};
-
 struct pair_hash {
   template <class T1, class T2>
   std::size_t operator()(const std::pair<T1, T2> &pair) const {

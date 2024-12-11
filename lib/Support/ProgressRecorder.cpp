@@ -29,7 +29,7 @@ ProgressRecorder &ProgressRecorder::instance() {
 
 const std::string ProgressRecorder::rootDirName{"__JetKleeProgressRecording__"};
 const std::string ProgressRecorder::treeDirName{"Tree"};
-const std::string ProgressRecorder::memoryDirName{"Memory"};
+const std::string ProgressRecorder::memoryDirName{"States"};
 const mode_t ProgressRecorder::dirPermissions{0775};
 
 ProgressRecorder::ProgressRecorder()
@@ -481,28 +481,27 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     }
     ostr << "\n          }";
   }
+
+  Updates updatesAdd = getUpdateDiff(plane->getUpdates(), nodeID, parentID, isOffset, planeID);
+  if (!updatesAdd.empty()) {
+    ostr << ",\n          \"updates\": [\n";
+    for (auto it = updatesAdd.begin(); it != updatesAdd.end();) {
+      const std::string& index = std::get<0>(*it);
+      const std::string& value = std::get<1>(*it);
+      ostr << "            {";
+      ostr << "\"" << value << "\""
+           << " : "
+           << "\"" << index << "\"";
+      ++it;
+      ostr << "}" << (it != updatesAdd.end() ? ",\n" : "\n");
+    }
+    ostr << "          ]";
+  }
 }
 
 static void instr2json(std::ostream &ostr, const InstructionInfo *const instr) {
   ostr << "\"" << instr->file << "\"," << instr->line << "," << instr->column
        << "," << instr->assemblyLine;
-}
-
-static void
-nondetValues2json(std::ostream &ostr,
-                  std::vector<ExecutionState::NondetValue> nondetValues) {
-  ostr << "    \"nondetValues\": [\n";
-  for (auto it = nondetValues.begin(); it != nondetValues.end();) {
-    ostr << "      {";
-    ostr << "\"value\": \"" << expr2str(it->value.getValue()) << "\", ";
-    ostr << "\"segment\": " << expr2str(it->value.getSegment()) << ", ";
-    ostr << "\"isSigned\": " << it->isSigned << ", ";
-    ostr << "\"name\": \"" << it->name << "\"";
-    ostr << "}";
-    ++it;
-    ostr << (it != nondetValues.end() ? ",\n" : "\n");
-  }
-  ostr << "    ], \n";
 }
 
 Memory ProgressRecorder::getMemory(const ObjectStatePlane *const plane) {

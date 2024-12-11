@@ -3817,7 +3817,7 @@ void Executor::run(ExecutionState &initialState) {
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
     recorder().onRoundBegin();
-    // recorderLong().onRoundBegin();
+    recorderLong().onRoundBegin();
 
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
@@ -3836,18 +3836,21 @@ void Executor::run(ExecutionState &initialState) {
     }
 
     recorder().onRoundEnd();
-    // recorderLong().onRoundEnd();
+    recorderLong().onRoundEnd();
   }
 
   recorder().end();
+  recorderLong().end();
 
   delete searcher;
   searcher = nullptr;
 
   // record states removed in dump states
   recorder().onRoundBegin();
+  recorderLong().onRoundBegin();
   doDumpStates();
   recorder().onRoundEnd();
+  recorderLong().onRoundEnd();
 }
 
 std::string Executor::getKValueInfo(ExecutionState &state,
