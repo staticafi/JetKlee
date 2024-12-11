@@ -189,15 +189,15 @@ static std::string expr2str(const ref<Expr> &e) {
 
 static void stack2json(std::ostream &ostr,
                        const std::vector<StackFrame> stack) {
-  ostr << "\"stack\": [";
+  ostr << "\n    \"stack\":[";
   for (std::size_t i = 0U; i != stack.size(); ++i)
     if (stack.at(i).callPathNode->callSite != nullptr) {
       const InstructionInfo *const callerInfo{stack.at(i).caller->info};
       ostr << "[\"" << callerInfo->file << "\"," << callerInfo->line << ","
            << callerInfo->column << "," << callerInfo->assemblyLine << "]"
-           << (i + 1U < stack.size() ? "," : "");
+           << (i + 1U < stack.size() ? ", " : "");
     }
-  ostr << "]";
+  ostr << "]\n  ";
 }
 
 static void constraints2json(std::ostream &ostr,
@@ -707,7 +707,7 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
   ostr << "\"firstLocation\": [";
   instr2json(ostr, instrInfo);
   ostr << "], ";
-  ostr << "\"nextStateID\": " << node->state->nextID;
+  stack2json(ostr, node->state->stack);
 }
 
 void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
@@ -716,6 +716,7 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
 
   ostr << "  \"action\": \"InsertInfo\", ";
   ostr << "\"nodeID\": " << nodeID << ",";
+  ostr << "\"stateID\": " << node->state->id << ", ";
   ostr << "\"parentID\": " << parentID << ", ";
   ostr << "\"parentJSON\": "
        << (node->parent == nullptr ? -1 : instance().nodeJSONs.at(parentID))
@@ -729,10 +730,7 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   ostr << "\"coveredNew\": " << node->state->coveredNew << ", ";
   ostr << "\"forkDisabled\": " << node->state->forkDisabled << ", ";
   ostr << "\"instsSinceCovNew\": " << node->state->instsSinceCovNew << ", ";
-  ostr << "\"steppedInstructions\": " << node->state->steppedInstructions
-       << ", ";
-  stack2json(ostr, node->state->stack);
-  ostr << ",\n";
+  ostr << "\"steppedInstructions\": " << node->state->steppedInstructions << ",\n";
   constraints2json(ostr, node->state->constraints);
   ostr << ",\n";
 
