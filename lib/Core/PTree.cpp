@@ -50,7 +50,6 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState,
          "Attach assumes the right state is the current state");
   
   int parentID = recorder().instance().getNodeIDs().at(node);
-  klee_message("Inserting node memory in attach %u", parentID);
   recorder().onInsertInfo(parentID, node);
   
   node->state = nullptr;
@@ -80,7 +79,6 @@ void PTree::remove(PTreeNode *n) {
       int nodeId = it->second;
       // Check if the node was recorded
       if (std::find(recorder().getRecordedNodeIDs().begin(), recorder().getRecordedNodeIDs().end(), nodeId) == recorder().getRecordedNodeIDs().end()) {
-        klee_message("Inserting node memory in remove %u", nodeId);
         recorder().onInsertInfo(nodeId, n);
       }
     }
@@ -167,7 +165,6 @@ PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent},
   right = PTreeNodePtr(nullptr);
 
   recorder().onInsertNode(this);
-  klee_message("Inserting node %u", recorder().getNodeCounter());
 
   // recorderLong().onInsertNode(this);
 }

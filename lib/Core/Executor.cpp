@@ -3816,7 +3816,6 @@ void Executor::run(ExecutionState &initialState) {
 
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
-    klee_message("Main interpreter loop: instruction for state %u", recorder().getNodeCounter());
     recorder().onRoundBegin();
     // recorderLong().onRoundBegin();
 

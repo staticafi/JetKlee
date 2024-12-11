@@ -526,12 +526,6 @@ Memory ProgressRecorder::getMemory(const ObjectStatePlane *const plane) {
       knownSymbolics.push_back(expr2str(plane->knownSymbolics[i]));
     }
   }
-
-  for (auto it2 = plane->getUpdates().head.get(); it2; it2 = it2->next.get()) {
-      // instance().recordPlanes(nodeID, it->second->segmentPlane, it->second->offsetPlane);
-    klee_message("offset update: %s -> %s", expr2str(it2->index).c_str(), expr2str(it2->value).c_str());
-  }
-
   return {concreteStore, concreteMask, knownSymbolics};
 }
 
@@ -663,32 +657,6 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   ostr << "\"steppedInstructions\": " << node->state->steppedInstructions << ",\n";
   constraints2json(ostr, node->state->constraints);
   ostr << ",\n";
-
-  // nondetValues2json(ostr, node->state->nondetValues);
-  //   ostr << "  \"symbolics\": [\n";
-  // for (auto it = node->state->symbolics.begin();
-  //      it != node->state->symbolics.end();) {
-    // ostr << "    {\n";
-    // ostr << "      \"objID\": " << it->first->id << ", ";
-    // ostr << "\"name\": \"" << it->second->name << "\", ";
-    // ostr << "\"size\": " << it->second->size << ", ";
-    // ostr << "\"domain\": " << it->second->domain << ", ";
-    // ostr << "\"range\": " << it->second->range << ", ";
-    // ostr << "\"isSymbolicArray\": " << it->second->isSymbolicArray() << ", ";
-
-  //   ostr << "\"constantValues\": [";
-  //   for (auto a = it->second->constantValues.begin();
-  //        a != it->second->constantValues.end();) {
-  //     ostr << "\"" << expr2str(*a) << "\"";
-  //     ++a;
-  //     ostr << (a != it->second->constantValues.end() ? ", " : "");
-  //   }
-  //   ostr << "] \n";
-  //   ostr << "  }";
-  //   ++it;
-  //   ostr << (it != node->state->symbolics.end() ? ",\n" : "\n");
-  // }
-  // ostr << "  ],\n";
 
   std::set<int> currentParentIDs;
   auto it = instance().parentIDs.find(parentID);
