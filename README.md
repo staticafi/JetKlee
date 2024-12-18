@@ -7,7 +7,7 @@ Alternatively, you can follow the official [guide](http://klee-se.org/build/buil
     ```bash
     $ sudo apt-get install build-essential cmake curl file g++-multilib gcc-multilib git libcap-dev libgoogle-perftools-dev libncurses5-dev libsqlite3-dev libtcmalloc-minimal4 python3-pip unzip graphviz doxygen
 
-    $ sudo apt-get install clang-13 llvm-13 llvm-13-dev llvm-13-tools`
+    $ sudo apt-get install clang-14 llvm-14 llvm-14-dev llvm-14-tools`
     ```
 
 2. Set-up `klee-uclibc`
