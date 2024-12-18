@@ -3815,6 +3815,7 @@ void Executor::run(ExecutionState &initialState) {
   searcher->update(0, newStates, std::vector<ExecutionState *>());
 
   // main interpreter loop
+  bool recorded_ll = false;
   while (!states.empty() && !haltExecution) {
     recorder().onRoundBegin();
     recorderLong().onRoundBegin();
@@ -3837,18 +3838,22 @@ void Executor::run(ExecutionState &initialState) {
 
     recorder().onRoundEnd();
     recorderLong().onRoundEnd();
-  }
 
-  recorder().end();
-  recorderLong().end();
+    if (!recorded_ll) {
+      recorder().end();
+      recorderLong().end();
+      recorded_ll = true;
+    }
+  }
 
   delete searcher;
   searcher = nullptr;
 
-  // record states removed in dump states
   recorder().onRoundBegin();
   recorderLong().onRoundBegin();
+
   doDumpStates();
+
   recorder().onRoundEnd();
   recorderLong().onRoundEnd();
 }

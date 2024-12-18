@@ -411,7 +411,6 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
     return;
 
   int planeID = plane->getParent() ? plane->getParent()->getObject()->id : -1;
-  ostr << "\"objID\": " << planeID << ", ";
   ostr << "\"rootObject\": " << "\"" << plane->getUpdates().root->getName() << "\", ";
   ostr << "\"sizeBound\": " << plane->sizeBound << ", ";
   ostr << "\"initialized\": " << plane->initialized << ", ";
@@ -424,6 +423,8 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
   BytesMap concreteStoreAdd = std::get<0>(concreteStoreDiff);
   BytesMap concreteStoreDel = std::get<1>(concreteStoreDiff);
 
+  bool addComma = false;
+
   if (!concreteStoreAdd.empty() || !concreteStoreDel.empty()) {
     ostr << ",\n          \"concreteStore\": {";
 
@@ -431,15 +432,19 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
       ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, concreteStoreAdd);
       ostr << "]";
+      addComma = true;
     }
 
     if (!concreteStoreDel.empty()) {
-      ostr << ",\n" << indent12 << "\"del\": [";
+      if (addComma) {ostr << ",";}
+      ostr << "\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, concreteStoreDel);
       ostr << "]";
     }
     ostr << "\n          }";
   }
+
+  addComma = false;
 
   BytesDiff concreteMaskDiff = getByteDiff(plane, nodeID, parentID, isOffset, ByteType::MASK);
   BytesMap concreteMaskAdd = std::get<0>(concreteMaskDiff);
@@ -452,15 +457,19 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
       ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, concreteMaskAdd);
       ostr << "]";
+      addComma = true;
     }
 
     if (!concreteMaskDel.empty()) {
-      ostr << ",\n" << indent12 << "\"del\": [";
+      if (addComma) {ostr << ",";}
+      ostr << "\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, concreteMaskDel);
       ostr << "]";
     }
     ostr << "\n          }";
   }
+
+  addComma = false;
 
   BytesDiff knownSymbolicsDiff = getByteDiff(plane, nodeID, parentID, isOffset, ByteType::SYMBOLIC);
   BytesMap knownSymbolicsAdd = std::get<0>(knownSymbolicsDiff);
@@ -472,10 +481,12 @@ void ProgressRecorder::plane2json(std::ostream &ostr,
       ostr << "\n" << indent12 << "\"add\": [";
       bytesMap2Json(ostr, knownSymbolicsAdd);
       ostr << "]";
+      addComma = true;
     }
 
     if (!knownSymbolicsDel.empty()) {
-      ostr << ",\n" << indent12 << "\"del\": [";
+      if (addComma) {ostr << ",";}
+      ostr << "\n" << indent12 << "\"del\": [";
       bytesMap2Json(ostr, knownSymbolicsDel);
       ostr << "]";
     }
@@ -625,6 +636,7 @@ void ProgressRecorder::InsertNode::toJson(std::ostream &ostr) {
   ostr << "\"nodeID\": " << nodeID << ", ";
   ostr << "\"stateID\": " << stateID << ", ";
   ostr << "\"uniqueState\": " << uniqueState << ", ";
+  ostr << "\"depth\": " << node->state->depth << ", ";
 
   const InstructionInfo *const instrInfo{node->state->prevPC->info};
   ostr << "\"firstLocation\": [";
@@ -639,9 +651,7 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
 
   ostr << "  \"action\": \"InsertInfo\", ";
   ostr << "\"nodeID\": " << nodeID << ",";
-  ostr << "\"stateID\": " << node->state->id << ", ";
-  ostr << "\"parentID\": " << parentID << ", ";
-  ostr << "\"parentJSON\": "
+  ostr << "\"parentIter\": "
        << (node->parent == nullptr ? -1 : instance().nodeJSONs.at(parentID))
        << ",\n";
 
@@ -649,11 +659,10 @@ void ProgressRecorder::InsertInfo::toJson(std::ostream &ostr) {
   ostr << "  \"lastLocation\": [";
   instr2json(ostr, instrInfo);
   ostr << "], ";
-  ostr << "\"depth\": " << node->state->depth << ", ";
   ostr << "\"coveredNew\": " << node->state->coveredNew << ", ";
-  ostr << "\"forkDisabled\": " << node->state->forkDisabled << ", ";
   ostr << "\"instsSinceCovNew\": " << node->state->instsSinceCovNew << ", ";
   ostr << "\"steppedInstructions\": " << node->state->steppedInstructions << ",\n";
+  ostr << "\"forkDisabled\": " << node->state->forkDisabled << ", ";
   constraints2json(ostr, node->state->constraints);
   ostr << ",\n";
 
@@ -799,8 +808,8 @@ void ProgressRecorder::deleteParentInfo(const int parentID) {
 
 void ProgressRecorder::InsertEdge::toJson(std::ostream &ostr) {
   ostr << "\"action\": \"InsertEdge\", ";
-  ostr << "\"parentID\": " << parentID << ", ";
-  ostr << "\"childID\": " << childID;
+  ostr << "\"nodeID\": " << childID << ", ";
+  ostr << "\"parentID\": " << parentID;
 }
 
 void ProgressRecorder::EraseNode::toJson(std::ostream &ostr) {

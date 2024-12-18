@@ -1,4 +1,4 @@
-//===-- ProgressRecorder.cpp ----------------------------------------------===//
+//===-- ProgressRecorderLong.cpp ----------------------------------------------===//
 //
 //                     The KLEE Symbolic Virtual Machine
 //
@@ -229,7 +229,8 @@ void ProgressRecorderLong::plane2json(std::ostream &ostr,
 
   std::string indent12 = std::string(12, ' ');
   
-    {
+  {
+    if (plane->concreteStore.size() > 0) {
     ostr << ",\n        \"concreteStoreLong\": [";
     bool start = true;
     for (auto x : plane->concreteStore)
@@ -238,8 +239,10 @@ void ProgressRecorderLong::plane2json(std::ostream &ostr,
       ostr << (unsigned int)x;
     }
     ostr << "]";
+    }
   }
   {
+    if (plane->concreteMask.size() > 0) {
     ostr << ",\n        \"concreteMaskLong\": [";
     bool start = true;
     for (auto i = 0U;  i < plane->concreteMask.size(); ++i)
@@ -248,6 +251,7 @@ void ProgressRecorderLong::plane2json(std::ostream &ostr,
       ostr << (unsigned int)plane->isByteConcrete(i);
     }
     ostr << "]";
+    }
   }
   {
     ostr << ",\n        \"knownSymbolicsLong\": [";
@@ -263,14 +267,20 @@ void ProgressRecorderLong::plane2json(std::ostream &ostr,
     }
     ostr << "]";
   }
-  ostr << ",\n        \"updatesLong\": [\n";
-  for (const auto *un = plane->getUpdates().head.get(); un; un = un->next.get()) {
-    ostr << "          {";
-    ostr << "\"index\": " << "\"" << expr2str(un->index) << "\", ";
-    ostr << "\"value\": " << "\"" << expr2str(un->value) << "\"";
-    ostr << "}" << (un->next.get() ? ",\n" : "\n");
+  {
+  if (plane->getUpdates().getSize() > 0) {
+    ostr << ",\n        \"updatesLong\": [";
+    bool start = true;
+    for (const auto *un = plane->getUpdates().head.get(); un; un = un->next.get()) {
+      if (start) start = false; else ostr << ",";
+      ostr << "{";
+      ostr << "\"index\": " << "\"" << expr2str(un->index) << "\", ";
+      ostr << "\"value\": " << "\"" << expr2str(un->value) << "\"";
+      ostr << "}";
+    }
+    ostr << "]";
+    }
   }
-  ostr << "        ]";
 }
 
 static void instr2json(std::ostream &ostr, const InstructionInfo *const instr) {
