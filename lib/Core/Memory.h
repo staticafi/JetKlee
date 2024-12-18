@@ -35,7 +35,6 @@ class ExecutionState;
 class MemoryManager;
 class Solver;
 class ProgressRecorder;
-class ProgressRecorderLong;
 
 class MemoryObject {
   friend class STPBuilder;
@@ -295,7 +294,6 @@ public:
 class ObjectStatePlane {
 private:
   friend class ProgressRecorder;
-  friend class ProgressRecorderLong;
 
   friend class AddressSpace;
   friend class ref<ObjectState>;
@@ -404,7 +402,6 @@ private:
 class ObjectState {
 private:
   friend class ProgressRecorder;
-  friend class ProgressRecorderLong;
 
   friend class AddressSpace;
   unsigned copyOnWriteOwner; // exclusively for AddressSpace

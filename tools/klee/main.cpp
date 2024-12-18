@@ -23,7 +23,6 @@
 #include "klee/Support/ModuleUtil.h"
 #include "klee/Support/PrintVersion.h"
 #include "klee/Support/ProgressRecorder.h"
-#include "klee/Support/ProgressRecorderLong.h"
 #include "klee/System/Time.h"
 
 // FIXME: this is a hack
@@ -1811,7 +1810,6 @@ int main(int argc, char **argv, char **envp) {
 
   if (ProgressRecording) {
     recorder().start(handler->getOutputFilename(ProgressRecorder::rootDirName), InputFile);
-    recorderLong().start(handler->getOutputFilename(ProgressRecorderLong::rootDirName), InputFile);
   }
     
   for (int i=0; i<argc; i++) {

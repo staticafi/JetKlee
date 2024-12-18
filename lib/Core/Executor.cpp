@@ -50,7 +50,6 @@
 #include "klee/Support/ModuleUtil.h"
 #include "klee/Support/OptionCategories.h"
 #include "klee/Support/ProgressRecorder.h"
-#include "klee/Support/ProgressRecorderLong.h"
 #include "klee/System/MemoryUsage.h"
 #include "klee/System/Time.h"
 
@@ -3818,7 +3817,6 @@ void Executor::run(ExecutionState &initialState) {
   bool recorded_ll = false;
   while (!states.empty() && !haltExecution) {
     recorder().onRoundBegin();
-    recorderLong().onRoundBegin();
 
     ExecutionState &state = searcher->selectState();
     KInstruction *ki = state.pc;
@@ -3837,11 +3835,9 @@ void Executor::run(ExecutionState &initialState) {
     }
 
     recorder().onRoundEnd();
-    recorderLong().onRoundEnd();
 
     if (!recorded_ll) {
       recorder().end();
-      recorderLong().end();
       recorded_ll = true;
     }
   }
@@ -3850,12 +3846,10 @@ void Executor::run(ExecutionState &initialState) {
   searcher = nullptr;
 
   recorder().onRoundBegin();
-  recorderLong().onRoundBegin();
 
   doDumpStates();
 
   recorder().onRoundEnd();
-  recorderLong().onRoundEnd();
 }
 
 std::string Executor::getKValueInfo(ExecutionState &state,
