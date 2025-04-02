@@ -11,12 +11,15 @@
 
 #include "klee/Config/Version.h"
 #include "klee/Expr/ExprPPrinter.h"
+#include "klee/Support/OptionCategories.h"
 // FIXME: We shouldn't need this once fast constant support moves into
 // Core. If we need to do arithmetic, we probably want to use APInt.
-#include "klee/Internal/Support/IntEvaluation.h"
-#include "klee/OptionCategories.h"
+#include "klee/Support/IntEvaluation.h"
 
 #include "llvm/ADT/Hashing.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+#include "llvm/ADT/StringExtras.h"
+#endif
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -86,6 +89,39 @@ ref<Expr> Expr::createTempRead(const Array *array, Expr::Width w) {
                                                 ConstantExpr::alloc(1,Expr::Int32)),
                                ReadExpr::create(ul, 
                                                 ConstantExpr::alloc(0,Expr::Int32)));
+  case Expr::Int128:
+    return ConcatExpr::create16(ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(15,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(14,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(13,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(12,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(11,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(10,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(9,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(8,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(7,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(6,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(5,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(4,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(3,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(2,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(1,Expr::Int32)),
+                                  ReadExpr::create(ul,
+                                                  ConstantExpr::alloc(0,Expr::Int32)));
   }
 }
 
@@ -340,13 +376,11 @@ ref<Expr> ConstantExpr::fromMemory(void *address, Width width) {
   case Expr::Int64: return ConstantExpr::create(*((uint64_t*) address), width);
   // FIXME: what about machines without x87 support?
   default:
-    return ConstantExpr::alloc(llvm::APInt(width,
-#if LLVM_VERSION_CODE >= LLVM_VERSION(5, 0)
-      (width+llvm::APFloatBase::integerPartWidth-1)/llvm::APFloatBase::integerPartWidth,
-#else
-      (width+llvm::integerPartWidth-1)/llvm::integerPartWidth,
-#endif
-      (const uint64_t*)address));
+    return ConstantExpr::alloc(
+        llvm::APInt(width,
+                    (width + llvm::APFloatBase::integerPartWidth - 1) /
+                        llvm::APFloatBase::integerPartWidth,
+                    (const uint64_t *)address));
   }
 }
 
@@ -366,7 +400,11 @@ void ConstantExpr::toMemory(void *address) {
 }
 
 void ConstantExpr::toString(std::string &Res, unsigned radix) const {
+#if LLVM_VERSION_CODE >= LLVM_VERSION(13, 0)
+  Res = llvm::toString(value, radix, false);
+#else
   Res = value.toString(radix, false);
+#endif
 }
 
 ref<ConstantExpr> ConstantExpr::Concat(const ref<ConstantExpr> &RHS) {
@@ -537,10 +575,9 @@ ref<Expr> ReadExpr::create(const UpdateList &ul, ref<Expr> index) {
   // least recent to find a potential written value for a concrete index;
   // stop if an update with symbolic has been found as we don't know which
   // array element has been updated
-  const UpdateNode *un = ul.head;
+  auto un = ul.head.get();
   bool updateListHasSymbolicWrites = false;
-  for (; un; un=un->next) {
-    // Check if we have an equivalent concrete index
+  for (; un; un = un->next.get()) {
     ref<Expr> cond = EqExpr::create(index, un->index);
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(cond)) {
       if (CE->isTrue())
@@ -665,6 +702,17 @@ ref<Expr> ConcatExpr::create8(const ref<Expr> &kid1, const ref<Expr> &kid2,
 			      ConcatExpr::create(kid4, ConcatExpr::create4(kid5, kid6, kid7, kid8)))));
 }
 
+/// Shortcut to concat 16 kids.  The chain returned is unbalanced to the right
+ref<Expr> ConcatExpr::create16(const ref<Expr> &kid1, const ref<Expr> &kid2,
+                              const ref<Expr> &kid3, const ref<Expr> &kid4,
+                              const ref<Expr> &kid5, const ref<Expr> &kid6,
+                              const ref<Expr> &kid7, const ref<Expr> &kid8,
+                              const ref<Expr> &kid9, const ref<Expr> &kid10,
+                              const ref<Expr> &kid11, const ref<Expr> &kid12,
+                              const ref<Expr> &kid13, const ref<Expr> &kid14,
+                              const ref<Expr> &kid15, const ref<Expr> &kid16) {
+  return ConcatExpr::create4(kid1, ConcatExpr::create(kid2, kid3), ConcatExpr::create(kid4, kid5), ConcatExpr::create4(kid6, kid7, kid8, ConcatExpr::create8(kid9, kid10, kid11, kid12, kid13, kid14, kid15, kid16)));
+}
 /***/
 
 ref<Expr> ExtractExpr::create(ref<Expr> expr, unsigned off, Width w) {

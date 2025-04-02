@@ -10,7 +10,7 @@
 #ifndef KLEE_CORESTATS_H
 #define KLEE_CORESTATS_H
 
-#include "klee/Statistic.h"
+#include "klee/Statistics/Statistic.h"
 
 namespace klee {
 namespace stats {
@@ -33,10 +33,6 @@ namespace stats {
   /// Number of states, this is a "fake" statistic used by istats, it
   /// isn't normally up-to-date.
   extern Statistic states;
-
-  /// Instruction level statistic for tracking number of reachable
-  /// uncovered instructions.
-  extern Statistic reachableUncovered;
 
   /// Instruction level statistic tracking the minimum intraprocedural
   /// distance to an uncovered instruction; this is only periodically

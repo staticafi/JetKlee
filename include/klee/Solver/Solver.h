@@ -10,24 +10,33 @@
 #ifndef KLEE_SOLVER_H
 #define KLEE_SOLVER_H
 
+#include "klee/Expr/Assignment.h"
 #include "klee/Expr/Expr.h"
-#include "klee/Internal/System/Time.h"
+#include "klee/System/Time.h"
 #include "klee/Solver/SolverCmdLine.h"
 #include "klee/Expr/Assignment.h"
 
 #include <vector>
 
 namespace klee {
-  class ConstraintManager;
+  class ConstraintSet;
   class Expr;
   class SolverImpl;
 
+  /// Collection of meta data that a solver can have access to. This is
+  /// independent of the actual constraints but can be used as a two-way
+  /// communication between solver and context of query.
+  struct SolverQueryMetaData {
+    /// @brief Costs for all queries issued for this state
+    time::Span queryCost;
+  };
+
   struct Query {
   public:
-    const ConstraintManager &constraints;
+    const ConstraintSet &constraints;
     ref<Expr> expr;
 
-    Query(const ConstraintManager& _constraints, ref<Expr> _expr)
+    Query(const ConstraintSet& _constraints, ref<Expr> _expr)
       : constraints(_constraints), expr(_expr) {
     }
 
@@ -179,7 +188,7 @@ namespace klee {
     ///
     /// NOTE: This function returns failure if there is no satisfying
     /// assignment.
-    bool getInitialValues(const Query&, 
+    bool getInitialValues(const Query&,
                           std::shared_ptr<const Assignment> &result);
 
     /// getRange - Compute a tight range of possible values for a given

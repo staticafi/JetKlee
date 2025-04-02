@@ -10,6 +10,7 @@
 #ifndef KLEE_ASSIGNMENT_H
 #define KLEE_ASSIGNMENT_H
 
+#include "klee/Expr/Constraints.h"
 #include "klee/Expr/ExprEvaluator.h"
 
 #include <map>
@@ -136,7 +137,7 @@ namespace klee {
     uint8_t getValue(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
     ref<Expr> evaluate(ref<Expr> e) const;
-    void createConstraintsFromAssignment(std::vector<ref<Expr> > &out) const;
+    ConstraintSet createConstraintsFromAssignment() const;
 
     template<typename InputIterator>
     bool satisfies(InputIterator begin, InputIterator end) const;
@@ -169,7 +170,7 @@ namespace klee {
       return ConstantExpr::alloc(it->second[index], array->getRange());
     } else {
       if (allowFreeValues) {
-        return ReadExpr::create(UpdateList(array, 0), 
+        return ReadExpr::create(UpdateList(array, ref<UpdateNode>(nullptr)),
                                 ConstantExpr::alloc(index, array->getDomain()));
       } else {
         return ConstantExpr::alloc(0, array->getRange());

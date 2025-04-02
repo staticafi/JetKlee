@@ -10,6 +10,8 @@
 #ifndef KLEE_MEMORYMANAGER_H
 #define KLEE_MEMORYMANAGER_H
 
+#include "klee/Expr/Expr.h"
+
 #include <cstddef>
 #include <set>
 #include <unordered_map>
@@ -82,10 +84,8 @@ class MemoryAllocator {
     // allocate memory on lower 32bit memory space
     bool lowmem{false};
 
-
     MmapAllocation deterministicMem{};
     AllocatorMap lowmemAllocator;
-
 public:
     MemoryAllocator(bool determ, bool lowmem, size_t determ_size, void *expectedAddr);
 
@@ -119,8 +119,8 @@ public:
                          const llvm::Value *allocSite, size_t alignment);
   MemoryObject *allocate(ref<Expr> size, bool isLocal, bool isGlobal,
                          const llvm::Value *allocSite, size_t alignment);
-  MemoryObject *allocateFixed(uint64_t size,
-                              const llvm::Value *allocSite, uint64_t specialSegment = 0);
+  MemoryObject *allocateFixed(uint64_t size, const llvm::Value *allocSite,
+                              uint64_t specialSegment = 0);
   void deallocate(const MemoryObject *mo);
   void markFreed(MemoryObject *mo);
   ArrayCache *getArrayCache() const { return arrayCache; }

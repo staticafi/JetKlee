@@ -5,7 +5,7 @@
 
 int main() {
   int buf[4];
-  // CHECK: 2007-10-11-free-of-alloca.c:9: free of alloca
+  // CHECK: 2007-10-11-free-of-alloca.c:9: memory error: free of alloca
   free(buf); // this should give runtime error, not crash
   return 0;
 }

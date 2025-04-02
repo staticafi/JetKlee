@@ -13,8 +13,8 @@
 #include "Context.h"
 #include "TimingSolver.h"
 
-#include "klee/KValue.h"
-#include "klee/util/BitArray.h"
+#include "klee/ADT/BitArray.h"
+#include "klee/Module/KValue.h"
 
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringExtras.h"
@@ -30,19 +30,22 @@ namespace llvm {
 
 namespace klee {
 
-class BitArray;
+class ArrayCache;
+class ExecutionState;
 class MemoryManager;
 class Solver;
-class ArrayCache;
 
 class MemoryObject {
   friend class STPBuilder;
   friend class ObjectState;
   friend class ExecutionState;
+  friend class ref<MemoryObject>;
+  friend class ref<const MemoryObject>;
 
 private:
   static int counter;
-  mutable unsigned refCount;
+  /// @brief Required by klee::ref-managed objects
+  mutable class ReferenceCounter _refCount;
 
 public:
   unsigned id;
@@ -67,15 +70,14 @@ public:
   /// should be either the allocating instruction or the global object
   /// it was allocated for (or whatever else makes sense).
   const llvm::Value *allocSite;
-  
-  /// A list of boolean expressions the user has requested be true of
-  /// a counterexample. Mutable since we play a little fast and loose
-  /// with allowing it to be added to during execution (although
-  /// should sensibly be only at creation time).
-  mutable std::vector< ref<Expr> > cexPreferences;
 
   /// Symbolic address for poiner comparison
   llvm::Optional<ref<Expr>> symbolicAddress;
+
+  /// Tag that the value of MO is lazily initialized (default is false)
+  bool isLazyInitialized;
+  /// Pointer depth
+  mutable uint64_t pointerDepth;
 
   // DO NOT IMPLEMENT
   MemoryObject(const MemoryObject &b);
@@ -85,21 +87,20 @@ public:
   // XXX this is just a temp hack, should be removed
   explicit
   MemoryObject()
-    : refCount(0),
-      id(counter++),
+    : id(counter++),
       segment(0),
       size(0),
       isFixed(true),
       parent(NULL),
-      allocSite(0) {
-  }
+      allocSite(0),
+      isLazyInitialized(false),
+      pointerDepth(0) { }
 
   MemoryObject(ref<Expr> _size,
                bool _isLocal, bool _isGlobal, bool _isFixed,
                const llvm::Value *_allocSite,
                MemoryManager *_parent)
-    : refCount(0), 
-      id(counter++),
+    : id(counter++),
       segment(0),
       size(ZExtExpr::create(_size, Context::get().getPointerWidth())),
       name("unnamed"),
@@ -108,16 +109,16 @@ public:
       isFixed(_isFixed),
       isUserSpecified(false),
       parent(_parent), 
-      allocSite(_allocSite) {
-  }
+      allocSite(_allocSite),
+      isLazyInitialized(false), 
+      pointerDepth(0) { }
 
     MemoryObject(uint64_t segment, ref<Expr> _size,
                  uint64_t _allocatedSize,
-               bool _isLocal, bool _isGlobal, bool _isFixed,
-               const llvm::Value *_allocSite,
-               MemoryManager *_parent)
-    : refCount(0),
-      id(counter++),
+                 bool _isLocal, bool _isGlobal, bool _isFixed,
+                 const llvm::Value *_allocSite,
+                 MemoryManager *_parent)
+    : id(counter++),
       segment(segment),
       size(ZExtExpr::create(_size, Context::get().getPointerWidth())),
       allocatedSize(_allocatedSize),
@@ -127,8 +128,9 @@ public:
       isFixed(_isFixed),
       isUserSpecified(false),
       parent(_parent),
-      allocSite(_allocSite) {
-  }
+      allocSite(_allocSite),
+      isLazyInitialized(false),
+      pointerDepth(0) { }
 
   ~MemoryObject();
 
@@ -155,17 +157,18 @@ public:
   ref<ConstantExpr> getSegmentExpr() const {
     return ConstantExpr::create(segment, Context::get().getPointerWidth());
   }
-  ref<ConstantExpr> getBaseExpr() const { 
+  ref<ConstantExpr> getBaseExpr() const {
     return ConstantExpr::create(0, Context::get().getPointerWidth());
   }
   KValue getPointer() const {
     return KValue(getSegmentExpr(), getBaseExpr());
   }
   KValue getPointer(uint64_t offset) const {
-    return KValue(getSegmentExpr(), ConstantExpr::create(offset, Context::get().getPointerWidth()));
+    return KValue(getSegmentExpr(),
+                  ConstantExpr::create(offset, Context::get().getPointerWidth()));
   }
   std::string getSegmentString() const {
-    return std::string("Segment: [" + std::to_string(segment) + "]");
+    return "Segment: [" + std::to_string(segment) + "]";
   }
   std::string getSizeString() const {
     if (ConstantExpr *CE = dyn_cast<ConstantExpr>(size)) {
@@ -203,6 +206,23 @@ public:
                            SubExpr::create(size,
                                            ConstantExpr::alloc(bytes - 1,
                                                                size->getWidth())));
+  }
+
+  /// Compare this object with memory object b.
+  /// \param b memory object to compare with
+  /// \return <0 if this is smaller, 0 if both are equal, >0 if b is smaller
+  int compare(const MemoryObject &b) const {
+    // Short-cut with id
+    if (id == b.id)
+      return 0;
+
+    if (size != b.size)
+      return (size < b.size ? -1 : 1);
+
+    if (allocSite != b.allocSite)
+      return (allocSite < b.allocSite ? -1 : 1);
+
+    return 0;
   }
 
 private:
@@ -273,18 +293,26 @@ public:
 class ObjectStatePlane {
 private:
   friend class AddressSpace;
+  friend class ref<ObjectState>;
 
-  const ObjectState *parent;
+  /// @brief Required by klee::ref-managed objects
+  class ReferenceCounter _refCount;
 
+  ref<const ObjectState> parent;
+
+  /// @brief Holds all known concrete bytes
   std::vector<uint8_t> concreteStore;
 
-  // XXX cleanup name of flushMask (its backwards or something)
+  /// @brief concreteMask[byte] is set if byte is known to be concrete
   BitArray concreteMask;
 
-  // mutable because may need flushed during read of const
-  mutable BitArray flushMask;
+  /// knownSymbolics[byte] holds the symbolic expression for byte,
+  /// if byte is known to be symbolic
+  SparseVector<ref<Expr>> knownSymbolics;
 
-  SparseVector<ref<Expr> > knownSymbolics;
+  /// unflushedMask[byte] is set if byte is unflushed
+  /// mutable because may need flushed during read of const
+  mutable BitArray unflushedMask;
 
   // mutable because we may need flush during read of const
   mutable UpdateList updates;
@@ -308,18 +336,18 @@ public:
   ObjectStatePlane(const ObjectState *parent, const Array *array);
 
   ObjectStatePlane(const ObjectState *parent, const ObjectStatePlane &os);
-  ~ObjectStatePlane();
+  ~ObjectStatePlane() = default;
 
-  // make contents all concrete and zero
+  /// Make contents all concrete and zero
   void initializeToZero();
-  // make contents all concrete and random
+
+  /// Make contents all concrete and random
   void initializeToRandom();
 
   ref<Expr> read(ref<Expr> offset, Expr::Width width) const;
   ref<Expr> read(unsigned offset, Expr::Width width) const;
   ref<Expr> read8(unsigned offset) const;
 
-  // return bytes written.
   void write(unsigned offset, ref<Expr> value);
   void write(ref<Expr> offset, ref<Expr> value);
 
@@ -348,9 +376,14 @@ private:
   void flushForRead() const;
   void flushForWrite();
 
+  /// isByteConcrete ==> !isByteKnownSymbolic
   bool isByteConcrete(unsigned offset) const;
-  bool isByteFlushed(unsigned offset) const;
+
+  /// isByteKnownSymbolic ==> !isByteConcrete
   bool isByteKnownSymbolic(unsigned offset) const;
+
+  /// isByteUnflushed(i) => (isByteConcrete(i) || isByteKnownSymbolic(i))
+  bool isByteUnflushed(unsigned offset) const;
 
   void markByteConcrete(unsigned offset);
   void markByteSymbolic(unsigned offset);
@@ -366,9 +399,13 @@ private:
   unsigned copyOnWriteOwner; // exclusively for AddressSpace
 
   friend class ObjectHolder;
-  unsigned refCount;
+  friend class ref<ObjectState>;
+  friend class ref<const ObjectState>;
 
-  const MemoryObject *object;
+  /// @brief Required by klee::ref-managed objects
+  mutable ReferenceCounter _refCount;
+
+  ref<const MemoryObject> object;
 
 
 public:
@@ -393,7 +430,7 @@ public:
   ObjectState(const ObjectState &os, const MemoryObject *mo);
   ~ObjectState();
 
-  const MemoryObject *getObject() const { return object; }
+  const MemoryObject *getObject() const { return object.get(); }
 
   void setReadOnly(bool ro) {
     readOnly = ro;

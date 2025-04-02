@@ -6,7 +6,7 @@
 int buf[4];
 
 int main() {
-  // CHECK: 2008-03-04-free-of-global.c:10: free of global
+  // CHECK: 2008-03-04-free-of-global.c:10: memory error: free of global
   free(buf); // this should give runtime error, not crash
   return 0;
 }

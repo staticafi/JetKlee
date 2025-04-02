@@ -10,7 +10,9 @@
 #include "Passes.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Support/ErrorHandling.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -19,6 +21,9 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#if LLVM_VERSION_CODE >= LLVM_VERSION(10, 0)
+#include "llvm/IR/IntrinsicsX86.h"
+#endif
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Pass.h"
@@ -61,6 +66,19 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
       case Intrinsic::vastart:
       case Intrinsic::vaend:
       case Intrinsic::fabs:
+      case Intrinsic::fma:
+      case Intrinsic::fmuladd:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(7, 0)
+      case Intrinsic::fshr:
+      case Intrinsic::fshl:
+#endif
+#if LLVM_VERSION_CODE >= LLVM_VERSION(12, 0)
+      case Intrinsic::abs:
+      case Intrinsic::smax:
+      case Intrinsic::smin:
+      case Intrinsic::umax:
+      case Intrinsic::umin:
+#endif
       case Intrinsic::lifetime_start:
       case Intrinsic::lifetime_end:
         break;
@@ -82,24 +100,30 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
               Builder.CreatePointerCast(dst, i8pp, "vacopy.cast.dst");
           auto castedSrc =
               Builder.CreatePointerCast(src, i8pp, "vacopy.cast.src");
-          auto load = Builder.CreateLoad(castedSrc, "vacopy.read");
+          auto load =
+              Builder.CreateLoad(castedSrc->getType()->getPointerElementType(),
+                                 castedSrc, "vacopy.read");
           Builder.CreateStore(load, castedDst, false /* isVolatile */);
         } else {
           assert(WordSize == 8 && "Invalid word size!");
           Type *i64p = PointerType::getUnqual(Type::getInt64Ty(ctx));
           auto pDst = Builder.CreatePointerCast(dst, i64p, "vacopy.cast.dst");
           auto pSrc = Builder.CreatePointerCast(src, i64p, "vacopy.cast.src");
-          auto val = Builder.CreateLoad(pSrc, std::string());
+
+          auto pSrcType = pSrc->getType()->getPointerElementType();
+          auto pDstType = pDst->getType()->getPointerElementType();
+
+          auto val = Builder.CreateLoad(pSrcType, pSrc);
           Builder.CreateStore(val, pDst, ii);
 
           auto off = ConstantInt::get(Type::getInt64Ty(ctx), 1);
-          pDst = Builder.CreateGEP(nullptr, pDst, off, std::string());
-          pSrc = Builder.CreateGEP(nullptr, pSrc, off, std::string());
-          val = Builder.CreateLoad(pSrc, std::string());
+          pDst = Builder.CreateGEP(pDstType, pDst, off);
+          pSrc = Builder.CreateGEP(pSrcType, pSrc, off);
+          val = Builder.CreateLoad(pSrcType, pSrc);
           Builder.CreateStore(val, pDst);
-          pDst = Builder.CreateGEP(nullptr, pDst, off, std::string());
-          pSrc = Builder.CreateGEP(nullptr, pSrc, off, std::string());
-          val = Builder.CreateLoad(pSrc, std::string());
+          pDst = Builder.CreateGEP(pDstType, pDst, off);
+          pSrc = Builder.CreateGEP(pSrcType, pSrc, off);
+          val = Builder.CreateLoad(pSrcType, pSrc);
           Builder.CreateStore(val, pDst);
         }
         ii->eraseFromParent();
@@ -267,8 +291,7 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
       case Intrinsic::trap: {
         // Intrinsic instruction "llvm.trap" found. Directly lower it to
         // a call of the abort() function.
-        auto C = M.getOrInsertFunction("abort", Type::getVoidTy(ctx)
-                                                    KLEE_LLVM_GOIF_TERMINATOR);
+        auto C = M.getOrInsertFunction("abort", Type::getVoidTy(ctx));
 #if LLVM_VERSION_CODE >= LLVM_VERSION(9, 0)
         if (auto *F = dyn_cast<Function>(C.getCallee())) {
 #else
@@ -297,39 +320,96 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
         break;
       }
       case Intrinsic::objectsize: {
-#if LLVM_VERSION_CODE >= LLVM_VERSION(4, 0)
         // Lower the call to a concrete value
         auto replacement = llvm::lowerObjectSizeCall(ii, DataLayout, nullptr,
                                                      /*MustSucceed=*/true);
-#else
-        // We don't know the size of an object in general so we replace
-        // with 0 or -1 depending on the second argument to the intrinsic.
-        assert(ii->getNumArgOperands() == 2 && "wrong number of arguments");
-        auto minArg = dyn_cast_or_null<ConstantInt>(ii->getArgOperand(1));
-        assert(minArg &&
-               "Failed to get second argument or it is not ConstantInt");
-        assert(minArg->getBitWidth() == 1 && "Second argument is not an i1");
-        ConstantInt *replacement = nullptr;
-        IntegerType *intType = dyn_cast<IntegerType>(ii->getType());
-        assert(intType && "intrinsic does not have integer return type");
-        if (minArg->isZero()) {
-          // min=false
-          replacement = ConstantInt::get(intType, -1, /*isSigned=*/true);
-        } else {
-          // min=true
-          replacement = ConstantInt::get(intType, 0, /*isSigned=*/false);
-        }
-
-#endif
         ii->replaceAllUsesWith(replacement);
         ii->eraseFromParent();
         dirty = true;
         break;
       }
-      default:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(8, 0)
+      case Intrinsic::is_constant: {
+        if(auto* constant = llvm::ConstantFoldInstruction(ii, ii->getModule()->getDataLayout()))
+          ii->replaceAllUsesWith(constant);
+        else
+          ii->replaceAllUsesWith(ConstantInt::getFalse(ii->getType()));
+        ii->eraseFromParent();
+        dirty = true;
+        break;
+      }
+#endif
+
+      // The following intrinsics are currently handled by LowerIntrinsicCall
+      // (Invoking LowerIntrinsicCall with any intrinsics not on this
+      // list throws an exception.)
+      case Intrinsic::addressofreturnaddress:
+      case Intrinsic::annotation:
+      case Intrinsic::assume:
+      case Intrinsic::bswap:
+      case Intrinsic::ceil:
+      case Intrinsic::copysign:
+      case Intrinsic::cos:
+      case Intrinsic::ctlz:
+      case Intrinsic::ctpop:
+      case Intrinsic::cttz:
+      case Intrinsic::dbg_declare:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(7, 0)
+      case Intrinsic::dbg_label:
+#endif
+#ifndef SUPPORT_KLEE_EH_CXX
+      case Intrinsic::eh_typeid_for:
+#endif
+      case Intrinsic::exp2:
+      case Intrinsic::exp:
+      case Intrinsic::expect:
+      case Intrinsic::floor:
+      case Intrinsic::flt_rounds:
+      case Intrinsic::frameaddress:
+      case Intrinsic::get_dynamic_area_offset:
+      case Intrinsic::invariant_end:
+      case Intrinsic::invariant_start:
+      case Intrinsic::log10:
+      case Intrinsic::log2:
+      case Intrinsic::log:
+      case Intrinsic::memcpy:
+      case Intrinsic::memmove:
+      case Intrinsic::memset:
+      case Intrinsic::not_intrinsic:
+      case Intrinsic::pcmarker:
+      case Intrinsic::pow:
+      case Intrinsic::prefetch:
+      case Intrinsic::ptr_annotation:
+      case Intrinsic::readcyclecounter:
+      case Intrinsic::returnaddress:
+      case Intrinsic::round:
+#if LLVM_VERSION_CODE >= LLVM_VERSION(11, 0)
+      case Intrinsic::roundeven:
+#endif
+      case Intrinsic::sin:
+      case Intrinsic::sqrt:
+      case Intrinsic::stackrestore:
+      case Intrinsic::stacksave:
+      case Intrinsic::trunc:
+      case Intrinsic::var_annotation:
         IL->LowerIntrinsicCall(ii);
         dirty = true;
         break;
+
+#ifdef SUPPORT_KLEE_EH_CXX
+      case Intrinsic::eh_typeid_for: {
+        // Don't lower this, we need it for exception handling
+        break;
+      }
+#endif
+
+        // Warn about any unrecognized intrinsics.
+      default: {
+        const Function *Callee = ii->getCalledFunction();
+        llvm::StringRef name = Callee->getName();
+        klee_warning_once((void*)Callee, "unsupported intrinsic %.*s", (int)name.size(), name.data());
+        break;
+      }
       }
     }
   }

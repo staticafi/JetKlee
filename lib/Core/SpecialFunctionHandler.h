@@ -10,7 +10,8 @@
 #ifndef KLEE_SPECIALFUNCTIONHANDLER_H
 #define KLEE_SPECIALFUNCTIONHANDLER_H
 
-#include "klee/Internal/Module/Cell.h"
+#include "klee/Config/config.h"
+#include "klee/Module/Cell.h"
 
 #include <iterator>
 #include <map>
@@ -70,7 +71,8 @@ namespace klee {
     static const_iterator end();
     static int size();
 
-
+  private:
+    size_t parseArgumentForScanf(ExecutionState& state, const Cell &argument);
 
   public:
     SpecialFunctionHandler(Executor &_executor);
@@ -108,7 +110,7 @@ namespace klee {
                           const std::string& name, bool isSigned,
                           KInstruction *target,
                           ref<Expr> expr);
- 
+
     /* Handlers */
 
 #define HANDLER(name) void name(ExecutionState &state, \
@@ -123,8 +125,12 @@ namespace klee {
     HANDLER(handleDefineFixedObject);
     HANDLER(handleDelete);    
     HANDLER(handleDeleteArray);
-    HANDLER(handleExit);
+#ifdef SUPPORT_KLEE_EH_CXX
+    HANDLER(handleEhUnwindRaiseExceptionImpl);
+    HANDLER(handleEhTypeid);
+#endif
     HANDLER(handleErrnoLocation);
+    HANDLER(handleExit);
     HANDLER(handleFree);
     HANDLER(handleGetErrno);
     HANDLER(handleGetObjSize);
@@ -160,6 +166,7 @@ namespace klee {
     HANDLER(handleScopeLeave);
     HANDLER(handleVerifierNondetInt);
     HANDLER(handleVerifierNondetUInt);
+    HANDLER(handleVerifierNondetUInt128);
     HANDLER(handleVerifierNondetBool);
     HANDLER(handleVerifierNondet_Bool);
     HANDLER(handleVerifierNondetChar);
@@ -181,6 +188,8 @@ namespace klee {
     HANDLER(handlePthreadCreate);
     HANDLER(handlePthreadJoin);
     HANDLER(handleUnsupportedPthread);
+    HANDLER(handleScanf);
+    HANDLER(handleFscanf);
 #undef HANDLER
   };
 } // End klee namespace
