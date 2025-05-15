@@ -786,25 +786,60 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       if (auto file = openTestFile("waypoints", id)) {
 
         auto testvec = m_interpreter->getTestVector(state);
-
+        size_t n = 0;
         for (auto& input : testvec) {
           const auto& name = input.getName();
-          if (name.compare(0, 17 , "__VERIFIER_nondet") != 0)
+
+          if (name.compare(0, 17 , "__VERIFIER_nondet") != 0) {
+              ++n;
               continue;
+          }
 
           if (input.line > 0 && input.col > 0)
             *file << input.getName() << ":"
                   << input.line << ":"
                   << input.col << ":"
-                  << input.toString() << "\n";
-         }
+                  << input.toString();
 
-        auto errorLoc = m_interpreter->getErrorLocation();
-        *file << "@TARGET:"
-              << std::get<0>(errorLoc) << ":"
-              << std::get<1>(errorLoc) << ":"
-              << std::get<2>(errorLoc) << "\n";
+          // non-termination witnesses
+          if (state.lastLoopHead && state.lastLoopHeadId <= n) {
+            *file << ":cycle";
+          }
 
+          *file << "\n";
+          ++n;
+        }
+
+        // for non-termination get a recurring location
+        if (state.lastLoopHead) {
+          if (const auto& D = state.lastLoopHead->getDebugLoc()) {
+            *file << "@TARGET:"
+                  << D->getFilename() << ":"
+                  << D->getLine()     << ":"
+                  << D->getColumn()   << "\n";
+          } else if (state.lastLoopCheck) {
+            if (const auto& D = state.lastLoopCheck->getDebugLoc())
+              *file << "@TARGET:"
+                    << D->getFilename() << ":"
+                    << D->getLine()     << ":"
+                    << D->getColumn()   << "\n";
+          } else if (state.lastLoopFail) {
+            if (const auto& D = state.lastLoopFail->getDebugLoc())
+              *file << "@TARGET:"
+                    << D->getFilename() << ":"
+                    << D->getLine()     << ":"
+                    << D->getColumn()   << "\n";
+          }
+        }
+
+        // reachability witnesses
+        if (!state.lastLoopHead) {
+          auto errorLoc = m_interpreter->getErrorLocation();
+          *file << "@TARGET:"
+                << std::get<0>(errorLoc) << ":"
+                << std::get<1>(errorLoc) << ":"
+                << std::get<2>(errorLoc) << "\n";
+        }
 
       } else {
         klee_warning("unable to write waypoint file, losing it");
