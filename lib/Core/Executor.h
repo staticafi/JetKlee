@@ -631,9 +631,11 @@ public:
   void checkWidthMatch(KValue &left, KValue &right) const;
   void handleICMPForLazyMO(ExecutionState &state, KValue &value);
   std::tuple<std::string, unsigned, unsigned> getErrorLocation() override { return errorLoc; }
+  std::string fileForWitness = "";
+  void setFileForWitness(const std::string filename) override { fileForWitness = filename; }
 
 };
-  
+
 } // End klee namespace
 
 #endif /* KLEE_EXECUTOR_H */

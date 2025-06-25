@@ -403,7 +403,8 @@ void ExecutionState::addCexPreference(const ref<Expr> &cond) {
 }
 
 // Get the line and column of the errror
-std::tuple<std::string, unsigned, unsigned> ExecutionState::getErrorLocation() const {
+std::tuple<std::string, unsigned, unsigned>
+ExecutionState::getErrorLocation(const std::string& file) const {
   const KInstruction *target = prevPC;
   for (ExecutionState::stack_ty::const_reverse_iterator
          it = stack.rbegin(), ie = stack.rend();
@@ -411,7 +412,9 @@ std::tuple<std::string, unsigned, unsigned> ExecutionState::getErrorLocation() c
     const StackFrame &sf = *it;
     const InstructionInfo &ii = *target->info;
 
-    if (ii.file != "" && ii.line != 0 && ii.column != 0)
+    std::string basename = ii.file.substr(ii.file.find_last_of("/") + 1);
+    if ((file == "" || basename == file)
+        && ii.line != 0 && ii.column != 0)
       return {ii.file, ii.line, ii.column};
     target = sf.caller;
   }
