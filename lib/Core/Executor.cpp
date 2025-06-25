@@ -4898,7 +4898,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     ref<Expr> offset;
     ref<Expr> segment;
     if (offsetVal) {
-      segment = ConstantExpr::alloc(mo->segment, Expr::Int64);
+      segment = ConstantExpr::alloc(mo->segment, Context::get().getPointerWidth());
       offset = ConstantExpr::alloc(offsetVal.getValue(),
                                    Context::get().getPointerWidth());
     } else {

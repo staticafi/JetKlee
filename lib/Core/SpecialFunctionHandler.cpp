@@ -1473,6 +1473,6 @@ void SpecialFunctionHandler::handleFscanf(ExecutionState &state,
     }
   }
 
-  auto expr = ConstantExpr::create(realizedArgs, Expr::Int64);
+  auto expr = ConstantExpr::create(realizedArgs, Expr::Int32);
   executor.bindLocal(target, state, expr);
 }
