@@ -318,6 +318,9 @@ public:
   /// @brief Disables forking for this state. Set by user code
   bool forkDisabled = false;
 
+  /// @brief Count the number of value stores for termination analysis
+  ssize_t storedValues = 0;
+
 public:
 #ifdef KLEE_UNITTEST
   // provide this function only in the context of unittests
