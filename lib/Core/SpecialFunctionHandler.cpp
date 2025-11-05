@@ -124,6 +124,9 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("malloc", handleMalloc, true),
   add("memalign", handleMemalign, true),
   add("realloc", handleRealloc, true),
+
+  add("__symbiotic_nondet__Bool", handleSymbioticNondet_Bool, true),
+
   add("__VERIFIER_scope_enter", handleScopeEnter, false),
   add("__VERIFIER_scope_leave", handleScopeLeave, false),
   // SV-COMP special functions. We could define them using
@@ -1313,6 +1316,15 @@ void SpecialFunctionHandler::handleVerifierNondetSectorT(ExecutionState &state,
 
   handleVerifierNondetType(state, target, Expr::Int64,
                            /* isSigned = */ false, "__VERIFIER_nondet_sector_t");
+}
+
+void SpecialFunctionHandler::handleSymbioticNondet_Bool(ExecutionState &state,
+                                                       KInstruction *target,
+                                                       const std::vector<Cell> &arguments) {
+  assert(arguments.empty() && "Wrong number of arguments");
+
+  handleVerifierNondetType(state, target, Expr::Bool, // XXX: should we use i1?
+                           /* isSigned = */ false, "__symbiotic_nondet__Bool");
 }
 
 void SpecialFunctionHandler::handleMarkGlobal(ExecutionState &state,
