@@ -1436,7 +1436,10 @@ void SpecialFunctionHandler::handleScanf(ExecutionState &state,
     }
   }
 
-  auto expr = ConstantExpr::create(realizedArgs, Expr::Int64);
+  if (realizedArgs > INT_MAX)
+    klee_error("scanf: Too many arguments!");
+
+  auto expr = ConstantExpr::create(realizedArgs, Expr::Int32);
   executor.bindLocal(target, state, expr);
 }
 
@@ -1472,6 +1475,9 @@ void SpecialFunctionHandler::handleFscanf(ExecutionState &state,
       ++realizedArgs;
     }
   }
+
+  if (realizedArgs > INT_MAX)
+    klee_error("fcanf: Too many arguments!");
 
   auto expr = ConstantExpr::create(realizedArgs, Expr::Int32);
   executor.bindLocal(target, state, expr);
