@@ -4402,8 +4402,8 @@ static std::set<std::string> nokExternals({"fesetround", "fesetenv",
                                            "feenableexcept", "fedisableexcept",
                                            "feupdateenv", "fesetexceptflag",
                                            "feclearexcept", "feraiseexcept",
-                                           "gettext", "dcgettext" , "longjmp", "fgets", "getmntent",
-                                           "__freading", "__fwriting", "fread", "fread_unlocked",
+                                           "gettext", "dcgettext" , "longjmp", "getmntent",
+                                           "__freading", "__fwriting", "fread_unlocked",
                                            "strspn", "strtod", "setlocale"});
 
 void Executor::callExternalFunction(ExecutionState &state,
