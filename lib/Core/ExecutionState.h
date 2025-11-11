@@ -318,8 +318,9 @@ public:
   /// @brief Disables forking for this state. Set by user code
   bool forkDisabled = false;
 
-  /// @brief Count the number of value stores for termination analysis
-  ssize_t storedValues = 0;
+  /// @brief In termination analysis, track whether the values of loop-modified
+  /// variables were stored
+  bool storedValues = false;
 
 public:
 #ifdef KLEE_UNITTEST

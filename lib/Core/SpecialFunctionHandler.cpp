@@ -1501,10 +1501,10 @@ void SpecialFunctionHandler::handleInstrNondetStore (ExecutionState &state,
                                                      const std::vector<Cell> &arguments) {
   assert(arguments.size() == 0 && "invalid number of arguments");
 
-  if (state.storedValues == 0) {
+  if (!state.storedValues) {
     putConcreteValue(state, "nondet_store", false,
                      target, ConstantExpr::alloc(1, Expr::Bool));
-    state.storedValues++;
+    state.storedValues = true;
     return;
   }
 
