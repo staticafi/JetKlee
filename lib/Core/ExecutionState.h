@@ -354,7 +354,8 @@ public:
   NondetValue& addNondetValue(const KValue &expr, bool isSigned,
                               const std::string& name);
 
-  std::tuple<std::string, unsigned, unsigned> getErrorLocation() const;
+  std::tuple<std::string, unsigned, unsigned>
+    getErrorLocation(const std::string& filename) const;
 };
 
 struct ExecutionStateIDCompare {

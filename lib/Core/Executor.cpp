@@ -4242,7 +4242,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
 
   if (shouldExitOn(terminationType)) {
     haltExecution = true;
-    errorLoc = state.getErrorLocation();
+    errorLoc = state.getErrorLocation(fileForWitness);
   }
 
   bool notemitted = emittedErrors.insert(std::make_pair(lastInst, message)).second;

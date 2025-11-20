@@ -175,6 +175,8 @@ public:
                                std::map<const std::string*, std::set<unsigned> > &res) = 0;
 
   virtual std::tuple<std::string, unsigned, unsigned> getErrorLocation() = 0;
+  virtual void setFileForWitness(const std::string filename) = 0;
+
 };
 
 } // End klee namespace
