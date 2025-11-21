@@ -155,6 +155,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__VERIFIER_nondet_ushort", handleVerifierNondetUShort, true),
 
   add("__VERIFIER_assume", handleAssume, false),
+  add("__INSTR_nondet_store", handleInstrNondetStore, true),
 
 #ifdef SUPPORT_KLEE_EH_CXX
   add("_klee_eh_Unwind_RaiseException_impl", handleEhUnwindRaiseExceptionImpl, false),
@@ -1493,4 +1494,23 @@ void SpecialFunctionHandler::handleFscanf(ExecutionState &state,
 
   auto expr = ConstantExpr::create(realizedArgs, Expr::Int32);
   executor.bindLocal(target, state, expr);
+}
+
+void SpecialFunctionHandler::handleInstrNondetStore (ExecutionState &state,
+                                                     KInstruction *target,
+                                                     const std::vector<Cell> &arguments) {
+  assert(arguments.size() == 0 && "invalid number of arguments");
+
+  if (!state.storedValues) {
+    putConcreteValue(state, "nondet_store", false,
+                     target, ConstantExpr::alloc(1, Expr::Bool));
+    state.storedValues = true;
+    return;
+  }
+
+  executor.bindLocal(target, state,
+                     executor.createNondetValue(state, Expr::Bool,
+                                                false, target,
+                                                "nondet_store", false));
+
 }

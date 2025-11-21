@@ -1822,6 +1822,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
 
   // FIXME: hack!
   if (f->getName().equals("__INSTR_check_nontermination")) {
+    if (!state.storedValues)
+        return;
     state.lastLoopCheck = ki->inst;
     // fall-through
   } else if (f->getName().equals("__INSTR_fail")) {

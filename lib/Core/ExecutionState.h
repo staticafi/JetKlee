@@ -318,6 +318,10 @@ public:
   /// @brief Disables forking for this state. Set by user code
   bool forkDisabled = false;
 
+  /// @brief In termination analysis, track whether the values of loop-modified
+  /// variables were stored
+  bool storedValues = false;
+
 public:
 #ifdef KLEE_UNITTEST
   // provide this function only in the context of unittests
