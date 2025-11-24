@@ -151,6 +151,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("__VERIFIER_nondet_uint", handleVerifierNondetUInt, true),
   add("__VERIFIER_nondet_uint128", handleVerifierNondetUInt128, true),
   add("__VERIFIER_nondet_ulong", handleVerifierNondetULong, true),
+  add("__VERIFIER_nondet_ulonglong", handleVerifierNondetULongLong, true),
   add("__VERIFIER_nondet_unsigned", handleVerifierNondetUnsigned, true),
   add("__VERIFIER_nondet_ushort", handleVerifierNondetUShort, true),
 
@@ -1234,6 +1235,15 @@ void SpecialFunctionHandler::handleVerifierNondetULong(ExecutionState &state,
 
   handleVerifierNondetType(state, target, Expr::Int64,
                            /* isSigned = */ false, "__VERIFIER_nondet_ulong");
+}
+
+void SpecialFunctionHandler::handleVerifierNondetULongLong(ExecutionState &state,
+                                                           KInstruction *target,
+                                                           const std::vector<Cell> &arguments) {
+  assert(arguments.empty() && "Wrong number of arguments");
+
+  handleVerifierNondetType(state, target, Expr::Int64,
+                           /* isSigned = */ false, "__VERIFIER_nondet_ulonglong");
 }
 
 void SpecialFunctionHandler::handleVerifierNondetPointer(ExecutionState &state,

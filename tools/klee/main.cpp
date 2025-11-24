@@ -1216,6 +1216,7 @@ static const char *modelledExternals[] = {
   "__VERIFIER_nondet_uchar",
   "__VERIFIER_nondet_uint",
   "__VERIFIER_nondet_ulong",
+  "__VERIFIER_nondet_ulonglong",
   "__VERIFIER_nondet_unsigned",
   "__VERIFIER_nondet_ushort",
   "__VERIFIER_assume",
