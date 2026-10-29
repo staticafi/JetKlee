@@ -441,6 +441,10 @@ public:
     return offsetPlane->sizeBound;
   }
 
+  // true if a non-zero segment may have been written to this object,
+  // i.e., the object may contain pointers
+  bool hasSegmentPlane() const { return segmentPlane != nullptr; }
+
   // make contents all concrete and zero
   void initializeToZero();
   // make contents all concrete and random

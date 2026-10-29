@@ -3950,122 +3950,71 @@ static std::vector<const MemoryObject *> getMemoryLeaks(ExecutionState &state) {
     return leaks;
 }
 
-static void getPointers(const llvm::Type *type,
-                        const llvm::DataLayout& DL,
-                        const ObjectState *os,
-                        std::set<ref<Expr>>& objects,
-                        unsigned off=0) {
-  using namespace llvm;
-
-  const auto ptrWidth = Context::get().getPointerWidth();
-
-  // XXX: we ignore integer types which is wrong since
-  // we can cast pointer to integer... we should actually search
-  // any object that has segment plane set
-  for (auto *Ty : type->subtypes()) {
-      if (Ty->isStructTy()) {
-          getPointers(Ty, DL, os, objects, off);
-      } else if (auto AT = dyn_cast<ArrayType>(Ty)) {
-          if (AT->getElementType()->isIntegerTy())
-              continue; // we cannot find anything here
-
-          // we must search on all indices in the array,
-          // so just artificially shift offsets
-          for (unsigned idx = 0; idx < AT->getNumElements(); ++idx) {
-              getPointers(Ty, DL, os, objects,
-                          off + idx*DL.getTypeAllocSize(AT->getElementType()));
-          }
-      } if (Ty->isPointerTy()) {
-        KValue ptr = os->read(off, ptrWidth);
-       //llvm::errs() << "TY @ " << off << ": " << *Ty << "\n";
-       //llvm::errs() << "  --> POINTER!: " << *Ty << "\n";
-       //llvm::errs() << "  --> " << ptr << "\n";
-        objects.insert(ptr.getSegment());
-      }
-      // FIXME: is this always enough? Does this cover padding
-      // in any structure?
-      if (Ty->isSized()) {
-        off += DL.getTypeAllocSize(Ty);
-      }
-  }
-}
+enum ReachabilityProblem : unsigned {
+  RP_UNRESOLVED_SEGMENT = 1,
+  RP_SYMBOLIC_SEGMENT = 2,
+};
 
 bool
 Executor::getReachableMemoryObjects(ExecutionState &state,
-                                    std::set<const MemoryObject *>& reachable) {
-    std::set<ObjectPair> queue;
+                                    std::set<const MemoryObject *>& reachable,
+                                    unsigned &problems) {
+    std::vector<ObjectPair> queue;
+    const unsigned ptrWidth = Context::get().getPointerWidth();
+    const unsigned ptrBytes = ptrWidth / 8;
 
-    DataLayout& DL = *kmodule->targetData;
+    auto enqueue = [&](const MemoryObject *mo, const ObjectState *os) {
+      // objects without segment plane cannot contain any pointer
+      if (reachable.insert(mo).second && os->hasSegmentPlane())
+        queue.emplace_back(mo, os);
+    };
 
+    // roots: globals and locals (allocas, varargs, argv, ...)
     for (auto& object : state.addressSpace.objects) {
-      // the only objects that are still left are those that
-      // are either local to main or global (or heap-allocated,
-      // but we do not care about those while initializing queue)
-      if (object.first->isLocal || object.first->isGlobal) {
-
-        reachable.insert(object.first);
-
-        if (!object.first->allocSite ||
-            (!llvm::isa<llvm::AllocaInst>(object.first->allocSite) &&
-            !llvm::isa<llvm::GlobalValue>(object.first->allocSite))){
-          continue;
-        }
-
-        queue.emplace(object.first, object.second.get());
-      }
+      if (object.first->isLocal || object.first->isGlobal)
+        enqueue(object.first, object.second.get());
     }
 
-    bool retval = true;
+    problems = 0;
 
     // iterate the search until we searched all the reachable objects
     while (!queue.empty()) {
-      ObjectPair object = *queue.begin();
-      queue.erase(queue.begin());
+      ObjectPair object = queue.back();
+      queue.pop_back();
 
-      if (!object.first->allocSite ||
-          (!llvm::isa<llvm::AllocaInst>(object.first->allocSite) &&
-          !llvm::isa<llvm::GlobalValue>(object.first->allocSite))){
-        continue;
-      }
-
-      std::set<ref<Expr>> segments;
-      getPointers(object.first->allocSite->getType(), DL,
-                  &*object.second, segments);
-
-      for (auto segment : segments) {
-        segment = toUnique(state, segment);
-        if (auto C = dyn_cast<ConstantExpr>(segment)) {
-          auto segval = C->getZExtValue();
-          if (segval < FIRST_ORDINARY_SEGMENT)
-              continue; // ignore functions and special objects
-          if (segval > memory->getLastSegment())
-              continue;  // this cannot be a real pointer
-
-          ObjectPair result;
-          bool success =
-          state.addressSpace.resolveOneConstantSegment(
-              KValue(segment, ConstantExpr::alloc(0, Expr::Int64)), result);
-          if (success) {
-              if (reachable.insert(result.first).second) {
-                  // if we haven't found this memory before,
-                  // add it to queue for processing
-                  queue.insert(result);
-              }
-          } else {
-              if (state.addressSpace.removedObjectsMap.count(segval) > 0)
-                  continue; // this memory object has been freed
-
-              klee_warning("Failed resolving segment in memcleanup check");
-              retval = false;
-          }
-        } else {
-          klee_warning("Cannot resolve non-constant segment in memcleanup check");
-          retval = false;
+      // pointers are stored only at aligned offsets; scanning unaligned
+      // offsets could forge a segment from two neighbouring pointers
+      const uint64_t bound = object.second->getSizeBound();
+      for (uint64_t off = 0; off + ptrBytes <= bound; off += ptrBytes) {
+        ref<Expr> segment = object.second->read(off, ptrWidth).getSegment();
+        auto C = dyn_cast<ConstantExpr>(segment);
+        if (!C) {
+          segment = toUnique(state, segment);
+          C = dyn_cast<ConstantExpr>(segment);
         }
+        if (!C) {
+          problems |= RP_SYMBOLIC_SEGMENT;
+          continue;
+        }
+
+        auto segval = C->getZExtValue();
+        if (segval < FIRST_ORDINARY_SEGMENT)
+          continue; // no pointer, or function or special object
+        if (segval > memory->getLastSegment())
+          continue; // this cannot be a real pointer
+
+        ObjectPair result;
+        if (state.addressSpace.resolveOneConstantSegment(
+                KValue(segment, ConstantExpr::alloc(0, Expr::Int64)),
+                result)) {
+          enqueue(result.first, result.second);
+        } else if (state.addressSpace.removedObjectsMap.count(segval) == 0) {
+          problems |= RP_UNRESOLVED_SEGMENT;
+        } // else this memory object has been freed
       }
     }
 
-    return retval;
+    return problems == 0;
 }
 
 void Executor::reportError(const llvm::Twine &message,
@@ -4112,11 +4061,18 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
       assert(CheckLeaks);
       auto leaks = getMemoryLeaks(state);
       assert(!leaks.empty() && "hasMemoryLeaks() bug");
+      // lazily initialized objects are not program allocations
+      leaks.erase(std::remove_if(leaks.begin(), leaks.end(),
+                                 [](const MemoryObject *mo) {
+                                   return mo->isLazyInitialized;
+                                 }),
+                  leaks.end());
 
       klee_warning_once(nullptr, "Found unfreed memory, checking if it still can be freed.");
 
       std::set<const MemoryObject*> reachable;
-      bool success = getReachableMemoryObjects(state, reachable);
+      unsigned problems;
+      bool success = getReachableMemoryObjects(state, reachable, problems);
       for (auto *leak : leaks) {
         if (reachable.count(leak) == 0) {
           if (success) {
@@ -4125,6 +4081,11 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
                                   StateTerminationType::Leak,  info);
             return;
           } else {
+            // the verdict is unreliable, say why
+            if (problems & RP_UNRESOLVED_SEGMENT)
+              klee_warning("Failed resolving segment in memcleanup check");
+            if (problems & RP_SYMBOLIC_SEGMENT)
+              klee_warning("Cannot resolve non-constant segment in memcleanup check");
             terminateStateOnExecError(state, "Possible leak detected, but failed confirming it");
             return;
           }
