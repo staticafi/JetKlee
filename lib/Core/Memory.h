@@ -415,6 +415,14 @@ private:
   ObjectStatePlane *segmentPlane;
   ObjectStatePlane *offsetPlane;
 
+  /// pointerShadow[i] is set if a value of pointer type was stored at
+  /// offset i and none of its bytes has been overwritten since. Only
+  /// allocated on the first pointer store.
+  BitArray *pointerShadow;
+  /// a pointer was stored at a symbolic offset, so pointerShadow
+  /// may miss some pointers
+  bool pointerShadowImprecise;
+
 public:
   /// Create a new object state for the given memory object with concrete
   /// contents. The initial contents are undefined, it is the callers
@@ -445,6 +453,24 @@ public:
   // i.e., the object may contain pointers
   bool hasSegmentPlane() const { return segmentPlane != nullptr; }
 
+  // record that a value of pointer type was stored at the given offset;
+  // must be called after the value has been written
+  void markPointer(unsigned offset);
+  void markPointer(ref<Expr> offset);
+  // true if a value of pointer type that is still intact starts at offset
+  bool isPointerAt(unsigned offset) const {
+    return pointerShadow && offset < pointerShadow->size() &&
+           pointerShadow->get(offset);
+  }
+  bool hasPointerShadow() const {
+    return pointerShadow || pointerShadowImprecise;
+  }
+  bool isPointerShadowImprecise() const { return pointerShadowImprecise; }
+  // copy the pointer records of src[srcOffset, srcOffset + size)
+  // to this object at dstOffset
+  void copyPointerShadow(unsigned dstOffset, const ObjectState &src,
+                         unsigned srcOffset, unsigned size);
+
   // make contents all concrete and zero
   void initializeToZero();
   // make contents all concrete and random
@@ -471,6 +497,10 @@ public:
   ArrayCache *getArrayCache() const;
 
 private:
+  // forget pointers overlapping the bytes [offset, offset + size)
+  void clearPointerShadow(unsigned offset, unsigned size);
+  void clearPointerShadow(ref<Expr> offset, unsigned size);
+
   bool prepareSegmentPlane(bool nonzero);
   bool prepareSegmentPlane(ref<Expr> value);
 };

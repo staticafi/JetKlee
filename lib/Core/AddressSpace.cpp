@@ -370,6 +370,7 @@ void AddressSpace::writeToWOS(ExecutionState &state, TimingSolver *solver,
     if (!rl.empty()) {
       auto result = KValue(rl[0].first->getSegmentExpr(), ConstantExpr::alloc(offset.getValue(), Context::get().getPointerWidth()));
       wos->write(0, result);
+      wos->markPointer(0);
       return;
     }
   }

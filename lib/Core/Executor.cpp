@@ -1814,6 +1814,21 @@ static inline bool isErrorCall(const llvm::StringRef& name) {
   return name.equals(ErrorFun);
 }
 
+// Record the pointers in a value of pointer type (or a vector of pointers)
+// that has just been written to os at offset.
+static void markStoredPointers(ObjectState *os, ref<Expr> offset,
+                               const KValue &value) {
+  const unsigned ptrWidth = Context::get().getPointerWidth();
+  for (unsigned bit = 0; bit + ptrWidth <= value.getWidth(); bit += ptrWidth) {
+    auto segment = dyn_cast<klee::ConstantExpr>(
+        ExtractExpr::create(value.getSegment(), bit, ptrWidth));
+    if (segment && segment->isZero())
+      continue; // not a pointer to an object, e.g., NULL
+    os->markPointer(AddExpr::create(
+        offset, klee::ConstantExpr::create(bit / 8, offset->getWidth())));
+  }
+}
+
 void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
                            const std::vector<Cell> &arguments) {
   Instruction *i = ki->inst;
@@ -2006,7 +2021,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       Expr::Width WordSize = Context::get().getPointerWidth();
       if (WordSize == Expr::Int32) {
         // TODO value segment
-        executeMemoryWrite(state, arguments[0], sf.varargs->getPointer());
+        executeMemoryWrite(state, arguments[0], sf.varargs->getPointer(),
+                           /*isPointer=*/true);
       } else {
         assert(WordSize == Expr::Int64 && "Unknown word size!");
 
@@ -2020,8 +2036,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
         executeMemoryWrite(state, address,
                            KValue(ConstantExpr::create(304, 32))); // fp_offset
         address = arguments[0].Add(ConstantExpr::create(8, 64));
-        executeMemoryWrite(state, address,
-                           sf.varargs->getPointer()); // overflow_arg_area
+        executeMemoryWrite(state, address, sf.varargs->getPointer(),
+                           /*isPointer=*/true); // overflow_arg_area
         address = arguments[0].Add(ConstantExpr::create(16, 64));
         executeMemoryWrite(state, address,
                            KValue(ConstantExpr::create(0, 64))); // reg_save_area
@@ -2187,6 +2203,10 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
         for (unsigned k = funcArgs; k < callingArgs; k++) {
           if (!cs.isByValArgument(k)) {
             os->write(offsets[k], arguments[k]);
+            if (cs.getArgOperand(k)->getType()->isPtrOrPtrVectorTy())
+              markStoredPointers(
+                  os, ConstantExpr::create(offsets[k], Expr::Int64),
+                  arguments[k]);
           } else {
             ConstantExpr *address = dyn_cast<ConstantExpr>(arguments[k].value);
             assert(address); // byval argument needs to be a concrete pointer
@@ -2197,6 +2217,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
             assert(osarg);
             for (unsigned i = 0; i < cast<ConstantExpr>(osarg->getObject()->size)->getZExtValue(); i++)
               os->write(offsets[k] + i, osarg->read8(i));
+            os->copyPointerShadow(offsets[k], *osarg, 0,
+                cast<ConstantExpr>(osarg->getObject()->size)->getZExtValue());
           }
         }
       }
@@ -2945,7 +2967,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   case Instruction::Store: {
     const Cell &baseCell = eval(ki, 1, state);
     const Cell &valueCell = eval(ki, 0, state);
-    executeMemoryWrite(state, baseCell, valueCell);
+    executeMemoryWrite(state, baseCell, valueCell,
+                       i->getOperand(0)->getType()->isPtrOrPtrVectorTy());
     break;
   }
 
@@ -3955,11 +3978,79 @@ enum ReachabilityProblem : unsigned {
   RP_SYMBOLIC_SEGMENT = 2,
 };
 
+// clang names union types "union.*". A global initialized through a union
+// member gets a literal struct type that may not show the pointer member.
+static bool isUnionLike(llvm::StructType *ST) {
+  return ST->isLiteral() || ST->getName().startswith("union.");
+}
+
+static bool mayHoldPointers(llvm::Type *type) {
+  if (type->isPtrOrPtrVectorTy())
+    return true;
+  if (auto *ST = dyn_cast<llvm::StructType>(type)) {
+    if (isUnionLike(ST))
+      return true;
+    for (auto *elem : ST->elements())
+      if (mayHoldPointers(elem))
+        return true;
+    return false;
+  }
+  if (auto *AT = dyn_cast<llvm::ArrayType>(type))
+    return mayHoldPointers(AT->getElementType());
+  return false;
+}
+
+// Call onPointer(offset) for every pointer that a value of the given type
+// at offset off holds, and onUnion(begin, end) for every union-like part,
+// whose pointers must be taken from the pointer shadow.
+template <typename PointerFn, typename UnionFn>
+static void forEachDeclaredPointer(llvm::Type *type, uint64_t off,
+                                   const llvm::DataLayout &DL,
+                                   PointerFn &onPointer, UnionFn &onUnion) {
+  if (!mayHoldPointers(type))
+    return;
+  if (type->isPointerTy()) {
+    onPointer(off);
+  } else if (auto *VT = dyn_cast<llvm::FixedVectorType>(type)) {
+    uint64_t stride = DL.getTypeAllocSize(VT->getElementType());
+    for (unsigned i = 0; i < VT->getNumElements(); ++i)
+      onPointer(off + i * stride);
+  } else if (auto *ST = dyn_cast<llvm::StructType>(type)) {
+    if (isUnionLike(ST))
+      onUnion(off, off + DL.getTypeAllocSize(ST));
+    const llvm::StructLayout *SL = DL.getStructLayout(ST);
+    for (unsigned i = 0; i < ST->getNumElements(); ++i)
+      forEachDeclaredPointer(ST->getElementType(i),
+                             off + SL->getElementOffset(i), DL, onPointer,
+                             onUnion);
+  } else if (auto *AT = dyn_cast<llvm::ArrayType>(type)) {
+    uint64_t stride = DL.getTypeAllocSize(AT->getElementType());
+    for (uint64_t i = 0; i < AT->getNumElements(); ++i)
+      forEachDeclaredPointer(AT->getElementType(), off + i * stride, DL,
+                             onPointer, onUnion);
+  }
+}
+
+// The declared type of a local or global variable (any alloca counts), or
+// nullptr for objects without one (heap, varargs, argv, lazy init, ...).
+static llvm::Type *getDeclaredType(const MemoryObject *mo) {
+  if (mo->isLazyInitialized || !mo->allocSite)
+    return nullptr;
+  if (mo->isLocal)
+    if (auto *AI = dyn_cast<llvm::AllocaInst>(mo->allocSite))
+      return AI->getAllocatedType();
+  if (mo->isGlobal)
+    if (auto *GV = dyn_cast<llvm::GlobalVariable>(mo->allocSite))
+      return GV->getValueType();
+  return nullptr;
+}
+
 bool
 Executor::getReachableMemoryObjects(ExecutionState &state,
                                     std::set<const MemoryObject *>& reachable,
                                     unsigned &problems) {
     std::vector<ObjectPair> queue;
+    const llvm::DataLayout &DL = *kmodule->targetData;
     const unsigned ptrWidth = Context::get().getPointerWidth();
     const unsigned ptrBytes = ptrWidth / 8;
 
@@ -3981,12 +4072,14 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
     while (!queue.empty()) {
       ObjectPair object = queue.back();
       queue.pop_back();
+      const ObjectState *os = object.second;
+      const uint64_t bound = os->getSizeBound();
 
-      // pointers are stored only at aligned offsets; scanning unaligned
-      // offsets could forge a segment from two neighbouring pointers
-      const uint64_t bound = object.second->getSizeBound();
-      for (uint64_t off = 0; off + ptrBytes <= bound; off += ptrBytes) {
-        ref<Expr> segment = object.second->read(off, ptrWidth).getSegment();
+      // follow the pointer stored at offset off
+      auto follow = [&](uint64_t off) {
+        if (off + ptrBytes > bound)
+          return;
+        ref<Expr> segment = os->read(off, ptrWidth).getSegment();
         auto C = dyn_cast<ConstantExpr>(segment);
         if (!C) {
           segment = toUnique(state, segment);
@@ -3994,14 +4087,14 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
         }
         if (!C) {
           problems |= RP_SYMBOLIC_SEGMENT;
-          continue;
+          return;
         }
 
         auto segval = C->getZExtValue();
         if (segval < FIRST_ORDINARY_SEGMENT)
-          continue; // no pointer, or function or special object
+          return; // no pointer, or function or special object
         if (segval > memory->getLastSegment())
-          continue; // this cannot be a real pointer
+          return; // this cannot be a real pointer
 
         ObjectPair result;
         if (state.addressSpace.resolveOneConstantSegment(
@@ -4011,6 +4104,31 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
         } else if (state.addressSpace.removedObjectsMap.count(segval) == 0) {
           problems |= RP_UNRESOLVED_SEGMENT;
         } // else this memory object has been freed
+      };
+
+      // follow the pointers recorded in the pointer shadow of [begin, end);
+      // if a pointer was stored at a symbolic offset, read every aligned
+      // slot instead (unaligned reads could forge a segment)
+      auto followShadow = [&](uint64_t begin, uint64_t end) {
+        if (!os->hasPointerShadow())
+          return;
+        end = std::min(end, bound);
+        for (uint64_t off = begin; off < end; ++off) {
+          if (os->isPointerAt(off) ||
+              (os->isPointerShadowImprecise() && off % ptrBytes == 0))
+            follow(off);
+        }
+      };
+
+      if (llvm::Type *type = getDeclaredType(object.first)) {
+        // a variable: its declared type says where the pointers are;
+        // repeat it for array allocas (alloca T, n)
+        const uint64_t size = DL.getTypeAllocSize(type);
+        for (uint64_t base = 0; size && base < bound; base += size)
+          forEachDeclaredPointer(type, base, DL, follow, followShadow);
+      } else {
+        // no declared type, only values stored as pointers count
+        followShadow(0, bound);
       }
     }
 
@@ -4810,14 +4928,17 @@ void Executor::executeMemoryRead(ExecutionState &state,
 
 void Executor::executeMemoryWrite(ExecutionState &state,
                                   const KValue &address,
-                                  const KValue &value) {
-  executeMemoryOperation(state, true, address, value, 0);
+                                  const KValue &value,
+                                  bool isPointer) {
+  executeMemoryOperation(state, true, address, value, 0, isPointer);
 }
+
 void Executor::executeMemoryOperation(ExecutionState &state,
                                       bool isWrite,
                                       KValue address,
                                       KValue value, /* undef if read */
-                                      KInstruction *target /* undef if write */) {
+                                      KInstruction *target, /* undef if write */
+                                      bool isPointer) {
   Expr::Width type = (isWrite ? value.getWidth() :
                      getWidthForLLVMType(target->inst->getType()));
   unsigned bytes = Expr::getMinBytesForWidth(type);
@@ -4901,6 +5022,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
+          if (isPointer)
+            markStoredPointers(wos, offset, value);
         }
       } else {
         KValue result;
@@ -4960,6 +5083,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           // TODO segment
           wos->write(addressOptim.getOffset(), value);
+          if (isPointer)
+            markStoredPointers(wos, addressOptim.getOffset(), value);
         }
       } else {
         bool shouldReadFromOffset = true;
@@ -5060,6 +5185,7 @@ Executor::handleReadForLazyInit(ExecutionState &state, KInstruction *target,
 
     ObjectState *wos = state.addressSpace.getWriteable(mo, os);
     wos->write(offset, result);
+    wos->markPointer(offset);
   } else {
     auto& offsets = segmentOffsetsPair->second;
 
@@ -5312,6 +5438,7 @@ void Executor::runFunctionAsMain(Function *f,
 
         // Write pointer to newly allocated and initialised argv/envp c-string
         argvOS->write(i * NumPtrBytes, arg->getPointer());
+        argvOS->markPointer(i * NumPtrBytes);
       }
     }
   }

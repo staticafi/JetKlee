@@ -338,16 +338,20 @@ private:
   void executeMemoryRead(ExecutionState &state,
                          const KValue &address,
                          KInstruction *target);
+  /// \param isPointer the value has pointer type (or is a vector of
+  /// pointers), see ObjectState::markPointer
   void executeMemoryWrite(ExecutionState &state,
                           const KValue &address,
-                          const KValue &value);
+                          const KValue &value,
+                          bool isPointer = false);
   // do address resolution / object binding / out of bounds checking
   // and perform the operation
   void executeMemoryOperation(ExecutionState &state,
                               bool isWrite,
                               KValue address,
                               KValue value, /* undef if read */
-                              KInstruction *target /* undef if write */);
+                              KInstruction *target, /* undef if write */
+                              bool isPointer = false /* only for write */);
 
   void executeMakeSymbolic(ExecutionState &state, const MemoryObject *mo,
                            const std::string &name);

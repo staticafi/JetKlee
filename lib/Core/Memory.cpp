@@ -25,6 +25,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <cassert>
 #include <sstream>
 
@@ -593,7 +594,9 @@ ObjectState::ObjectState(const MemoryObject *mo)
     object(mo),
     readOnly(false),
     segmentPlane(nullptr),
-    offsetPlane(new ObjectStatePlane(this)) {
+    offsetPlane(new ObjectStatePlane(this)),
+    pointerShadow(nullptr),
+    pointerShadowImprecise(false) {
 }
 
 
@@ -602,7 +605,9 @@ ObjectState::ObjectState(const MemoryObject *mo, const Array *array)
     object(mo),
     readOnly(false),
     segmentPlane(nullptr),
-    offsetPlane(new ObjectStatePlane(this, array)) {
+    offsetPlane(new ObjectStatePlane(this, array)),
+    pointerShadow(nullptr),
+    pointerShadowImprecise(false) {
 }
 
 ObjectState::ObjectState(const ObjectState &os)
@@ -610,7 +615,9 @@ ObjectState::ObjectState(const ObjectState &os)
     object(os.object),
     readOnly(false),
     segmentPlane(nullptr),
-    offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)) {
+    offsetPlane(new ObjectStatePlane(this, *os.offsetPlane)),
+    pointerShadow(os.pointerShadow ? new BitArray(*os.pointerShadow) : nullptr),
+    pointerShadowImprecise(os.pointerShadowImprecise) {
   if (os.segmentPlane)
     segmentPlane = new ObjectStatePlane(this, *os.segmentPlane);
 }
@@ -624,6 +631,7 @@ ObjectState::~ObjectState() {
   if (segmentPlane)
     delete segmentPlane;
   delete offsetPlane;
+  delete pointerShadow;
 }
 
 KValue ObjectState::read8(unsigned offset) const {
@@ -677,39 +685,92 @@ bool ObjectState::prepareSegmentPlane(ref<Expr> segment) {
 }
 
 void ObjectState::write8(unsigned offset, uint8_t segment, uint8_t value) {
+  clearPointerShadow(offset, 1);
   if (prepareSegmentPlane(segment))
     segmentPlane->write8(offset, segment);
   offsetPlane->write8(offset, value);
 }
 
 void ObjectState::write16(unsigned offset, uint16_t segment, uint16_t value) {
+  clearPointerShadow(offset, 2);
   if (prepareSegmentPlane(segment))
     segmentPlane->write16(offset, segment);
   offsetPlane->write16(offset, value);
 }
 
 void ObjectState::write32(unsigned offset, uint32_t segment, uint32_t value) {
+  clearPointerShadow(offset, 4);
   if (prepareSegmentPlane(segment))
     segmentPlane->write32(offset, segment);
   offsetPlane->write32(offset, value);
 }
 
 void ObjectState::write64(unsigned offset, uint64_t segment, uint64_t value) {
+  clearPointerShadow(offset, 8);
   if (prepareSegmentPlane(segment))
     segmentPlane->write64(offset, segment);
   offsetPlane->write64(offset, value);
 }
 
 void ObjectState::write(unsigned offset, const KValue& value) {
+  clearPointerShadow(offset, Expr::getMinBytesForWidth(value.getWidth()));
   if (prepareSegmentPlane(value.getSegment()))
     segmentPlane->write(offset, value.getSegment());
   offsetPlane->write(offset, value.getOffset());
 }
 
 void ObjectState::write(ref<Expr> offset, const KValue& value) {
+  clearPointerShadow(offset, Expr::getMinBytesForWidth(value.getWidth()));
   if (prepareSegmentPlane(value.getSegment()))
     segmentPlane->write(offset, value.getSegment());
   offsetPlane->write(offset, value.getOffset());
+}
+
+void ObjectState::clearPointerShadow(unsigned offset, unsigned size) {
+  if (!pointerShadow)
+    return;
+  // a pointer starting up to ptrBytes - 1 bytes before offset overlaps too
+  const unsigned ptrBytes = Context::get().getPointerWidth() / 8;
+  unsigned begin = offset >= ptrBytes - 1 ? offset - (ptrBytes - 1) : 0;
+  unsigned end = std::min<uint64_t>((uint64_t)offset + size,
+                                    pointerShadow->size());
+  for (unsigned i = begin; i < end; ++i)
+    pointerShadow->unset(i);
+}
+
+void ObjectState::clearPointerShadow(ref<Expr> offset, unsigned size) {
+  // with a symbolic offset we do not know which pointers were overwritten;
+  // keep them, the scan then reads a symbolic segment there
+  if (auto CE = dyn_cast<ConstantExpr>(offset))
+    clearPointerShadow(CE->getZExtValue(), size);
+}
+
+void ObjectState::markPointer(unsigned offset) {
+  const unsigned ptrBytes = Context::get().getPointerWidth() / 8;
+  if ((uint64_t)offset + ptrBytes > getSizeBound())
+    return;
+  if (!pointerShadow)
+    pointerShadow = new BitArray(getSizeBound());
+  else if (pointerShadow->size() < getSizeBound())
+    pointerShadow->resize(getSizeBound());
+  pointerShadow->set(offset);
+}
+
+void ObjectState::markPointer(ref<Expr> offset) {
+  if (auto CE = dyn_cast<ConstantExpr>(offset))
+    markPointer(CE->getZExtValue());
+  else
+    pointerShadowImprecise = true;
+}
+
+void ObjectState::copyPointerShadow(unsigned dstOffset, const ObjectState &src,
+                                    unsigned srcOffset, unsigned size) {
+  if (src.pointerShadowImprecise)
+    pointerShadowImprecise = true;
+  for (unsigned i = 0; i < size; ++i) {
+    if (src.isPointerAt(srcOffset + i))
+      markPointer(dstOffset + i);
+  }
 }
 
 void ObjectState::initializeToZero() {
