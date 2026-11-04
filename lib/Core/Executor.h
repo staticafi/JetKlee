@@ -105,6 +105,10 @@ public:
   RNG theRNG;
 
 private:
+  /// Search for the memory objects reachable from the roots of the
+  /// memtrack property (see Executor.cpp)
+  class ReachabilitySearch;
+
   std::unique_ptr<KModule> kmodule;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
@@ -513,12 +517,16 @@ private:
                                     ref<Expr> e,
                                     ref<ConstantExpr> value);
 
-  /// Collect memory objects reachable from globals and live locals.
+  /// Collect memory objects reachable from globals, live locals and the
+  /// registers of pointer type that are still used later.
   /// \return false if the search was incomplete (a pointer could not be
   /// resolved); the reasons are then set in \p problems.
   bool getReachableMemoryObjects(ExecutionState &state,
                                  std::set<const MemoryObject *>&,
                                  unsigned &problems);
+
+  /// Warn if the program keeps variables in registers (-check-leaks).
+  void warnIfVariablesInRegisters();
 
   void reportError(const llvm::Twine &message, const ExecutionState &state,
                    const llvm::Twine &info, const char *suffix,

@@ -61,7 +61,9 @@
 #endif
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
@@ -587,6 +589,9 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 
   specialFunctionHandler->bind();
 
+  if (CheckLeaks)
+    warnIfVariablesInRegisters();
+
   if (StatsTracker::useStatistics() || userSearcherRequiresMD2U()) {
     statsTracker =
       new StatsTracker(*this,
@@ -601,6 +606,30 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
   memory->useLowMemory(TD->getPointerSizeInBits() == 32);
 
   return kmodule->module.get();
+}
+
+// The memtrack check (-check-leaks) assumes that the program's variables are
+// in memory, as in unoptimized code: a register counts as a root only while
+// its value is still used (see getReachableMemoryObjects). If an optimization
+// such as mem2reg moved a variable into a register, a block the variable
+// points to may be reported as lost after the variable's last use. The sign
+// of this is an llvm.dbg.value for a source variable.
+void Executor::warnIfVariablesInRegisters() {
+  for (const auto &F : *kmodule->module) {
+    if (F.isDeclaration() || kmodule->internalFunctions.count(&F))
+      continue;
+    for (const auto &I : instructions(F)) {
+      const auto *dv = dyn_cast<DbgValueInst>(&I);
+      if (!dv || !dv->getVariable() || dv->getVariable()->isArtificial())
+        continue;
+      klee_warning("-check-leaks: variable '%s' of function '%s' is kept in "
+                   "a register (optimized code?); memory it points to may be "
+                   "reported as lost before the variable dies",
+                   dv->getVariable()->getName().str().c_str(),
+                   F.getName().str().c_str());
+      return;
+    }
+  }
 }
 
 Executor::~Executor() {
@@ -4045,94 +4074,180 @@ static llvm::Type *getDeclaredType(const MemoryObject *mo) {
   return nullptr;
 }
 
+// The registers of pointer type in frame number `frame` of the state's stack
+// whose value is still used later, e.g. a result of malloc() that is about to
+// be returned or passed on. Registers that are no longer used do not count:
+// they are not program variables and would hide lost memory. This relies on
+// the program's variables being in memory (allocas), as in unoptimized code.
+static void getLivePointerRegisters(const ExecutionState &state,
+                                    std::size_t frame,
+                                    std::vector<unsigned> &regs) {
+  const StackFrame &sf = state.stack[frame];
+  if (frame + 1 < state.stack.size()) {
+    // a caller whose call has not returned yet
+    sf.kf->getLivePointerRegistersAfter(state.stack[frame + 1].caller,
+                                        /*includeDef=*/false, regs);
+  } else if (state.pc) {
+    // the top frame, before executing pc
+    assert(state.pc->inst->getFunction() == sf.kf->function &&
+           "pc is not in the top stack frame");
+    const BasicBlock *incoming = nullptr;
+    if (auto *phi = dyn_cast<PHINode>(state.pc->inst))
+      incoming = phi->getIncomingBlock(state.incomingBBIndex);
+    sf.kf->getLivePointerRegistersBefore(state.pc, incoming, regs);
+  } else {
+    regs.clear(); // main has returned
+  }
+}
+
+class Executor::ReachabilitySearch {
+public:
+  ReachabilitySearch(Executor &executor, ExecutionState &state)
+      : executor(executor), state(state),
+        DL(*executor.kmodule->targetData),
+        ptrWidth(Context::get().getPointerWidth()), ptrBytes(ptrWidth / 8) {}
+
+  /// globals and locals (allocas, varargs, argv, ...)
+  void addMemoryRoots();
+  /// the live pointer registers of all stack frames
+  void addRegisterRoots();
+  /// follow the pointers in the reached objects until no new object is found
+  void run();
+
+  std::set<const MemoryObject *> &getReachable() { return reachable; }
+  /// ReachabilityProblem flags; non-zero if the search was incomplete
+  unsigned getProblems() const { return problems; }
+
+private:
+  Executor &executor;
+  ExecutionState &state;
+  const llvm::DataLayout &DL;
+  const unsigned ptrWidth;
+  const unsigned ptrBytes;
+
+  std::set<const MemoryObject *> reachable;
+  std::vector<ObjectPair> queue;
+  unsigned problems = 0;
+
+  void enqueue(const MemoryObject *mo, const ObjectState *os);
+  /// follow a pointer with the given segment
+  void followSegment(ref<Expr> segment);
+  /// follow the pointers stored in an object
+  void scanObject(const MemoryObject *mo, const ObjectState *os);
+};
+
+void Executor::ReachabilitySearch::enqueue(const MemoryObject *mo,
+                                           const ObjectState *os) {
+  // objects without segment plane cannot contain any pointer
+  if (reachable.insert(mo).second && os->hasSegmentPlane())
+    queue.emplace_back(mo, os);
+}
+
+void Executor::ReachabilitySearch::followSegment(ref<Expr> segment) {
+  auto C = dyn_cast<ConstantExpr>(segment);
+  if (!C) {
+    segment = executor.toUnique(state, segment);
+    C = dyn_cast<ConstantExpr>(segment);
+  }
+  if (!C) {
+    problems |= RP_SYMBOLIC_SEGMENT;
+    return;
+  }
+
+  auto segval = C->getZExtValue();
+  if (segval < FIRST_ORDINARY_SEGMENT)
+    return; // no pointer, or function or special object
+  if (segval > executor.memory->getLastSegment())
+    return; // this cannot be a real pointer
+
+  ObjectPair result;
+  if (state.addressSpace.resolveOneConstantSegment(
+          KValue(segment, ConstantExpr::alloc(0, Expr::Int64)), result)) {
+    enqueue(result.first, result.second);
+  } else if (state.addressSpace.removedObjectsMap.count(segval) == 0) {
+    problems |= RP_UNRESOLVED_SEGMENT;
+  } // else this memory object has been freed
+}
+
+void Executor::ReachabilitySearch::addMemoryRoots() {
+  for (auto &object : state.addressSpace.objects) {
+    if (object.first->isLocal || object.first->isGlobal)
+      enqueue(object.first, object.second.get());
+  }
+}
+
+void Executor::ReachabilitySearch::addRegisterRoots() {
+  std::vector<unsigned> regs;
+  for (std::size_t i = 0; i < state.stack.size(); ++i) {
+    getLivePointerRegisters(state, i, regs);
+    for (unsigned reg : regs) {
+      const KValue &value = state.stack[i].locals[reg];
+      if (value.getSegment().isNull())
+        continue;
+      // one segment per element for vectors of pointers
+      for (unsigned bit = 0; bit + ptrWidth <= value.getWidth();
+           bit += ptrWidth)
+        followSegment(ExtractExpr::create(value.getSegment(), bit, ptrWidth));
+    }
+  }
+}
+
+void Executor::ReachabilitySearch::scanObject(const MemoryObject *mo,
+                                              const ObjectState *os) {
+  const uint64_t bound = os->getSizeBound();
+
+  // follow the pointer stored at offset off
+  auto follow = [&](uint64_t off) {
+    if (off + ptrBytes > bound)
+      return;
+    followSegment(os->read(off, ptrWidth).getSegment());
+  };
+
+  // follow the pointers recorded in the pointer shadow of [begin, end);
+  // if a pointer was stored at a symbolic offset, read every aligned
+  // slot instead (unaligned reads could forge a segment)
+  auto followShadow = [&](uint64_t begin, uint64_t end) {
+    if (!os->hasPointerShadow())
+      return;
+    end = std::min(end, bound);
+    for (uint64_t off = begin; off < end; ++off) {
+      if (os->isPointerAt(off) ||
+          (os->isPointerShadowImprecise() && off % ptrBytes == 0))
+        follow(off);
+    }
+  };
+
+  if (llvm::Type *type = getDeclaredType(mo)) {
+    // a variable: its declared type says where the pointers are;
+    // repeat it for array allocas (alloca T, n)
+    const uint64_t size = DL.getTypeAllocSize(type);
+    for (uint64_t base = 0; size && base < bound; base += size)
+      forEachDeclaredPointer(type, base, DL, follow, followShadow);
+  } else {
+    // no declared type, only values stored as pointers count
+    followShadow(0, bound);
+  }
+}
+
+void Executor::ReachabilitySearch::run() {
+  while (!queue.empty()) {
+    ObjectPair object = queue.back();
+    queue.pop_back();
+    scanObject(object.first, object.second);
+  }
+}
+
 bool
 Executor::getReachableMemoryObjects(ExecutionState &state,
                                     std::set<const MemoryObject *>& reachable,
                                     unsigned &problems) {
-    std::vector<ObjectPair> queue;
-    const llvm::DataLayout &DL = *kmodule->targetData;
-    const unsigned ptrWidth = Context::get().getPointerWidth();
-    const unsigned ptrBytes = ptrWidth / 8;
-
-    auto enqueue = [&](const MemoryObject *mo, const ObjectState *os) {
-      // objects without segment plane cannot contain any pointer
-      if (reachable.insert(mo).second && os->hasSegmentPlane())
-        queue.emplace_back(mo, os);
-    };
-
-    // roots: globals and locals (allocas, varargs, argv, ...)
-    for (auto& object : state.addressSpace.objects) {
-      if (object.first->isLocal || object.first->isGlobal)
-        enqueue(object.first, object.second.get());
-    }
-
-    problems = 0;
-
-    // iterate the search until we searched all the reachable objects
-    while (!queue.empty()) {
-      ObjectPair object = queue.back();
-      queue.pop_back();
-      const ObjectState *os = object.second;
-      const uint64_t bound = os->getSizeBound();
-
-      // follow the pointer stored at offset off
-      auto follow = [&](uint64_t off) {
-        if (off + ptrBytes > bound)
-          return;
-        ref<Expr> segment = os->read(off, ptrWidth).getSegment();
-        auto C = dyn_cast<ConstantExpr>(segment);
-        if (!C) {
-          segment = toUnique(state, segment);
-          C = dyn_cast<ConstantExpr>(segment);
-        }
-        if (!C) {
-          problems |= RP_SYMBOLIC_SEGMENT;
-          return;
-        }
-
-        auto segval = C->getZExtValue();
-        if (segval < FIRST_ORDINARY_SEGMENT)
-          return; // no pointer, or function or special object
-        if (segval > memory->getLastSegment())
-          return; // this cannot be a real pointer
-
-        ObjectPair result;
-        if (state.addressSpace.resolveOneConstantSegment(
-                KValue(segment, ConstantExpr::alloc(0, Expr::Int64)),
-                result)) {
-          enqueue(result.first, result.second);
-        } else if (state.addressSpace.removedObjectsMap.count(segval) == 0) {
-          problems |= RP_UNRESOLVED_SEGMENT;
-        } // else this memory object has been freed
-      };
-
-      // follow the pointers recorded in the pointer shadow of [begin, end);
-      // if a pointer was stored at a symbolic offset, read every aligned
-      // slot instead (unaligned reads could forge a segment)
-      auto followShadow = [&](uint64_t begin, uint64_t end) {
-        if (!os->hasPointerShadow())
-          return;
-        end = std::min(end, bound);
-        for (uint64_t off = begin; off < end; ++off) {
-          if (os->isPointerAt(off) ||
-              (os->isPointerShadowImprecise() && off % ptrBytes == 0))
-            follow(off);
-        }
-      };
-
-      if (llvm::Type *type = getDeclaredType(object.first)) {
-        // a variable: its declared type says where the pointers are;
-        // repeat it for array allocas (alloca T, n)
-        const uint64_t size = DL.getTypeAllocSize(type);
-        for (uint64_t base = 0; size && base < bound; base += size)
-          forEachDeclaredPointer(type, base, DL, follow, followShadow);
-      } else {
-        // no declared type, only values stored as pointers count
-        followShadow(0, bound);
-      }
-    }
-
-    return problems == 0;
+  ReachabilitySearch search(*this, state);
+  search.addMemoryRoots();
+  search.addRegisterRoots();
+  search.run();
+  reachable = std::move(search.getReachable());
+  problems = search.getProblems();
+  return problems == 0;
 }
 
 void Executor::reportError(const llvm::Twine &message,

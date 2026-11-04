@@ -22,10 +22,13 @@
 #include "klee/Support/ErrorHandling.h"
 #include "klee/Support/ModuleUtil.h"
 
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #if LLVM_VERSION_CODE < LLVM_VERSION(8, 0)
 #include "llvm/IR/CallSite.h"
 #endif
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -501,6 +504,206 @@ KFunction::~KFunction() {
   for (unsigned i=0; i<numInstructions; ++i)
     delete instructions[i];
   delete[] instructions;
+}
+
+/* Liveness of pointer registers (for the memtrack check) */
+
+struct KFunction::PointerLiveness {
+  /// register -> index into the bit vectors, or -1 if not tracked
+  std::vector<int> denseOf;
+  /// index into the bit vectors -> register
+  std::vector<unsigned> regOf;
+  llvm::DenseMap<const llvm::BasicBlock *, unsigned> blockIndex;
+  /// registers live at the end of each block, including the values that
+  /// phi nodes of the successors take from the block
+  std::vector<llvm::BitVector> liveOut;
+
+  bool tracked(int reg) const { return reg >= 0 && denseOf[reg] >= 0; }
+};
+
+// Call f(reg) for every register that a (non-phi) instruction reads.
+template <typename Fn>
+static void forEachRegisterUse(const KInstruction *ki, Fn f) {
+  unsigned n;
+  if (const auto *cb = dyn_cast<CallBase>(ki->inst))
+    n = cb->arg_size() + 1;
+  else
+    n = ki->inst->getNumOperands();
+  for (unsigned j = 0; j < n; ++j)
+    if (ki->operands[j] >= 0)
+      f(ki->operands[j]);
+}
+
+const KFunction::PointerLiveness &KFunction::getPointerLiveness() {
+  if (pointerLiveness)
+    return *pointerLiveness;
+
+  pointerLiveness = std::make_unique<PointerLiveness>();
+  PointerLiveness &L = *pointerLiveness;
+
+  // only registers that hold pointers can keep a block tracked
+  L.denseOf.assign(numRegisters, -1);
+  auto track = [&](unsigned reg, llvm::Type *type) {
+    if (type->isPtrOrPtrVectorTy()) {
+      L.denseOf[reg] = L.regOf.size();
+      L.regOf.push_back(reg);
+    }
+  };
+  for (unsigned a = 0; a < numArgs; ++a)
+    track(getArgRegister(a), function->getArg(a)->getType());
+  for (unsigned i = 0; i < numInstructions; ++i)
+    track(instructions[i]->dest, instructions[i]->inst->getType());
+
+  const unsigned numBlocks = function->size();
+  const unsigned width = L.regOf.size();
+  std::vector<const llvm::BasicBlock *> blocks;
+  blocks.reserve(numBlocks);
+  for (const auto &bb : *function) {
+    L.blockIndex[&bb] = blocks.size();
+    blocks.push_back(&bb);
+  }
+
+  // per block: upward-exposed uses, definitions, and the values its
+  // successors' phi nodes take from it
+  std::vector<llvm::BitVector> use(numBlocks, llvm::BitVector(width)),
+      def(numBlocks, llvm::BitVector(width)),
+      phiUse(numBlocks, llvm::BitVector(width));
+  for (unsigned b = 0; b < numBlocks; ++b) {
+    unsigned first = basicBlockEntry[const_cast<llvm::BasicBlock *>(blocks[b])];
+    for (unsigned i = first; i < first + blocks[b]->size(); ++i) {
+      const KInstruction *ki = instructions[i];
+      if (const auto *phi = dyn_cast<llvm::PHINode>(ki->inst)) {
+        for (unsigned j = 0; j < phi->getNumIncomingValues(); ++j)
+          if (L.tracked(ki->operands[j]))
+            phiUse[L.blockIndex[phi->getIncomingBlock(j)]].set(
+                L.denseOf[ki->operands[j]]);
+      } else {
+        forEachRegisterUse(ki, [&](int reg) {
+          if (L.tracked(reg) && !def[b].test(L.denseOf[reg]))
+            use[b].set(L.denseOf[reg]);
+        });
+      }
+      if (L.tracked(ki->dest))
+        def[b].set(L.denseOf[ki->dest]);
+    }
+  }
+
+  // backward dataflow until a fixpoint:
+  // out(b) = phiUse(b) + union of in(s) over the successors s,
+  // in(b) = use(b) + (out(b) - def(b))
+  L.liveOut.assign(numBlocks, llvm::BitVector(width));
+  std::vector<llvm::BitVector> liveIn(numBlocks, llvm::BitVector(width));
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (unsigned b = numBlocks; b-- > 0;) {
+      llvm::BitVector out = phiUse[b];
+      for (const llvm::BasicBlock *succ : llvm::successors(blocks[b]))
+        out |= liveIn[L.blockIndex[succ]];
+      llvm::BitVector in = out;
+      in.reset(def[b]);
+      in |= use[b];
+      if (out != L.liveOut[b] || in != liveIn[b]) {
+        L.liveOut[b] = std::move(out);
+        liveIn[b] = std::move(in);
+        changed = true;
+      }
+    }
+  }
+
+  return L;
+}
+
+unsigned KFunction::getInstructionIndex(const KInstruction *ki) const {
+  auto it = basicBlockEntry.find(ki->inst->getParent());
+  assert(it != basicBlockEntry.end());
+  unsigned i = it->second;
+  while (instructions[i] != ki)
+    ++i;
+  return i;
+}
+
+// the live registers after instructions[index]
+static llvm::BitVector
+liveAfterIndex(const KFunction::PointerLiveness &L, KInstruction **instructions,
+               unsigned blockEnd, unsigned index,
+               const llvm::BitVector &liveOut) {
+  llvm::BitVector live = liveOut;
+  for (unsigned i = blockEnd; i-- > index + 1;) {
+    const KInstruction *ki = instructions[i];
+    if (L.tracked(ki->dest))
+      live.reset(L.denseOf[ki->dest]);
+    // the uses of a phi node are on the incoming edges, not here
+    if (!isa<llvm::PHINode>(ki->inst))
+      forEachRegisterUse(ki, [&](int reg) {
+        if (L.tracked(reg))
+          live.set(L.denseOf[reg]);
+      });
+  }
+  return live;
+}
+
+static void toRegisters(const KFunction::PointerLiveness &L,
+                        const llvm::BitVector &live,
+                        std::vector<unsigned> &regs) {
+  regs.clear();
+  for (unsigned d : live.set_bits())
+    regs.push_back(L.regOf[d]);
+}
+
+void KFunction::getLivePointerRegistersAfter(const KInstruction *ki,
+                                             bool includeDef,
+                                             std::vector<unsigned> &regs) {
+  const PointerLiveness &L = getPointerLiveness();
+  const llvm::BasicBlock *bb = ki->inst->getParent();
+  unsigned blockEnd = basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)] +
+                      bb->size();
+  llvm::BitVector live =
+      liveAfterIndex(L, instructions, blockEnd, getInstructionIndex(ki),
+                     L.liveOut[L.blockIndex.lookup(bb)]);
+  if (!includeDef && L.tracked(ki->dest))
+    live.reset(L.denseOf[ki->dest]);
+  toRegisters(L, live, regs);
+}
+
+void KFunction::getLivePointerRegistersBefore(
+    const KInstruction *ki, const llvm::BasicBlock *incomingBB,
+    std::vector<unsigned> &regs) {
+  const PointerLiveness &L = getPointerLiveness();
+  const llvm::BasicBlock *bb = ki->inst->getParent();
+  unsigned blockEnd = basicBlockEntry[const_cast<llvm::BasicBlock *>(bb)] +
+                      bb->size();
+  const llvm::BitVector &liveOut = L.liveOut[L.blockIndex.lookup(bb)];
+  unsigned index = getInstructionIndex(ki);
+  llvm::BitVector live;
+
+  if (!isa<llvm::PHINode>(ki->inst)) {
+    live = liveAfterIndex(L, instructions, blockEnd, index, liveOut);
+    if (L.tracked(ki->dest))
+      live.reset(L.denseOf[ki->dest]);
+    forEachRegisterUse(ki, [&](int reg) {
+      if (L.tracked(reg))
+        live.set(L.denseOf[reg]);
+    });
+  } else {
+    // the phi nodes from ki on have not executed yet: their results are not
+    // defined, and the values they take from incomingBB are live
+    unsigned last = index;
+    while (last + 1 < blockEnd && isa<llvm::PHINode>(instructions[last + 1]->inst))
+      ++last;
+    live = liveAfterIndex(L, instructions, blockEnd, last, liveOut);
+    for (unsigned i = index; i <= last; ++i) {
+      const KInstruction *phiKi = instructions[i];
+      if (L.tracked(phiKi->dest))
+        live.reset(L.denseOf[phiKi->dest]);
+      if (!incomingBB)
+        continue;
+      int j = cast<llvm::PHINode>(phiKi->inst)->getBasicBlockIndex(incomingBB);
+      if (j >= 0 && L.tracked(phiKi->operands[j]))
+        live.set(L.denseOf[phiKi->operands[j]]);
+    }
+  }
+  toRegisters(L, live, regs);
 }
 
 KInstruction *KModule::getKInstruction(llvm::Instruction *I) const {
