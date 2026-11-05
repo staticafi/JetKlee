@@ -466,6 +466,8 @@ public:
     return pointerShadow || pointerShadowImprecise;
   }
   bool isPointerShadowImprecise() const { return pointerShadowImprecise; }
+  // pointers may be anywhere (e.g. copied from such an object)
+  void setPointerShadowImprecise() { pointerShadowImprecise = true; }
   // copy the pointer records of src[srcOffset, srcOffset + size)
   // to this object at dstOffset
   void copyPointerShadow(unsigned dstOffset, const ObjectState &src,

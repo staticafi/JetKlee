@@ -78,6 +78,10 @@ namespace klee {
                                        const llvm::BasicBlock *incomingBB,
                                        std::vector<unsigned> &regs);
 
+    /// Compute the liveness and the dying fresh pointers of all
+    /// instructions (KInstruction::dyingFreshPointers) if not done yet.
+    void preparePointerLiveness() { (void)getPointerLiveness(); }
+
     /// Like getLivePointerRegistersBefore, but at the point after ki has
     /// executed; if includeDef is false, ki's own result is excluded (used
     /// for a call that has not returned yet).
@@ -89,6 +93,8 @@ namespace klee {
   private:
     std::unique_ptr<PointerLiveness> pointerLiveness;
     const PointerLiveness &getPointerLiveness();
+    void computeDyingFreshPointers(
+        const std::vector<const llvm::BasicBlock *> &blocks);
     /// index of ki in instructions
     unsigned getInstructionIndex(const KInstruction *ki) const;
   };

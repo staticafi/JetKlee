@@ -42,6 +42,11 @@ namespace klee {
     /// Destination register index.
     unsigned dest;
 
+    /// Registers holding fresh pointers (see KFunction) that die at this
+    /// instruction, or nullptr if there are none or they were not computed
+    /// (only with the memtrack check).
+    const std::vector<unsigned> *dyingFreshPointers = nullptr;
+
   public:
     virtual ~KInstruction();
     std::string getSourceLocation() const;

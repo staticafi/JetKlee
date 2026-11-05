@@ -104,6 +104,16 @@ public:
   /// The random number generator.
   RNG theRNG;
 
+  /// Events at which memory can become untracked (memtrack check)
+  enum MemtrackEvent : unsigned {
+    MemtrackStore,
+    MemtrackFree,
+    MemtrackScopeEnd,
+    MemtrackReturn,
+    MemtrackDyingRegister,
+    MemtrackEventCount
+  };
+
 private:
   /// Search for the memory objects reachable from the roots of the
   /// memtrack property (see Executor.cpp)
@@ -527,6 +537,42 @@ private:
 
   /// Warn if the program keeps variables in registers (-check-leaks).
   void warnIfVariablesInRegisters();
+
+  /* Memtrack checks at the events where memory can be lost */
+
+  bool memtrackEventsEnabled() const;
+  /// add the heap object a pointer with this segment points to (if any)
+  void addHeapTarget(ExecutionState &state, ref<Expr> segment,
+                     std::set<const MemoryObject *> &targets);
+  /// the same for every pointer element of a value
+  void addHeapTargets(ExecutionState &state, const KValue &value,
+                      std::set<const MemoryObject *> &targets);
+  /// heap objects pointed to by the pointers in [begin, end) of an object
+  void collectHeapTargets(ExecutionState &state, const MemoryObject *mo,
+                          const ObjectState *os, uint64_t begin, uint64_t end,
+                          std::set<const MemoryObject *> &targets);
+  /// heap objects whose pointers a write of value at offset overwrites
+  void collectOverwrittenHeapTargets(ExecutionState &state,
+                                     const MemoryObject *mo,
+                                     const ObjectState *os, ref<Expr> offset,
+                                     unsigned bytes, const KValue &value,
+                                     std::set<const MemoryObject *> &targets);
+  /// After an event removed pointers to the candidates: report a leak if
+  /// a candidate is no longer reachable. Returns true if the state was
+  /// terminated.
+  bool checkLostMemory(ExecutionState &state,
+                       std::set<const MemoryObject *> &candidates,
+                       MemtrackEvent event);
+  /// Check the fresh pointers that died at the last executed instruction.
+  /// Returns true if the state was terminated.
+  bool checkDyingPointers(ExecutionState &state);
+  /// Execute a call of memcpy/memmove in one step, copying the pointer
+  /// shadow with the bytes (a byte-wise copy would lose it) and checking
+  /// the overwritten pointers once. Only for concrete, in-bounds copies;
+  /// returns false (nothing done) otherwise, and the function's body runs.
+  bool executeNativeMemCopy(ExecutionState &state, KInstruction *ki,
+                            const std::vector<Cell> &arguments);
+  void printMemtrackStats() const;
 
   void reportError(const llvm::Twine &message, const ExecutionState &state,
                    const llvm::Twine &info, const char *suffix,

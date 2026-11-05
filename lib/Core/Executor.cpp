@@ -633,6 +633,7 @@ void Executor::warnIfVariablesInRegisters() {
 }
 
 Executor::~Executor() {
+  printMemtrackStats();
   delete memory;
   delete externalDispatcher;
   delete specialFunctionHandler;
@@ -1586,7 +1587,13 @@ void Executor::executeLifetimeIntrinsic(ExecutionState &state,
   // written before)
 
   if (isEnd) {
+    // blocks the dying variable points to
+    std::set<const MemoryObject *> lost;
+    if (memtrackEventsEnabled())
+      collectHeapTargets(state, op.first, op.second, 0, UINT64_MAX, lost);
     state.removeAlloca(op.first);
+    if (!lost.empty() && checkLostMemory(state, lost, MemtrackScopeEnd))
+      return;
     //bindLocal(allocSite, state, KValue(Expr::createPointer(0)));
   } else {
     // This is the first call to lifetime start, the object already exists.
@@ -1886,6 +1893,13 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
     return;
   }
 
+  // a byte-wise copy would lose the pointer shadow that the memtrack check
+  // relies on; copy it natively when possible
+  if (CheckLeaks &&
+      (f->getName().equals("memcpy") || f->getName().equals("memmove")) &&
+      executeNativeMemCopy(state, ki, arguments))
+    return;
+
   if (f && f->isDeclaration()) {
     switch (f->getIntrinsicID()) {
     case Intrinsic::not_intrinsic:
@@ -2126,6 +2140,8 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
 
     state.pushFrame(state.prevPC, kf);
     state.pc = kf->instructions;
+    if (memtrackEventsEnabled())
+      kf->preparePointerLiveness();
 
     if (statsTracker)
       statsTracker->framePushed(state, &state.stack[state.stack.size() - 2]);
@@ -2354,6 +2370,21 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       state.pc = {0};
       terminateStateOnExit(state);
     } else {
+      // blocks the dying frame's variables point to
+      std::set<const MemoryObject *> lost;
+      if (memtrackEventsEnabled()) {
+        const StackFrame &sf = state.stack.back();
+        std::vector<const MemoryObject *> objects(sf.allocas.begin(),
+                                                  sf.allocas.end());
+        objects.push_back(sf.varargs);
+        for (const MemoryObject *mo : objects) {
+          if (!mo)
+            continue;
+          if (const ObjectState *os = state.addressSpace.findObject(mo))
+            collectHeapTargets(state, mo, os, 0, UINT64_MAX, lost);
+        }
+      }
+
       state.popFrame();
 
       if (statsTracker)
@@ -2435,7 +2466,19 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         // undeclared functions.
         if (!caller->use_empty()) {
           terminateStateOnExecError(state, "return void when caller expected a result");
+          break;
         }
+      }
+
+      if (memtrackEventsEnabled()) {
+        // a fresh result the caller does not use is lost now
+        if (!isVoidReturn && kcaller->dyingFreshPointers &&
+            std::find(kcaller->dyingFreshPointers->begin(),
+                      kcaller->dyingFreshPointers->end(),
+                      kcaller->dest) != kcaller->dyingFreshPointers->end())
+          addHeapTargets(state, getDestCell(state, kcaller), lost);
+        if (!lost.empty())
+          checkLostMemory(state, lost, MemtrackReturn);
       }
     }
     break;
@@ -3820,6 +3863,10 @@ void Executor::run(ExecutionState &initialState) {
         it = seedMap.begin();
       lastState = it->first;
       ExecutionState &state = *lastState;
+      if (checkDyingPointers(state)) {
+        updateStates(&state);
+        continue;
+      }
       KInstruction *ki = state.pc;
       stepInstruction(state);
 
@@ -3869,6 +3916,11 @@ void Executor::run(ExecutionState &initialState) {
   // main interpreter loop
   while (!states.empty() && !haltExecution) {
     ExecutionState &state = searcher->selectState();
+    // memory lost when a fresh pointer died at the last instruction
+    if (checkDyingPointers(state)) {
+      updateStates(&state);
+      continue;
+    }
     KInstruction *ki = state.pc;
     stepInstruction(state);
 
@@ -4074,6 +4126,56 @@ static llvm::Type *getDeclaredType(const MemoryObject *mo) {
   return nullptr;
 }
 
+// Call fn(offset) for every pointer that counts for the memtrack property in
+// the object and overlaps [begin, end): the declared pointers of a variable,
+// or the pointers recorded in the pointer shadow.
+template <typename Fn>
+static void forEachPointerOffset(const MemoryObject *mo, const ObjectState *os,
+                                 const llvm::DataLayout &DL,
+                                 unsigned ptrBytes, uint64_t begin,
+                                 uint64_t end, Fn fn) {
+  const uint64_t bound = os->getSizeBound();
+  end = std::min(end, bound);
+  if (begin >= end)
+    return;
+  // a pointer at off overlaps the range if off < end && off + ptrBytes > begin
+  const uint64_t lowest = begin >= ptrBytes ? begin - ptrBytes + 1 : 0;
+
+  auto follow = [&](uint64_t off) {
+    if (off + ptrBytes > bound || off < lowest || off >= end)
+      return;
+    fn(off);
+  };
+
+  // follow the pointers recorded in the pointer shadow of [b, e);
+  // if a pointer was stored at a symbolic offset, read every aligned
+  // slot instead (unaligned reads could forge a segment)
+  auto followShadow = [&](uint64_t b, uint64_t e) {
+    if (!os->hasPointerShadow())
+      return;
+    b = std::max(b, lowest);
+    e = std::min(e, end);
+    for (uint64_t off = b; off < e; ++off) {
+      if (os->isPointerAt(off) ||
+          (os->isPointerShadowImprecise() && off % ptrBytes == 0))
+        follow(off);
+    }
+  };
+
+  if (llvm::Type *type = getDeclaredType(mo)) {
+    // a variable: its declared type says where the pointers are;
+    // repeat it for array allocas (alloca T, n)
+    const uint64_t size = DL.getTypeAllocSize(type);
+    if (!size)
+      return;
+    for (uint64_t base = (lowest / size) * size; base < end; base += size)
+      forEachDeclaredPointer(type, base, DL, follow, followShadow);
+  } else {
+    // no declared type, only values stored as pointers count
+    followShadow(0, end);
+  }
+}
+
 // The registers of pointer type in frame number `frame` of the state's stack
 // whose value is still used later, e.g. a result of malloc() that is about to
 // be returned or passed on. Registers that are no longer used do not count:
@@ -4107,16 +4209,26 @@ public:
         DL(*executor.kmodule->targetData),
         ptrWidth(Context::get().getPointerWidth()), ptrBytes(ptrWidth / 8) {}
 
+  /// Stop the search as soon as all these objects are reached.
+  void setCandidates(const std::set<const MemoryObject *> &c) {
+    candidates = &c;
+    missing = c.size();
+  }
   /// globals and locals (allocas, varargs, argv, ...)
   void addMemoryRoots();
   /// the live pointer registers of all stack frames
   void addRegisterRoots();
-  /// follow the pointers in the reached objects until no new object is found
+  /// follow the pointers in the reached objects until no new object is
+  /// found, or until all candidates are reached
   void run();
 
+  /// true if candidates were set and all of them were reached
+  bool allCandidatesFound() const { return candidates && missing == 0; }
   std::set<const MemoryObject *> &getReachable() { return reachable; }
   /// ReachabilityProblem flags; non-zero if the search was incomplete
   unsigned getProblems() const { return problems; }
+  /// number of objects whose pointers were followed
+  uint64_t getScanned() const { return scanned; }
 
 private:
   Executor &executor;
@@ -4128,6 +4240,9 @@ private:
   std::set<const MemoryObject *> reachable;
   std::vector<ObjectPair> queue;
   unsigned problems = 0;
+  const std::set<const MemoryObject *> *candidates = nullptr;
+  std::size_t missing = 0;
+  uint64_t scanned = 0;
 
   void enqueue(const MemoryObject *mo, const ObjectState *os);
   /// follow a pointer with the given segment
@@ -4138,8 +4253,12 @@ private:
 
 void Executor::ReachabilitySearch::enqueue(const MemoryObject *mo,
                                            const ObjectState *os) {
+  if (!reachable.insert(mo).second)
+    return;
+  if (candidates && candidates->count(mo))
+    --missing;
   // objects without segment plane cannot contain any pointer
-  if (reachable.insert(mo).second && os->hasSegmentPlane())
+  if (os->hasSegmentPlane())
     queue.emplace_back(mo, os);
 }
 
@@ -4194,43 +4313,14 @@ void Executor::ReachabilitySearch::addRegisterRoots() {
 
 void Executor::ReachabilitySearch::scanObject(const MemoryObject *mo,
                                               const ObjectState *os) {
-  const uint64_t bound = os->getSizeBound();
-
-  // follow the pointer stored at offset off
-  auto follow = [&](uint64_t off) {
-    if (off + ptrBytes > bound)
-      return;
+  ++scanned;
+  forEachPointerOffset(mo, os, DL, ptrBytes, 0, UINT64_MAX, [&](uint64_t off) {
     followSegment(os->read(off, ptrWidth).getSegment());
-  };
-
-  // follow the pointers recorded in the pointer shadow of [begin, end);
-  // if a pointer was stored at a symbolic offset, read every aligned
-  // slot instead (unaligned reads could forge a segment)
-  auto followShadow = [&](uint64_t begin, uint64_t end) {
-    if (!os->hasPointerShadow())
-      return;
-    end = std::min(end, bound);
-    for (uint64_t off = begin; off < end; ++off) {
-      if (os->isPointerAt(off) ||
-          (os->isPointerShadowImprecise() && off % ptrBytes == 0))
-        follow(off);
-    }
-  };
-
-  if (llvm::Type *type = getDeclaredType(mo)) {
-    // a variable: its declared type says where the pointers are;
-    // repeat it for array allocas (alloca T, n)
-    const uint64_t size = DL.getTypeAllocSize(type);
-    for (uint64_t base = 0; size && base < bound; base += size)
-      forEachDeclaredPointer(type, base, DL, follow, followShadow);
-  } else {
-    // no declared type, only values stored as pointers count
-    followShadow(0, bound);
-  }
+  });
 }
 
 void Executor::ReachabilitySearch::run() {
-  while (!queue.empty()) {
+  while (!queue.empty() && !allCandidatesFound()) {
     ObjectPair object = queue.back();
     queue.pop_back();
     scanObject(object.first, object.second);
@@ -4248,6 +4338,277 @@ Executor::getReachableMemoryObjects(ExecutionState &state,
   reachable = std::move(search.getReachable());
   problems = search.getProblems();
   return problems == 0;
+}
+
+/* Memtrack checks at the events where memory can be lost */
+
+namespace {
+const char *const memtrackEventNames[] = {"store", "free", "scope-end",
+                                          "return", "dying-register"};
+struct MemtrackEventStats {
+  uint64_t checks = 0;  // searches started
+  uint64_t scanned = 0; // objects scanned by them
+  uint64_t leaks = 0;   // losses reported
+};
+MemtrackEventStats memtrackStats[Executor::MemtrackEventCount];
+} // namespace
+
+bool Executor::memtrackEventsEnabled() const {
+  // the same condition as for the memtrack check in terminateStateOnExit
+  return CheckLeaks && !CheckMemCleanup;
+}
+
+void Executor::addHeapTarget(ExecutionState &state, ref<Expr> segment,
+                             std::set<const MemoryObject *> &targets) {
+  auto C = dyn_cast<ConstantExpr>(segment);
+  if (!C)
+    return; // a symbolic pointer: not checked at the event
+  auto segval = C->getZExtValue();
+  if (segval < FIRST_ORDINARY_SEGMENT || segval > memory->getLastSegment())
+    return;
+  ObjectPair op;
+  if (!state.addressSpace.resolveOneConstantSegment(
+          KValue(segment, ConstantExpr::alloc(0, Expr::Int64)), op))
+    return; // freed
+  const MemoryObject *mo = op.first;
+  if (mo->isLocal || mo->isGlobal || mo->isFixed || mo->isLazyInitialized)
+    return; // not a leak candidate
+  targets.insert(mo);
+}
+
+void Executor::addHeapTargets(ExecutionState &state, const KValue &value,
+                              std::set<const MemoryObject *> &targets) {
+  const unsigned ptrWidth = Context::get().getPointerWidth();
+  if (value.getSegment().isNull())
+    return;
+  for (unsigned bit = 0; bit + ptrWidth <= value.getWidth(); bit += ptrWidth)
+    addHeapTarget(state, ExtractExpr::create(value.getSegment(), bit, ptrWidth),
+                  targets);
+}
+
+void Executor::collectHeapTargets(ExecutionState &state, const MemoryObject *mo,
+                                  const ObjectState *os, uint64_t begin,
+                                  uint64_t end,
+                                  std::set<const MemoryObject *> &targets) {
+  if (!os->hasSegmentPlane())
+    return; // no pointers
+  const unsigned ptrWidth = Context::get().getPointerWidth();
+  forEachPointerOffset(mo, os, *kmodule->targetData, ptrWidth / 8, begin, end,
+                       [&](uint64_t off) {
+                         addHeapTarget(state,
+                                       os->read(off, ptrWidth).getSegment(),
+                                       targets);
+                       });
+}
+
+void Executor::collectOverwrittenHeapTargets(
+    ExecutionState &state, const MemoryObject *mo, const ObjectState *os,
+    ref<Expr> offset, unsigned bytes, const KValue &value,
+    std::set<const MemoryObject *> &targets) {
+  if (!os->hasSegmentPlane())
+    return;
+  if (auto C = dyn_cast<ConstantExpr>(offset)) {
+    uint64_t begin = C->getZExtValue();
+    collectHeapTargets(state, mo, os, begin, begin + bytes, targets);
+  } else {
+    // any pointer may be overwritten; an overwritten one becomes symbolic,
+    // which makes the search incomplete, so nothing is reported
+    collectHeapTargets(state, mo, os, 0, UINT64_MAX, targets);
+  }
+  if (targets.empty())
+    return;
+  // a block whose pointer is stored again (p = p, p++) is not lost
+  std::set<const MemoryObject *> stored;
+  addHeapTargets(state, value, stored);
+  for (const auto *t : stored)
+    targets.erase(t);
+}
+
+bool Executor::checkLostMemory(ExecutionState &state,
+                               std::set<const MemoryObject *> &candidates,
+                               MemtrackEvent event) {
+  // blocks the event freed are not lost
+  for (auto it = candidates.begin(); it != candidates.end();) {
+    if (state.addressSpace.findObject(*it))
+      ++it;
+    else
+      it = candidates.erase(it);
+  }
+  if (candidates.empty())
+    return false;
+
+  MemtrackEventStats &stats = memtrackStats[event];
+  ++stats.checks;
+  ReachabilitySearch search(*this, state);
+  search.setCandidates(candidates);
+  // registers first: a fresh pointer that is passed on is found there
+  // without scanning any object
+  search.addRegisterRoots();
+  if (!search.allCandidatesFound()) {
+    search.addMemoryRoots();
+    search.run();
+  }
+  stats.scanned += search.getScanned();
+  if (search.allCandidatesFound())
+    return false;
+  // an incomplete search cannot confirm a loss; the check at the end of the
+  // program decides
+  if (search.getProblems())
+    return false;
+
+  for (const auto *mo : candidates) {
+    if (!search.getReachable().count(mo)) {
+      ++stats.leaks;
+      terminateStateOnError(state, "memory error: memory leak detected",
+                            StateTerminationType::Leak,
+                            getKValueInfo(state, mo->getPointer()));
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Executor::checkDyingPointers(ExecutionState &state) {
+  const KInstruction *last = state.prevPC;
+  if (!last || !last->dyingFreshPointers || state.steppedInstructions == 0 ||
+      !memtrackEventsEnabled() || isa<ReturnInst>(last->inst))
+    return false;
+
+  // the frame that executed `last`: the top frame, or the caller of a frame
+  // that `last` has just pushed (the call's result is then checked at the
+  // return instead)
+  const StackFrame &top = state.stack.back();
+  std::size_t frame;
+  bool includeResult = true;
+  if (state.stack.size() > 1 && top.caller == last &&
+      state.pc == KInstIterator(top.kf->instructions)) {
+    frame = state.stack.size() - 2;
+    includeResult = false;
+  } else if (top.kf->function == last->inst->getFunction()) {
+    frame = state.stack.size() - 1;
+  } else {
+    return false;
+  }
+
+  std::set<const MemoryObject *> candidates;
+  for (unsigned reg : *last->dyingFreshPointers) {
+    if (!includeResult && reg == last->dest)
+      continue;
+    addHeapTargets(state, state.stack[frame].locals[reg], candidates);
+  }
+  return checkLostMemory(state, candidates, MemtrackDyingRegister);
+}
+
+namespace {
+// memcpy/memmove calls executed natively / left to the function's body
+uint64_t nativeMemCopies = 0, fallbackMemCopies = 0;
+} // namespace
+
+bool Executor::executeNativeMemCopy(ExecutionState &state, KInstruction *ki,
+                                    const std::vector<Cell> &arguments) {
+  if (arguments.size() != 3)
+    return false;
+  const KValue &dst = arguments[0], &src = arguments[1], &len = arguments[2];
+
+  // only the simple case: concrete pointers to single live objects and a
+  // concrete size within both of them. Anything else (including errors such
+  // as out-of-bounds copies) is left to the byte-wise body.
+  auto CLen = dyn_cast<ConstantExpr>(len.getOffset());
+  if (!CLen || !len.isConstant() || !dst.isConstant() || !src.isConstant()) {
+    ++fallbackMemCopies;
+    return false;
+  }
+  const uint64_t n = CLen->getZExtValue();
+  if (n == 0) {
+    ++nativeMemCopies;
+    bindLocal(ki, state, dst);
+    return true;
+  }
+  ObjectPair dstOp, srcOp;
+  if (!state.addressSpace.resolveOneConstantSegment(dst, dstOp) ||
+      !state.addressSpace.resolveOneConstantSegment(src, srcOp)) {
+    ++fallbackMemCopies;
+    return false;
+  }
+  const MemoryObject *dmo = dstOp.first, *smo = srcOp.first;
+  auto inBounds = [n](const MemoryObject *mo, const KValue &p) {
+    auto CSize = dyn_cast<ConstantExpr>(mo->size);
+    uint64_t off = cast<ConstantExpr>(p.getOffset())->getZExtValue();
+    return CSize && off <= CSize->getZExtValue() &&
+           n <= CSize->getZExtValue() - off;
+  };
+  if (!inBounds(dmo, dst) || !inBounds(smo, src) || dstOp.second->readOnly ||
+      dmo->isLazyInitialized || smo->isLazyInitialized) {
+    ++fallbackMemCopies;
+    return false;
+  }
+  ++nativeMemCopies;
+  const uint64_t dstOff = cast<ConstantExpr>(dst.getOffset())->getZExtValue();
+  const uint64_t srcOff = cast<ConstantExpr>(src.getOffset())->getZExtValue();
+  const ObjectState *sos = srcOp.second;
+  const unsigned ptrBytes = Context::get().getPointerWidth() / 8;
+
+  // read everything first, so that overlapping ranges (memmove) are right
+  std::vector<KValue> bytes;
+  bytes.reserve(n);
+  for (uint64_t i = 0; i < n; ++i)
+    bytes.push_back(sos->read8(srcOff + i));
+  // the pointers of the source that are copied whole; they stay pointers
+  // in the destination
+  std::vector<uint64_t> pointers;
+  if (sos->hasSegmentPlane())
+    forEachPointerOffset(smo, sos, *kmodule->targetData, ptrBytes, srcOff,
+                         srcOff + n, [&](uint64_t off) {
+                           if (off >= srcOff && off + ptrBytes <= srcOff + n)
+                             pointers.push_back(off - srcOff);
+                         });
+  const bool imprecise = sos->isPointerShadowImprecise();
+
+  // heap blocks whose pointers the copy overwrites, except those it copies
+  std::set<const MemoryObject *> lost;
+  ObjectState *wos = state.addressSpace.getWriteable(dmo, dstOp.second);
+  if (memtrackEventsEnabled()) {
+    collectHeapTargets(state, dmo, wos, dstOff, dstOff + n, lost);
+    if (!lost.empty()) {
+      std::set<const MemoryObject *> copied;
+      for (uint64_t p : pointers)
+        addHeapTarget(state,
+                      sos->read(srcOff + p, ptrBytes * 8).getSegment(),
+                      copied);
+      for (const auto *t : copied)
+        lost.erase(t);
+    }
+  }
+
+  // writing clears the pointer shadow of the destination range
+  // (sos may be wos for memmove within one object; it is not used below)
+  for (uint64_t i = 0; i < n; ++i)
+    wos->write(dstOff + i, bytes[i]);
+  for (uint64_t p : pointers)
+    wos->markPointer(dstOff + p);
+  if (imprecise)
+    wos->setPointerShadowImprecise();
+
+  bindLocal(ki, state, dst);
+  if (!lost.empty())
+    checkLostMemory(state, lost, MemtrackStore);
+  return true;
+}
+
+void Executor::printMemtrackStats() const {
+  if (!memtrackEventsEnabled())
+    return;
+  std::string msg = "memtrack event checks (checks/objects scanned/leaks):";
+  for (unsigned e = 0; e < MemtrackEventCount; ++e) {
+    const auto &st = memtrackStats[e];
+    msg += std::string(" ") + memtrackEventNames[e] + " " +
+           std::to_string(st.checks) + "/" + std::to_string(st.scanned) +
+           "/" + std::to_string(st.leaks);
+  }
+  klee_message("%s", msg.c_str());
+  klee_message("memtrack native memcpy/memmove: %lu, left to the body: %lu",
+               (unsigned long)nativeMemCopies,
+               (unsigned long)fallbackMemCopies);
 }
 
 void Executor::reportError(const llvm::Twine &message,
@@ -4993,11 +5354,18 @@ void Executor::executeFree(ExecutionState &state,
                               StateTerminationType::Free,
                               getKValueInfo(*it->second, addressOptim));
       } else {
+        // blocks the freed block points to
+        std::set<const MemoryObject *> lost;
+        if (memtrackEventsEnabled())
+          collectHeapTargets(*it->second, mo, it->first.second, 0, UINT64_MAX,
+                             lost);
         it->second->addressSpace.removedObjectsMap.emplace(
             mo->segment, const_cast<MemoryObject*>(mo)->getSymbolicAddress(arrayCache));
         it->second->addressSpace.unbindObject(mo);
         if (target)
           bindLocal(target, *it->second, KValue(Expr::createPointer(0)));
+        if (!lost.empty())
+          checkLostMemory(*it->second, lost, MemtrackFree);
       }
     }
   }
@@ -5136,9 +5504,16 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                    address);
           }
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
+          // blocks whose pointers this write overwrites
+          std::set<const MemoryObject *> lost;
+          if (memtrackEventsEnabled())
+            collectOverwrittenHeapTargets(state, mo, wos, offset, bytes, value,
+                                          lost);
           wos->write(offset, value);
           if (isPointer)
             markStoredPointers(wos, offset, value);
+          if (!lost.empty())
+            checkLostMemory(state, lost, MemtrackStore);
         }
       } else {
         KValue result;
@@ -5196,10 +5571,17 @@ void Executor::executeMemoryOperation(ExecutionState &state,
                                    addressOptim);
           }
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
+          std::set<const MemoryObject *> lost;
+          if (memtrackEventsEnabled())
+            collectOverwrittenHeapTargets(*bound, mo, wos,
+                                          addressOptim.getOffset(), bytes,
+                                          value, lost);
           // TODO segment
           wos->write(addressOptim.getOffset(), value);
           if (isPointer)
             markStoredPointers(wos, addressOptim.getOffset(), value);
+          if (!lost.empty())
+            checkLostMemory(*bound, lost, MemtrackStore);
         }
       } else {
         bool shouldReadFromOffset = true;
@@ -5517,6 +5899,8 @@ void Executor::runFunctionAsMain(Function *f,
   }
 
   ExecutionState *state = new ExecutionState(kmodule->functionMap[f]);
+  if (memtrackEventsEnabled())
+    kmodule->functionMap[f]->preparePointerLiveness();
 
   if (pathWriter)
     state->pathOS = pathWriter->open();

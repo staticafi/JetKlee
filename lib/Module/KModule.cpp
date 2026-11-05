@@ -517,6 +517,9 @@ struct KFunction::PointerLiveness {
   /// registers live at the end of each block, including the values that
   /// phi nodes of the successors take from the block
   std::vector<llvm::BitVector> liveOut;
+  /// per instruction index: the fresh pointer registers that die there
+  /// (KInstruction::dyingFreshPointers points into this)
+  std::vector<std::vector<unsigned>> dying;
 
   bool tracked(int reg) const { return reg >= 0 && denseOf[reg] >= 0; }
 };
@@ -551,8 +554,12 @@ const KFunction::PointerLiveness &KFunction::getPointerLiveness() {
   };
   for (unsigned a = 0; a < numArgs; ++a)
     track(getArgRegister(a), function->getArg(a)->getType());
+  // the address of a local variable (alloca) never points to the heap, and
+  // the variable is a root itself; once its scope ended, it would point to
+  // an unbound object and make the search incomplete
   for (unsigned i = 0; i < numInstructions; ++i)
-    track(instructions[i]->dest, instructions[i]->inst->getType());
+    if (!isa<llvm::AllocaInst>(instructions[i]->inst))
+      track(instructions[i]->dest, instructions[i]->inst->getType());
 
   const unsigned numBlocks = function->size();
   const unsigned width = L.regOf.size();
@@ -611,7 +618,93 @@ const KFunction::PointerLiveness &KFunction::getPointerLiveness() {
     }
   }
 
+  computeDyingFreshPointers(blocks);
   return L;
+}
+
+// A pointer register is fresh if its value was not loaded from memory: it is
+// the result of a call (e.g. malloc), or derived from a fresh pointer by a
+// cast, GEP, phi, select or vector operation. When a fresh pointer dies, the
+// block it points to may have become untracked. A pointer loaded from memory
+// was referenced from memory when it was loaded, and the events that remove
+// such references are checked separately, so its death is not checked.
+static bool mayPassFreshness(const llvm::Instruction *inst) {
+  return isa<llvm::CastInst>(inst) || isa<llvm::GetElementPtrInst>(inst) ||
+         isa<llvm::PHINode>(inst) || isa<llvm::SelectInst>(inst) ||
+         isa<llvm::ExtractElementInst>(inst) ||
+         isa<llvm::InsertElementInst>(inst) ||
+         isa<llvm::ShuffleVectorInst>(inst);
+}
+
+void KFunction::computeDyingFreshPointers(
+    const std::vector<const llvm::BasicBlock *> &blocks) {
+  PointerLiveness &L = *pointerLiveness;
+  const unsigned width = L.regOf.size();
+
+  // fresh registers, iterated to a fixpoint because of phi cycles
+  llvm::BitVector fresh(width);
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (unsigned i = 0; i < numInstructions; ++i) {
+      const KInstruction *ki = instructions[i];
+      if (!L.tracked(ki->dest) || fresh.test(L.denseOf[ki->dest]))
+        continue;
+      bool isFresh = false;
+      if (isa<llvm::CallBase>(ki->inst)) {
+        isFresh = true;
+      } else if (mayPassFreshness(ki->inst)) {
+        for (unsigned j = 0; j < ki->inst->getNumOperands(); ++j) {
+          int reg = ki->operands[j];
+          if (L.tracked(reg) && fresh.test(L.denseOf[reg]))
+            isFresh = true;
+        }
+      }
+      if (isFresh) {
+        fresh.set(L.denseOf[ki->dest]);
+        changed = true;
+      }
+    }
+  }
+
+  // walk each block backwards with the set of live registers
+  L.dying.assign(numInstructions, {});
+  for (unsigned b = 0; b < blocks.size(); ++b) {
+    unsigned first = basicBlockEntry[const_cast<llvm::BasicBlock *>(blocks[b])];
+    llvm::BitVector live = L.liveOut[b];
+    for (unsigned i = first + blocks[b]->size(); i-- > first;) {
+      KInstruction *ki = instructions[i];
+      std::vector<unsigned> &dying = L.dying[i];
+      auto addIfDying = [&](int reg) {
+        if (L.tracked(reg) && fresh.test(L.denseOf[reg]) &&
+            !live.test(L.denseOf[reg]) &&
+            std::find(dying.begin(), dying.end(), (unsigned)reg) == dying.end())
+          dying.push_back(reg);
+      };
+
+      // a result that is never used dies right away
+      addIfDying(ki->dest);
+      // operands used for the last time; not a pointer that is stored
+      // (it moves to memory) or returned (checked at the return)
+      if (!isa<llvm::PHINode>(ki->inst) && !isa<llvm::ReturnInst>(ki->inst)) {
+        const auto *store = dyn_cast<llvm::StoreInst>(ki->inst);
+        forEachRegisterUse(ki, [&](int reg) {
+          if (!store || reg != ki->operands[0])
+            addIfDying(reg);
+        });
+      }
+      if (!dying.empty())
+        ki->dyingFreshPointers = &dying;
+
+      if (L.tracked(ki->dest))
+        live.reset(L.denseOf[ki->dest]);
+      if (!isa<llvm::PHINode>(ki->inst))
+        forEachRegisterUse(ki, [&](int reg) {
+          if (L.tracked(reg))
+            live.set(L.denseOf[reg]);
+        });
+    }
+  }
 }
 
 unsigned KFunction::getInstructionIndex(const KInstruction *ki) const {
