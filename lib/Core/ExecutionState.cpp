@@ -88,6 +88,7 @@ ExecutionState::~ExecutionState() {
 
 ExecutionState::ExecutionState(const ExecutionState& state):
     nondetValues(state.nondetValues),
+    marks(state.marks),
     lastLoopHead(state.lastLoopHead),
     lastLoopHeadId(state.lastLoopHeadId),
     lastLoopCheck(state.lastLoopCheck),

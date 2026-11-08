@@ -93,6 +93,7 @@ static SpecialFunctionHandler::HandlerInfo handlerInfo[] = {
   add("calloc", handleCalloc, true),
   add("free", handleFree, false),
   add("klee_assume", handleAssume, false),
+  add("__symbiotic_mark", handleMark, false),
   add("klee_check_memory_access", handleCheckMemoryAccess, false),
   add("klee_get_valuef", handleGetValue, true),
   add("klee_get_valued", handleGetValue, true),
@@ -603,6 +604,30 @@ void SpecialFunctionHandler::handleAssume(ExecutionState &state,
   } else {
     executor.addConstraint(state, e);
   }
+}
+
+// __symbiotic_mark(value): record a constant value with the location of
+// the call in the run of the state; the waypoints of a witness list the
+// marks among the nondet values (a mark is a log entry, not a constraint:
+// it is not a nondet value, so tests and their replay are unaffected)
+void SpecialFunctionHandler::handleMark(ExecutionState &state,
+                                        KInstruction *target,
+                                        const std::vector<Cell> &arguments) {
+  if (arguments.size() != 1) {
+    executor.terminateStateOnUserError(
+        state, "invalid number of arguments to __symbiotic_mark");
+    return;
+  }
+  // the value is a constant, or unique under the path's constraints;
+  // a mark that is neither is recorded as ~0 (the reader rejects it),
+  // the path goes on: a mark never decides a verdict
+  ref<Expr> e = executor.toUnique(state, arguments[0].value);
+  uint64_t value = ~0ULL;
+  if (auto *ce = dyn_cast<ConstantExpr>(e))
+    value = ce->getZExtValue();
+  else
+    klee_warning_once(target->inst, "symbolic argument to __symbiotic_mark");
+  state.marks.push_back({target, value, state.nondetValues.size()});
 }
 
 void SpecialFunctionHandler::handleIsSymbolic(ExecutionState &state,
