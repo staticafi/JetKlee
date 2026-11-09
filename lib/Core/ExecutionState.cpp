@@ -343,12 +343,20 @@ bool ExecutionState::merge(const ExecutionState &b) {
     assert(otherOS);
 
     ObjectState *wos = addressSpace.getWriteable(mo, os);
+    // keep the pointers that are recorded in both states
+    std::vector<unsigned> pointers;
+    for (unsigned i = 0; i < cast<ConstantExpr>(mo->size)->getZExtValue(); i++) {
+      if (wos->isPointerAt(i) && otherOS->isPointerAt(i))
+        pointers.push_back(i);
+    }
     for (unsigned i = 0; i < cast<ConstantExpr>(mo->size)->getZExtValue(); i++) {
       KValue av = wos->read8(i);
       KValue bv = otherOS->read8(i);
       wos->write(i, KValue(SelectExpr::create(inA, av.getSegment(), bv.getSegment()),
                            SelectExpr::create(inA, av.getOffset(), bv.getOffset())));
     }
+    for (unsigned i : pointers)
+      wos->markPointer(i);
   }
 
   constraints = ConstraintSet();

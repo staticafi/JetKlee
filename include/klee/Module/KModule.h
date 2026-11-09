@@ -68,6 +68,35 @@ namespace klee {
         assert(it != instructionsMap.end());
         return it->second;
     }
+
+    /// Registers of pointer type (or vector of pointers) whose values are
+    /// still used later when execution is about to execute ki. If ki is a
+    /// phi node, incomingBB is the block control came from; the values the
+    /// phi nodes of ki's block take from it are live.
+    /// Computed lazily on the first query (used by the memtrack check).
+    void getLivePointerRegistersBefore(const KInstruction *ki,
+                                       const llvm::BasicBlock *incomingBB,
+                                       std::vector<unsigned> &regs);
+
+    /// Compute the liveness and the dying fresh pointers of all
+    /// instructions (KInstruction::dyingFreshPointers) if not done yet.
+    void preparePointerLiveness() { (void)getPointerLiveness(); }
+
+    /// Like getLivePointerRegistersBefore, but at the point after ki has
+    /// executed; if includeDef is false, ki's own result is excluded (used
+    /// for a call that has not returned yet).
+    void getLivePointerRegistersAfter(const KInstruction *ki, bool includeDef,
+                                      std::vector<unsigned> &regs);
+
+    struct PointerLiveness;
+
+  private:
+    std::unique_ptr<PointerLiveness> pointerLiveness;
+    const PointerLiveness &getPointerLiveness();
+    void computeDyingFreshPointers(
+        const std::vector<const llvm::BasicBlock *> &blocks);
+    /// index of ki in instructions
+    unsigned getInstructionIndex(const KInstruction *ki) const;
   };
 
 
