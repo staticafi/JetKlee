@@ -26,6 +26,7 @@
 
 // FIXME: this is a hack
 #include "../lib/Core/ExecutionState.h"
+#include "klee/Module/KInstruction.h"
 
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Constants.h"
@@ -792,8 +793,24 @@ void KleeHandler::processTestCase(const ExecutionState &state,
       if (auto file = openTestFile("waypoints", id)) {
 
         auto testvec = m_interpreter->getTestVector(state);
+
+        // the marks of the program (__symbiotic_mark) go in their place
+        // among the nondet values: before the nondet value they preceded
+        auto printMarks = [&](size_t beforeNondet) {
+          for (const auto& mark : state.marks) {
+            if (mark.afterNondet != beforeNondet)
+              continue;
+            const auto& D = mark.kinstruction->inst->getDebugLoc();
+            *file << "@MARK:" << (D ? D->getFilename().str() : std::string())
+                  << ":" << (D ? D.getLine() : 0)
+                  << ":" << (D ? D.getCol() : 0)
+                  << ":" << mark.value << "\n";
+          }
+        };
+
         size_t n = 0;
         for (auto& input : testvec) {
+          printMarks(n);
           const auto& name = input.getName();
 
           if (name.compare(0, 17 , "__VERIFIER_nondet") != 0) {
@@ -815,6 +832,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
           *file << "\n";
           ++n;
         }
+        printMarks(n);
 
         // for non-termination get a recurring location
         if (state.lastLoopHead) {
