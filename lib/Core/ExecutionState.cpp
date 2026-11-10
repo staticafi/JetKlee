@@ -60,7 +60,8 @@ StackFrame::StackFrame(const StackFrame &s)
     callPathNode(s.callPathNode),
     allocas(s.allocas),
     minDistToUncoveredOnReturn(s.minDistToUncoveredOnReturn),
-    varargs(s.varargs) {
+    varargs(s.varargs),
+    returnSite(s.returnSite) {
   locals = new Cell[s.kf->numRegisters];
   for (unsigned i=0; i<s.kf->numRegisters; i++)
     locals[i] = s.locals[i];
@@ -94,6 +95,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     lastLoopFail(state.lastLoopFail),
     pc(state.pc),
     prevPC(state.prevPC),
+    reportPC(state.reportPC),
     stack(state.stack),
     incomingBBIndex(state.incomingBBIndex),
     depth(state.depth),
@@ -414,7 +416,8 @@ void ExecutionState::addCexPreference(const ref<Expr> &cond) {
 // Get the line and column of the errror
 std::tuple<std::string, unsigned, unsigned>
 ExecutionState::getErrorLocation(const std::string& file) const {
-  const KInstruction *target = prevPC;
+  const KInstruction *target =
+      reportPC ? reportPC : static_cast<const KInstruction *>(prevPC);
   for (ExecutionState::stack_ty::const_reverse_iterator
          it = stack.rbegin(), ie = stack.rend();
        it != ie; ++it) {

@@ -61,6 +61,7 @@
 #endif
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
@@ -589,8 +590,10 @@ Executor::setModule(std::vector<std::unique_ptr<llvm::Module>> &modules,
 
   specialFunctionHandler->bind();
 
-  if (CheckLeaks)
+  if (CheckLeaks) {
     warnIfVariablesInRegisters();
+    kmodule->markReturnStatements();
+  }
 
   if (StatsTracker::useStatistics() || userSearcherRequiresMD2U()) {
     statsTracker =
@@ -1592,7 +1595,9 @@ void Executor::executeLifetimeIntrinsic(ExecutionState &state,
     if (memtrackEventsEnabled())
       collectHeapTargets(state, op.first, op.second, 0, UINT64_MAX, lost);
     state.removeAlloca(op.first);
-    if (!lost.empty() && checkLostMemory(state, lost, MemtrackScopeEnd))
+    if (!lost.empty() &&
+        checkLostMemory(state, lost, MemtrackScopeEnd,
+                        getScopeEndReportPC(state, ki, allocSite)))
       return;
     //bindLocal(allocSite, state, KValue(Expr::createPointer(0)));
   } else {
@@ -2351,6 +2356,8 @@ static inline bool segmentIsDeleted(ExecutionState& state,
 
 void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   Instruction *i = ki->inst;
+  if (ki->isReturnStatement)
+    state.stack.back().returnSite = ki;
   switch (i->getOpcode()) {
     // Control flow
   case Instruction::Ret: {
@@ -2372,7 +2379,10 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     } else {
       // blocks the dying frame's variables point to
       std::set<const MemoryObject *> lost;
+      // where a loss is reported: the return statement
+      const KInstruction *reportPC = nullptr;
       if (memtrackEventsEnabled()) {
+        reportPC = state.stack.back().returnSite;
         const StackFrame &sf = state.stack.back();
         std::vector<const MemoryObject *> objects(sf.allocas.begin(),
                                                   sf.allocas.end());
@@ -2478,7 +2488,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
                       kcaller->dest) != kcaller->dyingFreshPointers->end())
           addHeapTargets(state, getDestCell(state, kcaller), lost);
         if (!lost.empty())
-          checkLostMemory(state, lost, MemtrackReturn);
+          checkLostMemory(state, lost, MemtrackReturn, reportPC);
       }
     }
     break;
@@ -4426,7 +4436,8 @@ void Executor::collectOverwrittenHeapTargets(
 
 bool Executor::checkLostMemory(ExecutionState &state,
                                std::set<const MemoryObject *> &candidates,
-                               MemtrackEvent event) {
+                               MemtrackEvent event,
+                               const KInstruction *reportPC) {
   // blocks the event freed are not lost
   for (auto it = candidates.begin(); it != candidates.end();) {
     if (state.addressSpace.findObject(*it))
@@ -4459,6 +4470,7 @@ bool Executor::checkLostMemory(ExecutionState &state,
   for (const auto *mo : candidates) {
     if (!search.getReachable().count(mo)) {
       ++stats.leaks;
+      state.reportPC = reportPC;
       terminateStateOnError(state, "memory error: memory leak detected",
                             StateTerminationType::Leak,
                             getKValueInfo(state, mo->getPointer()));
@@ -4466,6 +4478,60 @@ bool Executor::checkLostMemory(ExecutionState &state,
     }
   }
   return false;
+}
+
+const KInstruction *
+Executor::getScopeEndReportPC(const ExecutionState &state,
+                              const KInstruction *ki,
+                              const KInstruction *allocSite) {
+  const StackFrame &sf = state.stack.back();
+  if (sf.returnSite)
+    return sf.returnSite;
+  // No return statement has started yet. In a function with a single
+  // return, clang folds the cleanups into it: the scope ends come first and
+  // only the `ret` carries the return's location. So if the straight-line
+  // code leads to a `ret` of a return statement inside the variable's scope,
+  // the variable goes out of scope because of that return (control cannot
+  // leave a scope and then execute a return statement inside it). Otherwise
+  // the variable's block ended earlier (an inner block before the return, a
+  // break) or the function falls off its end: the scope end's own location.
+  const auto *alloca = dyn_cast<AllocaInst>(allocSite->inst);
+  if (!alloca)
+    return nullptr;
+  std::vector<const llvm::DIScope *> varScopes;
+  for (const llvm::DbgVariableIntrinsic *dbg :
+       llvm::FindDbgAddrUses(const_cast<AllocaInst *>(alloca)))
+    varScopes.push_back(dbg->getVariable()->getScope());
+  if (varScopes.empty())
+    return nullptr;
+  // follow the straight-line code to the `ret`
+  const llvm::BasicBlock *bb = ki->inst->getParent();
+  const ReturnInst *ret = nullptr;
+  for (unsigned steps = 0; steps < 16 && !ret; ++steps) {
+    const llvm::Instruction *term = bb->getTerminator();
+    ret = dyn_cast<ReturnInst>(term);
+    if (ret)
+      break;
+    const auto *br = dyn_cast<BranchInst>(term);
+    if (!br || !br->isUnconditional())
+      return nullptr;
+    bb = br->getSuccessor(0);
+  }
+  if (!ret)
+    return nullptr;
+  const KInstruction *kret =
+      sf.kf->getKInstruction(const_cast<ReturnInst *>(ret));
+  const llvm::DILocation *loc = ret->getDebugLoc().get();
+  if (!kret->isReturnStatement || !loc)
+    return nullptr;
+  for (const llvm::DIScope *scope = loc->getScope(); scope;) {
+    if (std::find(varScopes.begin(), varScopes.end(), scope) !=
+        varScopes.end())
+      return kret;
+    const auto *block = dyn_cast<llvm::DILexicalBlockBase>(scope);
+    scope = block ? block->getScope() : nullptr;
+  }
+  return nullptr;
 }
 
 bool Executor::checkDyingPointers(ExecutionState &state) {
@@ -4496,7 +4562,10 @@ bool Executor::checkDyingPointers(ExecutionState &state) {
       continue;
     addHeapTargets(state, state.stack[frame].locals[reg], candidates);
   }
-  return checkLostMemory(state, candidates, MemtrackDyingRegister);
+  if (candidates.empty())
+    return false;
+  return checkLostMemory(state, candidates, MemtrackDyingRegister,
+                         state.stack[frame].returnSite);
 }
 
 namespace {
@@ -4671,6 +4740,10 @@ void Executor::terminateStateOnExit(ExecutionState &state) {
         if (reachable.count(leak) == 0) {
           if (success) {
             std::string info = getKValueInfo(state, leak->getPointer());
+            // main's return: at the return statement
+            if (memtrackEventsEnabled() && state.prevPC &&
+                isa<ReturnInst>(state.prevPC->inst))
+              state.reportPC = state.stack.back().returnSite;
             terminateStateOnError(state, "memory error: memory leak detected",
                                   StateTerminationType::Leak,  info);
             return;
@@ -4730,10 +4803,13 @@ const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const Execut
   // don't check beyond the outermost function (i.e. main())
   itE--;
 
+  const KInstruction *pc =
+      state.reportPC ? state.reportPC
+                     : static_cast<const KInstruction *>(state.prevPC);
   const InstructionInfo * ii = 0;
   if (kmodule->internalFunctions.count(it->kf->function) == 0){
-    ii =  state.prevPC->info;
-    *lastInstruction = state.prevPC->inst;
+    ii =  pc->info;
+    *lastInstruction = pc->inst;
     //  Cannot return yet because even though
     //  it->function is not an internal function it might of
     //  been called from an internal function.
@@ -4757,8 +4833,8 @@ const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const Execut
 
   if (!ii) {
     // something went wrong, play safe and return the current instruction info
-    *lastInstruction = state.prevPC->inst;
-    return *state.prevPC->info;
+    *lastInstruction = pc->inst;
+    return *pc->info;
   }
   return *ii;
 }

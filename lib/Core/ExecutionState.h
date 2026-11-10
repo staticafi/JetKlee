@@ -61,6 +61,12 @@ struct StackFrame {
   // of intrinsic lowering.
   MemoryObject *varargs;
 
+  /// memtrack: an instruction of the return statement this function is
+  /// executing, or null. Once a return statement has started, only scope
+  /// cleanups and the `ret` follow in this frame, so memory lost there is
+  /// lost because of the return.
+  const KInstruction *returnSite = nullptr;
+
   StackFrame(KInstIterator caller, KFunction *kf);
   StackFrame(const StackFrame &s);
   ~StackFrame();
@@ -242,6 +248,10 @@ public:
 
   /// @brief Pointer to instruction which is currently executed
   KInstIterator prevPC;
+
+  /// If set, errors are reported at this instruction's location instead of
+  /// prevPC's (memtrack: the return statement that caused a loss)
+  const KInstruction *reportPC = nullptr;
 
   /// @brief Stack representing the current instruction stream
   stack_ty stack;

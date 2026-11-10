@@ -185,6 +185,13 @@ namespace klee {
     void checkModule();
 
     KInstruction *getKInstruction(llvm::Instruction *I) const;
+
+    /// Set KInstruction::isReturnStatement: the instructions located at a
+    /// return statement, i.e. whose source text at their line and column is
+    /// the keyword `return` (debug info gives each return statement at least
+    /// one instruction with its exact location). Instructions inlined from
+    /// another function and unreadable sources are skipped.
+    void markReturnStatements();
   };
 } // End klee namespace
 

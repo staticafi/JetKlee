@@ -30,6 +30,7 @@
 #endif
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -51,6 +52,8 @@
 #include "llvm/Transforms/Utils.h"
 #endif
 
+#include <cctype>
+#include <fstream>
 #include <sstream>
 
 using namespace llvm;
@@ -803,4 +806,54 @@ KInstruction *KModule::getKInstruction(llvm::Instruction *I) const {
     auto it = functionMap.find(I->getParent()->getParent());
     assert(it != functionMap.end());
     return it->second->getKInstruction(I);
+}
+
+void KModule::markReturnStatements() {
+  // source lines per file; empty if the file cannot be read
+  std::map<std::string, std::vector<std::string>> sources;
+  auto getLine = [&](const llvm::DILocation *loc) -> const std::string * {
+    std::string path = loc->getFilename().str();
+    if (path.empty())
+      return nullptr;
+    if (path[0] != '/' && !loc->getDirectory().empty())
+      path = loc->getDirectory().str() + "/" + path;
+    auto it = sources.find(path);
+    if (it == sources.end()) {
+      std::vector<std::string> lines;
+      std::ifstream in(path);
+      for (std::string line; std::getline(in, line);)
+        lines.push_back(std::move(line));
+      it = sources.emplace(path, std::move(lines)).first;
+    }
+    if (loc->getLine() == 0 || loc->getLine() > it->second.size())
+      return nullptr;
+    return &it->second[loc->getLine() - 1];
+  };
+  auto isIdentifierChar = [](char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
+           c == '$';
+  };
+
+  for (auto &kf : functions) {
+    for (unsigned i = 0; i < kf->numInstructions; ++i) {
+      KInstruction *ki = kf->instructions[i];
+      const llvm::DILocation *loc = ki->inst->getDebugLoc().get();
+      if (!loc || loc->getInlinedAt() || loc->getColumn() == 0)
+        continue;
+      const std::string *line = getLine(loc);
+      if (!line)
+        continue;
+      // columns count bytes from 1
+      std::size_t col = loc->getColumn() - 1;
+      static const std::string keyword = "return";
+      if (col >= line->size() ||
+          line->compare(col, keyword.size(), keyword) != 0)
+        continue;
+      std::size_t end = col + keyword.size();
+      if ((end < line->size() && isIdentifierChar((*line)[end])) ||
+          (col > 0 && isIdentifierChar((*line)[col - 1])))
+        continue;
+      ki->isReturnStatement = true;
+    }
+  }
 }
