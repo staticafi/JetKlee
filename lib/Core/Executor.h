@@ -562,7 +562,13 @@ private:
   /// terminated.
   bool checkLostMemory(ExecutionState &state,
                        std::set<const MemoryObject *> &candidates,
-                       MemtrackEvent event);
+                       MemtrackEvent event,
+                       const KInstruction *reportPC = nullptr);
+  /// Where a loss at the scope end ki of allocSite's variable is reported:
+  /// the return statement that leaves the function, or nullptr (ki itself).
+  const KInstruction *getScopeEndReportPC(const ExecutionState &state,
+                                          const KInstruction *ki,
+                                          const KInstruction *allocSite);
   /// Check the fresh pointers that died at the last executed instruction.
   /// Returns true if the state was terminated.
   bool checkDyingPointers(ExecutionState &state);

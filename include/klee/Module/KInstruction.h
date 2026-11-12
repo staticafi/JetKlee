@@ -47,6 +47,10 @@ namespace klee {
     /// (only with the memtrack check).
     const std::vector<unsigned> *dyingFreshPointers = nullptr;
 
+    /// The instruction is located at a return statement of its function
+    /// (KModule::markReturnStatements; only with the memtrack check).
+    bool isReturnStatement = false;
+
   public:
     virtual ~KInstruction();
     std::string getSourceLocation() const;
