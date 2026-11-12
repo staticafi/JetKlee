@@ -235,6 +235,16 @@ public:
 
   // FIXME: wouldn't unique_ptr be more efficient (no ref<> copying)
   std::vector<NondetValue> nondetValues;
+
+  // a value the program marked its run with (__symbiotic_mark), the
+  // instruction that marked it, and the number of nondet values created
+  // before it, so that the waypoints of a witness list it in its place
+  struct Mark {
+    KInstruction *kinstruction{nullptr};
+    uint64_t value{0};
+    size_t afterNondet{0};
+  };
+  std::vector<Mark> marks;
   // FIXME: this is a hack to be able to generate termination witnesses for SV-COMP
   llvm::Instruction *lastLoopHead{nullptr};
   size_t lastLoopHeadId{0};

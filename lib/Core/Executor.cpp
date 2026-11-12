@@ -6575,8 +6575,29 @@ void Executor::setReplayNondet(const struct KTest *out) {
 
   replayNondet.reserve(out->numObjects);
 
+  // whether the last object was skipped (its "(offset)" part, if any,
+  // must be skipped too)
+  bool skippedLast = false;
+
   for (unsigned i = 0; i < out->numObjects; ++i) {
       std::string name = out->objects[i].name;
+      const bool isOffset =
+          name.size() > 8 &&
+          name.compare(name.size() - 8, 8, "(offset)") == 0;
+
+      // Replay matches nondet values by their location (name:file:line:col)
+      // and in order. Skip objects without a location: these are either
+      // symbolic objects (e.g., the contents of memory made symbolic by
+      // klee_make_symbolic, which the test-case writer puts before the nondet
+      // values), or nondet values created without debugging information,
+      // which are never replayed (see handleVerifierNondetType). Keeping them
+      // would block the matching of all the following nondet values.
+      if (isOffset ? skippedLast : name.find(':') == std::string::npos) {
+        skippedLast = true;
+        continue;
+      }
+      skippedLast = false;
+
       std::string fun;
       unsigned line, col;
       std::tie(fun, line, col) = parseNondetName(name);
@@ -6584,7 +6605,7 @@ void Executor::setReplayNondet(const struct KTest *out) {
       auto val = getConcreteValue(out->objects[i].numBytes,
                                   out->objects[i].bytes);
 
-      if (name.size() > 8 && name.compare(name.size() - 8, 8, "(offset)") == 0 ) {
+      if (isOffset) {
         // this is an offset of previous nondet pointer,
         // so instead of creating a new record, just update the previous one
         auto& lastNv = replayNondet.back();
